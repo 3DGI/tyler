@@ -34,6 +34,7 @@ We need these properties for parsing the feature geometries.
 
 If the `.gpkg` is not provided then create the `feature_set` as explained below. 
 Else the `.gpkg` is the `feature_set`, and the `extent` (BBOX of all features) is computed from the `.gpkg`.
+<-- There is one table/layer in the `.gpkg` that contains the `feature_tuple`s (see below). We don't really need to do any spatial operations directly in the `.gpkg`, thus we can use any SQLite library to read the records from the table. Eg. [sqlite3 in Python](https://docs.python.org/3.8/library/sqlite3.html), maybe [SQLiteCpp](https://srombauts.github.io/SQLiteCpp/), or the [native C SQLite library](https://www.sqlite.org/c3ref/intro.html), [sqlite in Rust](https://crates.io/crates/sqlite).
 
 ---
 
@@ -80,7 +81,8 @@ assert_eq!(std::mem::size_of_val("/data/3DBAGv2/export/cityjson/v210908_fd2cee53
 
 Therefore, we expect that we can store the whole `feature_set` in memory.
 
-Then for each `.city.jsonl` file, read sequentially:
+Then for each `.city.jsonl` file, read sequentially: 
+<-- superfast and low memory with Rust's serde, okay with Python's *json* or C++ *nlohmann*. Since we practically only need to parse the `vertices` array of the CityJSONFeature, we could write a tiny library in Rust and bind it to Python/C++ (if we use those languages).
 
 1. Compute the feature centroid as the median of x,y in the `vertices` array of the CityJSONFeature.
 2. Compute the morton code of the feature centroid.
@@ -98,6 +100,7 @@ Then for each `.city.jsonl` file, read sequentially:
 *Do we need to sort the features? If so, we can sort in-memory if possible, or do [external sorting](https://en.wikipedia.org/wiki/External_sorting).*
 
 Initialize the quadtree with the `extent`.
+<-- Quadtree examples [in Rust 1](https://github.com/snorrwe/morton-table), [in Rust 2](https://docs.rs/quadtree_rs/0.1.2/quadtree_rs/), [in Rust 3](https://github.com/dmac/rust-quadtree), [in Rust 4](https://github.com/fschutt/quadtree-f32), [in Rust 5](https://docs.rs/crate/aabb-quadtree/0.2.0/source/src/lib.rs), [in Python 1](https://scipython.com/blog/quadtrees-2-implementation-in-python/), [in Python 2](https://github.com/CartoDB/QuadGrid), for sure there is a gazillion in C++
 
 Read sequentially from the `feature_set` and insert the `feature_tuple` ID into the quadtree.
 
@@ -106,7 +109,7 @@ I think we shouldn't use the morton code as the ID, because there could be multi
 
 There are multiple possible split criteria for the quadtree:
 
-1. fixed cellsize: split until cellsize is reached
+1. fixed cellsize: We recursively subdivide the extent until we reach the approximate cellsize. So, basically the split criteria is the edge length of the cell. Then some leafs will have many features in them, other leafs will have just a couple, others will have zero, but we will have a tile hierarchy still. To build a tileset with this type of subdivision we only need to know the morton code of the centroids. The tile hierarchy is constructed more or less independently of the features (only need to know the initial extent), and then for each leaf we check which centroids fall inside it. This spatial window query can be done efficiently with the morton codes.
 2. max. nr. of features (aka 3D BAG)
 3. max. nr. of vertices
 
