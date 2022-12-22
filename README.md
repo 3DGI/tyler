@@ -128,3 +128,71 @@ For each node/leaf, done in parallel:
 2. reproject to ECEF crs (required by Cesium)
 3. convert to gltf with cjio
 4. write the gltf to the `.glb` path that is set in `tileset.json`
+
+#### Merging CityJSONFeatures in Python and writing gltf
+
+A simple cjio-based script merges a list of `.city.jsonl` files and exports a `.glb` from it.
+
+```python
+import json
+from sys import argv
+from pathlib import Path
+
+from cjio.cityjson import CityJSON
+
+
+def merge(cityjson_path, features_dir):
+    lcount = 1
+    #-- read first line
+    with Path(cityjson_path).resolve().open("r") as fo:
+        j1 = json.load(fo)
+    cm = CityJSON(j=j1)
+    if "CityObjects" not in cm.j:
+        cm.j["CityObjects"] = {}
+    if "vertices" not in cm.j:
+        cm.j["vertices"] = []
+    for child in Path(features_dir).iterdir():
+        if child.suffix == ".jsonl":
+            with child.open("r") as fo:
+                j1 = json.load(fo)
+            if not( "type" in j1 and j1["type"] == 'CityJSONFeature'):
+               raise IOError("Line {} is not of type 'CityJSONFeature'.".format(lcount))
+            cm.add_cityjsonfeature(j1)
+    return cm
+
+if __name__ == "__main__":
+    cm = merge(argv[1], argv[2])
+    glb = cm.export2glb()
+    glb.seek(0)
+    with Path(argv[3]).open("wb") as bo:
+        bo.write(glb.getvalue())
+```
+
+Testing on *3dbag_v21031_7425c21b_5910.json*, which is 2.7Mb on disk, triangulated faces, 436 CityObjects, ~30k vertices.
+
+`/usr/bin/time -v` reports 56 seconds, 127Mb memory use.
+
+```
+User time (seconds): 56.34
+System time (seconds): 0.64
+Percent of CPU this job got: 101%
+Elapsed (wall clock) time (h:mm:ss or m:ss): 0:56.08
+Average shared text size (kbytes): 0
+Average unshared data size (kbytes): 0
+Average stack size (kbytes): 0
+Average total size (kbytes): 0
+Maximum resident set size (kbytes): 127740
+Average resident set size (kbytes): 0
+Major (requiring I/O) page faults: 0
+Minor (reclaiming a frame) page faults: 38536
+Voluntary context switches: 20
+Involuntary context switches: 977
+Swaps: 0
+File system inputs: 0
+File system outputs: 9376
+Socket messages sent: 0
+Socket messages received: 0
+Signals delivered: 0
+Page size (bytes): 4096
+Exit status: 0
+```
