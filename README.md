@@ -12,6 +12,29 @@ As output, *tyler* can create:
 
 - 3D Tiles
 
+## Usage
+
+*tyler* is a command line application.
+
+Use `--help` to see the help menu.
+
+```shell
+tyler --help
+```
+
+Generate 3D Tiles from a directory (or directory tree) of CityJSONFeatures.
+We need information about the coordinate reference system and transformation properties of the feature vertices.
+This information is stored in a main `.city.json` file, containing at least the [CRS](https://www.cityjson.org/specs/1.1.3/#referencesystem-crs) and [transform](https://www.cityjson.org/specs/1.1.3/#transform-object) objects.
+Pass the main `.city.json` file as the `--metadata` argument.
+
+```shell
+tyler \
+  --metadata metadata.city.json \
+  --features directory_with_cityjsonfeatures \
+  --output directory_for_output \
+  --format 3dtiles
+```
+
 ## Algorithm
 
 ### Assumptions
