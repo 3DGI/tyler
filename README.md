@@ -100,7 +100,7 @@ Then for each `.city.jsonl` file, read sequentially:
 *Do we need to sort the features? If so, we can sort in-memory if possible, or do [external sorting](https://en.wikipedia.org/wiki/External_sorting).*
 
 Initialize the quadtree with the `extent`.
-<-- Quadtree examples [in Rust 1](https://github.com/snorrwe/morton-table), [in Rust 2](https://docs.rs/quadtree_rs/0.1.2/quadtree_rs/), [in Rust 3](https://github.com/dmac/rust-quadtree), [in Rust 4](https://github.com/fschutt/quadtree-f32), [in Rust 5](https://docs.rs/crate/aabb-quadtree/0.2.0/source/src/lib.rs), [in Python 1](https://scipython.com/blog/quadtrees-2-implementation-in-python/), [in Python 2](https://github.com/CartoDB/QuadGrid), for sure there is a gazillion in C++
+<-- Quadtree examples [in Rust 1](https://github.com/snorrwe/morton-table), [in Rust 2](https://docs.rs/quadtree_rs/0.1.2/quadtree_rs/), [in Rust 3](https://github.com/dmac/rust-quadtree), [in Rust 4](https://github.com/fschutt/quadtree-f32), [in Rust 5](https://docs.rs/crate/aabb-quadtree/0.2.0/source/src/lib.rs), [in Python 1](https://scipython.com/blog/quadtrees-2-implementation-in-python/), [in Python 2](https://github.com/CartoDB/QuadGrid), for sure there is a gazillion in C++.
 
 Read sequentially from the `feature_set` and insert the `feature_tuple` ID into the quadtree.
 
@@ -109,9 +109,13 @@ I think we shouldn't use the morton code as the ID, because there could be multi
 
 There are multiple possible split criteria for the quadtree:
 
-1. fixed cellsize: We recursively subdivide the extent until we reach the approximate cellsize. So, basically the split criteria is the edge length of the cell. Then some leafs will have many features in them, other leafs will have just a couple, others will have zero, but we will have a tile hierarchy still. To build a tileset with this type of subdivision we only need to know the morton code of the centroids. The tile hierarchy is constructed more or less independently of the features (only need to know the initial extent), and then for each leaf we check which centroids fall inside it. This spatial window query can be done efficiently with the morton codes.
+1. fixed cellsize: We recursively subdivide the extent until we reach the approximate cellsize. So, basically the split criteria is the edge length of the cell. Then some leafs will have many features in them, other leafs will have just a couple, others will have zero, but we will have a tile hierarchy still. To build a tileset with this type of subdivision we only need to know the morton code of the centroids. This spatial window query can be done efficiently with the morton codes.
 2. max. nr. of features (aka 3D BAG)
 3. max. nr. of vertices
+
+The quadtree is built from bottom up. 
+Eg. define a minimum tree depth/cellsize, then assign all the centroids to a node on that depth (simple grid indexing super fast). 
+Then merge nodes that contain too few data (4 nodes -> 1 node one level shallower in the tree). 
 
 Thus, the quadtree is constructed sequentially, in memory.
 Its leafs contain a set of `feature_tuple` IDs.
