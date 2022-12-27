@@ -46,17 +46,17 @@ impl CityJSONFeatureVertices<'_> {
     }
 
     /// Feature centroid (2D) computed as the average coordinate.
-    /// The centroid coordinates are compressed, so they need to be transformed back to real-world
-    /// coordinates.
-    fn centroid(&self) -> (f64, f64) {
-        let mut x_sum: i64 = 0;
-        let mut y_sum: i64 = 0;
+    fn centroid(&self, transform: &Transform) -> (f64, f64) {
+        let mut x_sum: f64 = 0.0;
+        let mut y_sum: f64 = 0.0;
         for v in self.vertices.iter() {
-            x_sum = x_sum + v.get(0).unwrap();
-            y_sum = y_sum + v.get(1).unwrap()
+            let x = v.get(0).unwrap() as f64;
+            let y = v.get(1).unwrap() as f64;
+            x_sum = x_sum + ((x * transform.scale[0]) + transform.translate[0]);
+            y_sum = y_sum + ((y * transform.scale[1]) + transform.translate[1]);
         }
-        let x = x_sum as f64 / self.vertices.len() as f64;
-        let y = y_sum as f64 / self.vertices.len() as f64;
+        let x = x_sum / self.vertices.len() as f64;
+        let y = y_sum / self.vertices.len() as f64;
         (x, y)
     }
 }
@@ -120,18 +120,14 @@ mod tests {
 
     #[test]
     fn test_centroid() -> serde_json::Result<()> {
-        let pb: PathBuf = test_data_dir().join("3dbag_feature_x71.city.jsonl");
-        let cf_str = read_to_string(&pb).unwrap();
-        let cf: CityJSONFeatureVertices = from_str(&cf_str)?;
-        let ctr_compressed = cf.centroid();
-        println!("compressed centroid: {:#?}", ctr_compressed);
-
         let pb: PathBuf = test_data_dir().join("3dbag_x00.city.json");
         let cm_str = read_to_string(&pb).unwrap();
         let cm: CityJSONMetadata = from_str(&cm_str)?;
 
-        let ctr_real_world: (f64, f64) = ((ctr_compressed.0 * cm.transform.scale[0]) + cm.transform.translate[0],
-                                          (ctr_compressed.1 * cm.transform.scale[1]) + cm.transform.translate[1]);
+        let pb: PathBuf = test_data_dir().join("3dbag_feature_x71.city.jsonl");
+        let cf_str = read_to_string(&pb).unwrap();
+        let cf: CityJSONFeatureVertices = from_str(&cf_str)?;
+        let ctr_real_world = cf.centroid(&cm.transform);
         println!("real-world centroid: {:#?}", ctr_real_world);
 
         Ok(())
