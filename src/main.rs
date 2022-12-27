@@ -1,3 +1,5 @@
+mod parser;
+
 use std::path::{Path, PathBuf};
 use std::fs;
 
