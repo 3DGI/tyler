@@ -2,8 +2,7 @@ mod parser;
 mod quadtree;
 
 use std::path::{Path};
-use std::fs::{self, DirEntry};
-use std::io;
+use std::fs;
 
 use clap::{crate_version, Arg, Command};
 use walkdir::WalkDir;
@@ -65,42 +64,51 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Created output directory {:#?}", &path_output);
     }
 
-    let cm: parser::CityJSONMetadata = parser::parse_metadata(&path_metadata)?;
+    let cm = parser::CityJSONMetadata::from_file(&path_metadata)?;
 
-    let feature_set_iter = WalkDir::new(&path_features).into_iter()
-        .filter_map(|res| {
-            if let Ok(entry) = res {
-                if let Some(ext) = entry.path().extension() {
-                    if ext == "jsonl" {
-                        Some(entry.path().to_path_buf())
-                    } else { None }
+    // Return the file path if the 'DirEntry' is a .jsonl file (eg. .city.jsonl).
+    let jsonl_path_closure = |res: Result<walkdir::DirEntry, walkdir::Error>| {
+        if let Ok(entry) = res {
+            if let Some(ext) = entry.path().extension() {
+                if ext == "jsonl" {
+                    Some(entry.path().to_path_buf())
                 } else { None }
             } else { None }
-        })
-        .map(|path| parser::feature_to_tuple(path, &cm))
+        } else {
+            // TODO: notify the user if some path cannot be accessed (eg. permission), https://docs.rs/walkdir/latest/walkdir/struct.Error.html
+            None
+        }
+    };
+
+    // Do a first loop over the features to calculate their extent and their number.
+    // Need a mutable iterator, because .next() consumes the next value and advances the iterator.
+    let mut features_enum_iter = WalkDir::new(&path_features)
+        .into_iter()
+        .filter_map(jsonl_path_closure)
+        .enumerate();
+    // Init the extent with from the first feature.
+    let (mut nr_features, feature_path) = features_enum_iter.next().expect(".jsonl file should be accessible");
+    let cf = parser::CityJSONFeatureVertices::from_file(feature_path)?;
+    let mut extent = cf.bbox();
+    for (nf, fp) in features_enum_iter {
+        let cf = parser::CityJSONFeatureVertices::from_file(fp)?;
+        let [x_min, y_min, z_min, x_max, y_max, z_max] = cf.bbox();
+        if x_min < extent[0] { extent[0] = x_min }
+        else if x_max > extent[3] { extent[3] = x_max }
+        if y_min < extent[1] { extent[1] = y_min }
+        else if y_max > extent[4] { extent[4] = y_max }
+        if z_min < extent[2] { extent[2] = z_min }
+        else if z_max > extent[5] { extent[5] = z_max }
+        nr_features = nf;
+    }
+
+
+    let feature_set_iter = WalkDir::new(&path_features).into_iter()
+        .filter_map(jsonl_path_closure)
+        .map(|path| parser::CityJSONFeatureVertices::file_to_tuple(path))
         .filter_map(|res| res.ok());
 
     let _: Vec<parser::FeatureTuple> = feature_set_iter.collect();
 
     Ok(())
-}
-
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_visit_dir() {
-        let p = Path::new("/home/balazs/Development/cjio_dbexport/tests/data/output");
-        let mut cnt = 0;
-        for entry in WalkDir::new(p) {
-            if let Some(ext) = entry.unwrap().path().extension() {
-                    if ext == "jsonl" {
-                        cnt = cnt + 1;
-                    }
-                }
-        }
-        println!("{}", cnt);
-    }
 }

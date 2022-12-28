@@ -1,11 +1,10 @@
 use crate::quadtree;
 
-use std::fs::{File, read_to_string};
-use std::io::BufReader;
+use std::fs::{read_to_string};
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
-use serde_json::{from_reader, from_str};
+use serde_json::{from_str};
 
 /// A partial [CityJSON object](https://www.cityjson.org/specs/1.1.3/#cityjson-object).
 /// It is partial, because we only store the metadata that is necessary for parsing the
@@ -38,12 +37,27 @@ struct Metadata {
 /// "Attempted to build VarZeroVec out of elements that cumulatively are larger than a u32 in size"
 /// from the zerovec crate, and I didn't investigate further.
 #[derive(Deserialize, Debug)]
-struct CityJSONFeatureVertices {
+pub struct CityJSONFeatureVertices {
     vertices: Vec<[i32; 3]>,
+}
+
+impl CityJSONMetadata {
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {
+        let cm_str = read_to_string(path.as_ref())?;
+        let cm: CityJSONMetadata = from_str(&cm_str)?;
+        Ok(cm)
+    }
 }
 
 
 impl CityJSONFeatureVertices {
+
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {
+        let cf_str = read_to_string(path.as_ref())?;
+        let cf: CityJSONFeatureVertices = from_str(&cf_str)?;
+        Ok(cf)
+    }
+
     /// Return the number of vertices of the feature.
     /// We assume that the number of vertices in a feature does not exceed 65535 (thus `u16`).
     fn vertex_count(&self) -> u16 {
@@ -56,18 +70,18 @@ impl CityJSONFeatureVertices {
     /// It is more efficient to apply the transformation once, when the centroid is computed, than
     /// applying it to each vertex in the loop of computing the average coordinate.
     fn centroid_quantized(&self) -> [i32;2] {
-        let mut x_sum: i32 = 0;
-        let mut y_sum: i32 = 0;
+        let mut x_sum: i64 = 0;
+        let mut y_sum: i64 = 0;
         for [x,y,z] in self.vertices.iter() {
-            x_sum = x_sum + x;
-            y_sum = y_sum + y;
+            x_sum = x_sum + *x as i64;
+            y_sum = y_sum + *y as i64;
         }
         // Yes, we divide an integer with an integer and we discard the decimals, but that's ok,
         // because the quantized coordinates (integers) already include the decimals of the
         // real-world coordinates. Thus, when the quantized centroid is scaled to the real-world
         // coordinate with a factor `< 0` (eg. 0.001), we will get accurate-enough coordinates
         // for the centroid.
-        [x_sum / self.vertices.len() as i32, y_sum / self.vertices.len() as i32]
+        [(x_sum / self.vertices.len() as i64) as i32, (y_sum / self.vertices.len() as i64) as i32]
     }
 
     /// Feature centroid (2D) computed as the average coordinate.
@@ -78,28 +92,57 @@ impl CityJSONFeatureVertices {
         ((ctr_x as f64 * transform.scale[0]) + transform.translate[0],
          (ctr_y as f64 * transform.scale[1]) + transform.translate[1])
     }
+
+    /// Compute the 3D bounding box of the feature.
+    pub fn bbox(&self) -> [i32;6] {
+        let [mut x_min, mut y_min, mut z_min] = self.vertices[0].clone();
+        let [mut x_max, mut y_max, mut z_max] = self.vertices[0].clone();
+        for [x,y,z] in self.vertices.iter() {
+            if *x < x_min { x_min = x.clone() }
+            else if *x > x_max { x_max = x.clone() }
+            if *y < y_min { y_min = y.clone() }
+            else if *y > y_max { y_max = y.clone() }
+            if *z < z_min { z_min = z.clone() }
+            else if *z > z_max { z_max = z.clone() }
+        }
+        [x_min, y_min, z_min, x_max, y_max, z_max]
+    }
+
+    /// Compute the 2D quantized centroid and the 3D bounding box in one loop.
+    ///
+    /// Combines the [centroid_quantized] and [bbox] methods to compute the values in a single
+    /// loop over the vertices.
+    fn centroid_quantized_bbox(&self) -> [i32;8] {
+        let mut x_sum: i32 = 0;
+        let mut y_sum: i32 = 0;
+        let [mut x_min, mut y_min, mut z_min] = self.vertices[0].clone();
+        let [mut x_max, mut y_max, mut z_max] = self.vertices[0].clone();
+        for [x,y,z] in self.vertices.iter() {
+            x_sum = x_sum + x;
+            y_sum = y_sum + y;
+            if *x < x_min { x_min = x.clone() }
+            else if *x > x_max { x_max = x.clone() }
+            if *y < y_min { y_min = y.clone() }
+            else if *y > y_max { y_max = y.clone() }
+            if *z < z_min { z_min = z.clone() }
+            else if *z > z_max { z_max = z.clone() }
+        }
+        let x_ctr = x_sum / self.vertices.len() as i32;
+        let y_ctr = y_sum / self.vertices.len() as i32;
+        [x_ctr, y_ctr, x_min, y_min, z_min, x_max, y_max, z_max]
+    }
+
+    /// Extracts some information from the CityJSONFeature and returns a tuple with them.
+    pub fn file_to_tuple<P: AsRef<Path>>(path: P) -> Result<FeatureTuple, Box<dyn std::error::Error>> {
+        let cf: CityJSONFeatureVertices = Self::from_file(path.as_ref())?;
+        let center = cf.centroid_quantized();
+        Ok((quadtree::morton_encode(&(center[0] as f64), &(center[1] as f64)), cf.vertex_count(), path.as_ref().to_path_buf()))
+    }
 }
 
 /// Stores the information that is computed from a CityJSONFeature.
 /// (morton code of centroid, vertex count, path to the file)
 pub type FeatureTuple = (u128, u16, PathBuf);
-
-
-pub fn parse_metadata(pb: &PathBuf) -> Result<CityJSONMetadata, Box<dyn std::error::Error>> {
-    let file = File::open(&pb)?;
-    let reader = BufReader::new(&file);
-    let cm: CityJSONMetadata = from_reader(reader)?;
-    Ok(cm)
-}
-
-/// Extracts some information from the CityJSONFeature and returns a tuple with them.
-/// The function is meant to be used when iterating over a directory of `.city.jsonl` files.
-pub fn feature_to_tuple<P: AsRef<Path>>(path: P, cm: &CityJSONMetadata) -> Result<FeatureTuple, Box<dyn std::error::Error>> {
-    let cf_str = read_to_string(path.as_ref())?;
-    let cf: CityJSONFeatureVertices = from_str(&cf_str)?;
-    let center = cf.centroid(&cm.transform);
-    Ok((quadtree::morton_encode(&center.0, &center.1), cf.vertex_count(), path.as_ref().to_path_buf()))
-}
 
 
 #[cfg(test)]
@@ -160,17 +203,15 @@ mod tests {
     #[test]
     fn test_centroid() -> serde_json::Result<()> {
         let pb: PathBuf = test_data_dir().join("3dbag_feature_x71.city.jsonl");
-        let cf_str = read_to_string(&pb).unwrap();
-        let cf: CityJSONFeatureVertices = from_str(&cf_str)?;
+        let cf: CityJSONFeatureVertices = CityJSONFeatureVertices::from_file(&pb).unwrap();
         let ctr_quantized = cf.centroid_quantized();
         println!("quantized centroid: {:#?}", ctr_quantized);
 
         let pb: PathBuf = test_data_dir().join("3dbag_x00.city.json");
-        let cm_str = read_to_string(&pb).unwrap();
-        let cm: CityJSONMetadata = from_str(&cm_str)?;
+        let cm: CityJSONMetadata = CityJSONMetadata::from_file(&pb).unwrap();
 
-        let ctr_real_world: (f64, f64) = ((ctr_quantized.0 as f64 * cm.transform.scale[0]) + cm.transform.translate[0],
-                                          (ctr_quantized.1 as f64 * cm.transform.scale[1]) + cm.transform.translate[1]);
+        let ctr_real_world: (f64, f64) = ((ctr_quantized[0] as f64 * cm.transform.scale[0]) + cm.transform.translate[0],
+                                          (ctr_quantized[1] as f64 * cm.transform.scale[1]) + cm.transform.translate[1]);
         println!("real-world centroid: {:#?}", ctr_real_world);
 
         Ok(())
