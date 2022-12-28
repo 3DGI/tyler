@@ -1,15 +1,19 @@
 mod parser;
+mod quadtree;
 
-use std::path::{Path, PathBuf};
-use std::fs;
+use std::path::{Path};
+use std::fs::{self, DirEntry};
+use std::io;
 
 use clap::{crate_version, Arg, Command};
+use walkdir::WalkDir;
 
 static FORMATS: [&str; 1] = [
     "3dtiles",
 ];
 
-fn main() -> std::io::Result<()> {
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cmd = Command::new("tyler")
         .about("Create tiles from 3D city objects encoded as CityJSONFeatures.")
         .version(crate_version!())
@@ -60,5 +64,43 @@ fn main() -> std::io::Result<()> {
         fs::create_dir_all(&path_output)?;
         println!("Created output directory {:#?}", &path_output);
     }
+
+    let cm: parser::CityJSONMetadata = parser::parse_metadata(&path_metadata)?;
+
+    let feature_set_iter = WalkDir::new(&path_features).into_iter()
+        .filter_map(|res| {
+            if let Ok(entry) = res {
+                if let Some(ext) = entry.path().extension() {
+                    if ext == "jsonl" {
+                        Some(entry.path().to_path_buf())
+                    } else { None }
+                } else { None }
+            } else { None }
+        })
+        .map(|path| parser::feature_to_tuple(path, &cm))
+        .filter_map(|res| res.ok());
+
+    let _: Vec<parser::FeatureTuple> = feature_set_iter.collect();
+
     Ok(())
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_visit_dir() {
+        let p = Path::new("/home/balazs/Development/cjio_dbexport/tests/data/output");
+        let mut cnt = 0;
+        for entry in WalkDir::new(p) {
+            if let Some(ext) = entry.unwrap().path().extension() {
+                    if ext == "jsonl" {
+                        cnt = cnt + 1;
+                    }
+                }
+        }
+        println!("{}", cnt);
+    }
 }
