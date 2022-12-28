@@ -55,7 +55,7 @@ impl CityJSONFeatureVertices {
     /// coordinates.
     /// It is more efficient to apply the transformation once, when the centroid is computed, than
     /// applying it to each vertex in the loop of computing the average coordinate.
-    fn centroid_quantized(&self) -> (i32, i32) {
+    fn centroid_quantized(&self) -> [i32;2] {
         let mut x_sum: i32 = 0;
         let mut y_sum: i32 = 0;
         for [x,y,z] in self.vertices.iter() {
@@ -67,16 +67,16 @@ impl CityJSONFeatureVertices {
         // real-world coordinates. Thus, when the quantized centroid is scaled to the real-world
         // coordinate with a factor `< 0` (eg. 0.001), we will get accurate-enough coordinates
         // for the centroid.
-        (x_sum / self.vertices.len() as i32, y_sum / self.vertices.len() as i32)
+        [x_sum / self.vertices.len() as i32, y_sum / self.vertices.len() as i32]
     }
 
     /// Feature centroid (2D) computed as the average coordinate.
     /// The centroid coordinates are real-world coordinates (thus they are transformed back to
     /// real-world coordinates from the quantized coordinates).
     fn centroid(&self, transform: &Transform) -> (f64, f64) {
-        let ctr = self.centroid_quantized();
-        ((ctr.0 as f64 * transform.scale[0]) + transform.translate[0],
-         (ctr.1 as f64 * transform.scale[1]) + transform.translate[1])
+        let [ctr_x, ctr_y] = self.centroid_quantized();
+        ((ctr_x as f64 * transform.scale[0]) + transform.translate[0],
+         (ctr_y as f64 * transform.scale[1]) + transform.translate[1])
     }
 }
 
