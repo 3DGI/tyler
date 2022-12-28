@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 use serde_json::{from_reader, from_str};
-use zerovec::{VarZeroVec, ZeroSlice};
 
 /// A partial [CityJSON object](https://www.cityjson.org/specs/1.1.3/#cityjson-object).
 /// It is partial, because we only store the metadata that is necessary for parsing the
@@ -34,13 +33,12 @@ struct Metadata {
 /// (or zero-allocation) deserialization of vectors with serde, we need the
 /// [zerovec](https://crates.io/crates/zerovec) crate.
 #[derive(Deserialize, Debug)]
-struct CityJSONFeatureVertices<'a> {
-    #[serde(borrow)]
-    vertices: VarZeroVec<'a, ZeroSlice<i64>>,
+struct CityJSONFeatureVertices {
+    vertices: Vec<[i64; 3]>,
 }
 
 
-impl CityJSONFeatureVertices<'_> {
+impl CityJSONFeatureVertices {
     /// Return the number of vertices of the feature.
     /// We assume that the number of vertices in a feature does not exceed 65535 (thus `u16`).
     fn vertex_count(&self) -> u16 {
