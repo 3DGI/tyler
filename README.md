@@ -41,7 +41,8 @@ tyler \
 
 1. The feature coordinates are expected to be in a projected, Cartesian coordinate reference system with metric units.
 2. The total number of vertices in a feature do not exceed *65535*, so that we can store the value in a `u16`.
-3. If a feature has multiple children, it is expected that the children are adjacent, or at least very close to each other. This is because the whole feature, including all its children are treated as a unit in the tiling process, in order to make sure that all the children of a feature always end up in the same tile.
+3. The quantized coordinates fit in the range of an `i32`, that is `[-2147483648, 2147483647]`.
+4. If a feature has multiple children, it is expected that the children are adjacent, or at least very close to each other. This is because the whole feature, including all its children are treated as a unit in the tiling process, in order to make sure that all the children of a feature always end up in the same tile.
 
 
 ### Inputs

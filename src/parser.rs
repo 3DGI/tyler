@@ -29,12 +29,17 @@ struct Metadata {
 }
 
 /// Container for storing the CityJSONFeature vertices.
-/// It borrows from the JSON string that is loaded into memory. In order to achieve this zero-copy
-/// (or zero-allocation) deserialization of vectors with serde, we need the
-/// [zerovec](https://crates.io/crates/zerovec) crate.
+///
+/// CityJSONFeature coordinates are supposed to be within the range of an `i32`,
+/// `[-2147483648, 2147483647]`.
+/// It allocates for the vertex container. I tried zero-copy (zero-allocation) deserialization
+/// from the JSON string with the [zerovec](https://crates.io/crates/zerovec) crate
+/// (see [video](https://youtu.be/DM2DI3ZI_BQ) for details), but I was getting an error of
+/// "Attempted to build VarZeroVec out of elements that cumulatively are larger than a u32 in size"
+/// from the zerovec crate, and I didn't investigate further.
 #[derive(Deserialize, Debug)]
 struct CityJSONFeatureVertices {
-    vertices: Vec<[i64; 3]>,
+    vertices: Vec<[i32; 3]>,
 }
 
 
@@ -46,29 +51,32 @@ impl CityJSONFeatureVertices {
     }
 
     /// Feature centroid (2D) computed as the average coordinate.
-    /// The centroid coordinates are compressed, so they need to be transformed back to real-world
+    /// The centroid coordinates are quantized, so they need to be transformed back to real-world
     /// coordinates.
     /// It is more efficient to apply the transformation once, when the centroid is computed, than
     /// applying it to each vertex in the loop of computing the average coordinate.
-    fn centroid_compressed(&self) -> (f64, f64) {
-        let mut x_sum: i64 = 0;
-        let mut y_sum: i64 = 0;
-        for v in self.vertices.iter() {
-            x_sum = x_sum + v.get(0).unwrap();
-            y_sum = y_sum + v.get(1).unwrap()
+    fn centroid_quantized(&self) -> (i32, i32) {
+        let mut x_sum: i32 = 0;
+        let mut y_sum: i32 = 0;
+        for [x,y,z] in self.vertices.iter() {
+            x_sum = x_sum + x;
+            y_sum = y_sum + y;
         }
-        let x = x_sum as f64 / self.vertices.len() as f64;
-        let y = y_sum as f64 / self.vertices.len() as f64;
-        (x, y)
+        // Yes, we divide an integer with an integer and we discard the decimals, but that's ok,
+        // because the quantized coordinates (integers) already include the decimals of the
+        // real-world coordinates. Thus, when the quantized centroid is scaled to the real-world
+        // coordinate with a factor `< 0` (eg. 0.001), we will get accurate-enough coordinates
+        // for the centroid.
+        (x_sum / self.vertices.len() as i32, y_sum / self.vertices.len() as i32)
     }
 
     /// Feature centroid (2D) computed as the average coordinate.
     /// The centroid coordinates are real-world coordinates (thus they are transformed back to
-    /// real-world coordinates from the compressed coordinates).
+    /// real-world coordinates from the quantized coordinates).
     fn centroid(&self, transform: &Transform) -> (f64, f64) {
-        let ctr = self.centroid_compressed();
-        ((ctr.0 * transform.scale[0]) + transform.translate[0],
-         (ctr.1 * transform.scale[1]) + transform.translate[1])
+        let ctr = self.centroid_quantized();
+        ((ctr.0 as f64 * transform.scale[0]) + transform.translate[0],
+         (ctr.1 as f64 * transform.scale[1]) + transform.translate[1])
     }
 }
 
@@ -154,15 +162,15 @@ mod tests {
         let pb: PathBuf = test_data_dir().join("3dbag_feature_x71.city.jsonl");
         let cf_str = read_to_string(&pb).unwrap();
         let cf: CityJSONFeatureVertices = from_str(&cf_str)?;
-        let ctr_compressed = cf.centroid_compressed();
-        println!("compressed centroid: {:#?}", ctr_compressed);
+        let ctr_quantized = cf.centroid_quantized();
+        println!("quantized centroid: {:#?}", ctr_quantized);
 
         let pb: PathBuf = test_data_dir().join("3dbag_x00.city.json");
         let cm_str = read_to_string(&pb).unwrap();
         let cm: CityJSONMetadata = from_str(&cm_str)?;
 
-        let ctr_real_world: (f64, f64) = ((ctr_compressed.0 * cm.transform.scale[0]) + cm.transform.translate[0],
-                                          (ctr_compressed.1 * cm.transform.scale[1]) + cm.transform.translate[1]);
+        let ctr_real_world: (f64, f64) = ((ctr_quantized.0 as f64 * cm.transform.scale[0]) + cm.transform.translate[0],
+                                          (ctr_quantized.1 as f64 * cm.transform.scale[1]) + cm.transform.translate[1]);
         println!("real-world centroid: {:#?}", ctr_real_world);
 
         Ok(())
