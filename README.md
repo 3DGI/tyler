@@ -157,6 +157,42 @@ For each node/leaf, done in parallel:
 3. convert to gltf with cjio
 4. write the gltf to the `.glb` path that is set in `tileset.json`
 
+#### Struct of arrays to store features
+
+Instead of having an array of structs for the features, we should consider a struct of arrays.
+And therefore benefit from cache-locality when looping over the features in order.
+For this to work, the features probably should be in some spatial order.
+
+Array of structs:
+
+```rust
+struct Feature {
+    centroid_quantized: [i32;2],
+    nr_vertices: u16,
+    path_jsonl: PathBuf
+}
+
+type FeatureSet = Vec<Feature>;
+```
+
+Struct of arrays:
+
+```rust
+struct FeatureSet {
+    centroid_quantized: Vec<[i32;2]>,
+    nr_vertices: Vec<u16>,
+    path_jsonl: Vec<PathBuf>
+}
+
+type FeatureID = usize;
+
+impl FeatureSet {
+    fn get(&self, id: &FeatureID) -> (&[i32;2], &u16, &PathBuf) {
+        (&self.centroid_quantized[*id], &self.nr_vertices[*id], &self.path_jsonl[*id])
+    }
+}
+```
+
 #### Estimating memory use for a country like Netherlands
 
 The Netherlands extent: `Polygon ((13565.3984375 306846.1875, 278026.125 306846.1875, 278026.125 619315.6875, 13565.3984375 619315.6875, 13565.3984375 306846.1875))`

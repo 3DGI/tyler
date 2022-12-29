@@ -46,7 +46,7 @@ pub struct SquareGrid {
     origin: [f64; 2],
     nr_cells: usize,
     cellsize: u16,
-    data: Vec<Vec<Vec<usize>>>,
+    data: Vec<Vec<Cell>>,
 }
 
 impl Display for SquareGrid {
@@ -135,6 +135,7 @@ impl SquareGrid {
     }
 }
 
+type Cell = Vec<usize>;
 type CellId = [usize; 2];
 
 #[cfg(test)]

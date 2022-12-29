@@ -5,7 +5,7 @@ use std::path::{Path};
 use std::fs;
 
 use log::{debug, error, info};
-use clap::{crate_version, Arg, Command};
+use clap::{crate_version, Arg, ArgAction, Command};
 use walkdir::WalkDir;
 
 static FORMATS: [&str; 1] = [
@@ -52,6 +52,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .required(true)
                 .help("Output format.")
                 .value_parser(FORMATS)
+        )
+        .arg(
+            Arg::new("export")
+                .long("export-grid")
+                .action(ArgAction::SetTrue)
+                .help("Export the grid and the feature centroids in to .tsv files in the working directory.")
+        )
+        .arg(
+            Arg::new("cellsize")
+                .long("cellsize")
+                .default_value("200")
+                .value_parser(clap::value_parser!(u16))
+                .help("Set the cell size for the square grid.")
         );
     let matches = cmd.get_matches();
 
@@ -68,6 +81,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         fs::create_dir_all(&path_output)?;
         info!("Created output directory {:#?}", &path_output);
     }
+    let do_export = matches.contains_id("export");
+    let cellsize: u16 = if matches.contains_id("cellsize") {
+        *matches.get_one::<u16>("cellsize").expect("could not parse the 'cellsize' argument to u16")
+    } else { 200_u16 };
 
     let cm = parser::CityJSONMetadata::from_file(&path_metadata)?;
 
@@ -98,12 +115,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (nf, fp) in features_enum_iter {
         let cf = parser::CityJSONFeatureVertices::from_file(fp)?;
         let [x_min, y_min, z_min, x_max, y_max, z_max] = cf.bbox();
-        if x_min < extent_qc[0] { extent_qc[0] = x_min }
-        else if x_max > extent_qc[3] { extent_qc[3] = x_max }
-        if y_min < extent_qc[1] { extent_qc[1] = y_min }
-        else if y_max > extent_qc[4] { extent_qc[4] = y_max }
-        if z_min < extent_qc[2] { extent_qc[2] = z_min }
-        else if z_max > extent_qc[5] { extent_qc[5] = z_max }
+        if x_min < extent_qc[0] { extent_qc[0] = x_min } else if x_max > extent_qc[3] { extent_qc[3] = x_max }
+        if y_min < extent_qc[1] { extent_qc[1] = y_min } else if y_max > extent_qc[4] { extent_qc[4] = y_max }
+        if z_min < extent_qc[2] { extent_qc[2] = z_min } else if z_max > extent_qc[5] { extent_qc[5] = z_max }
         nr_features = nf;
     }
     debug!("extent_qc: {:?}", &extent_qc);
@@ -114,7 +128,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     debug!("extent real-world: {:?}", &extent_rw);
 
     // Init the grid from the extent
-    let cellsize = 200_u16;
     let mut grid = quadtree::SquareGrid::new(&extent_rw, cellsize);
     debug!("{}", grid);
 
@@ -130,8 +143,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Debug
-    debug!("exporting grid to working directory");
-    grid.export(&feature_set, &cm)?;
+    if do_export {
+        debug!("exporting grid to working directory");
+        grid.export(&feature_set, &cm)?;
+    }
 
     Ok(())
 }
