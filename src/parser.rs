@@ -11,14 +11,14 @@ use serde_json::{from_str};
 /// CityJSONFeatures.
 #[derive(Deserialize, Debug)]
 pub struct CityJSONMetadata {
-    transform: Transform,
+    pub transform: Transform,
     metadata: Metadata,
 }
 
 #[derive(Deserialize, Debug)]
-struct Transform {
-    scale: [f64; 3],
-    translate: [f64; 3],
+pub struct Transform {
+    pub scale: [f64; 3],
+    pub translate: [f64; 3],
 }
 
 #[derive(Deserialize, Debug)]

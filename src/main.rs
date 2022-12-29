@@ -89,19 +89,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Init the extent with from the first feature.
     let (mut nr_features, feature_path) = features_enum_iter.next().expect(".jsonl file should be accessible");
     let cf = parser::CityJSONFeatureVertices::from_file(feature_path)?;
-    let mut extent = cf.bbox();
+    let mut extent_qc = cf.bbox();
     for (nf, fp) in features_enum_iter {
         let cf = parser::CityJSONFeatureVertices::from_file(fp)?;
         let [x_min, y_min, z_min, x_max, y_max, z_max] = cf.bbox();
-        if x_min < extent[0] { extent[0] = x_min }
-        else if x_max > extent[3] { extent[3] = x_max }
-        if y_min < extent[1] { extent[1] = y_min }
-        else if y_max > extent[4] { extent[4] = y_max }
-        if z_min < extent[2] { extent[2] = z_min }
-        else if z_max > extent[5] { extent[5] = z_max }
+        if x_min < extent_qc[0] { extent_qc[0] = x_min }
+        else if x_max > extent_qc[3] { extent_qc[3] = x_max }
+        if y_min < extent_qc[1] { extent_qc[1] = y_min }
+        else if y_max > extent_qc[4] { extent_qc[4] = y_max }
+        if z_min < extent_qc[2] { extent_qc[2] = z_min }
+        else if z_max > extent_qc[5] { extent_qc[5] = z_max }
         nr_features = nf;
     }
 
+    println!("extent_qc: {:?}", &extent_qc);
+    let extent_rw_min = extent_qc[0..3].into_iter().enumerate().map(|(i, qc)| (*qc as f64 * cm.transform.scale[i]) + cm.transform.translate[i]);
+    let extent_rw_max = extent_qc[3..6].into_iter().enumerate().map(|(i, qc)| (*qc as f64 * cm.transform.scale[i]) + cm.transform.translate[i]);
+    let extent_rw: [f64; 6] = extent_rw_min.chain(extent_rw_max).collect::<Vec<f64>>().try_into().expect("should be able to create an [f64; 6] from the extent_rw vector");
+    println!("extent real-world: {:?}", &extent_rw);
 
     let feature_set_iter = WalkDir::new(&path_features).into_iter()
         .filter_map(jsonl_path_closure)
