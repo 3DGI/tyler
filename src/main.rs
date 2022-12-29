@@ -4,6 +4,7 @@ mod quadtree;
 use std::path::{Path};
 use std::fs;
 
+use log::{debug, error, info};
 use clap::{crate_version, Arg, Command};
 use walkdir::WalkDir;
 
@@ -13,6 +14,8 @@ static FORMATS: [&str; 1] = [
 
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    env_logger::init();
+
     let cmd = Command::new("tyler")
         .about("Create tiles from 3D city objects encoded as CityJSONFeatures.")
         .version(crate_version!())
@@ -61,7 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path_output = Path::new(matches.get_one::<String>("output").expect("required")).to_path_buf();
     if !path_output.is_dir() {
         fs::create_dir_all(&path_output)?;
-        println!("Created output directory {:#?}", &path_output);
+        info!("Created output directory {:#?}", &path_output);
     }
 
     let cm = parser::CityJSONMetadata::from_file(&path_metadata)?;
@@ -101,19 +104,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         else if z_max > extent_qc[5] { extent_qc[5] = z_max }
         nr_features = nf;
     }
-
-    println!("extent_qc: {:?}", &extent_qc);
+    debug!("extent_qc: {:?}", &extent_qc);
+    // Get the real-world coordinates for the extent
     let extent_rw_min = extent_qc[0..3].into_iter().enumerate().map(|(i, qc)| (*qc as f64 * cm.transform.scale[i]) + cm.transform.translate[i]);
     let extent_rw_max = extent_qc[3..6].into_iter().enumerate().map(|(i, qc)| (*qc as f64 * cm.transform.scale[i]) + cm.transform.translate[i]);
     let extent_rw: [f64; 6] = extent_rw_min.chain(extent_rw_max).collect::<Vec<f64>>().try_into().expect("should be able to create an [f64; 6] from the extent_rw vector");
-    println!("extent real-world: {:?}", &extent_rw);
+    debug!("extent real-world: {:?}", &extent_rw);
+
+    // Init the grid from the extent
+    let cellsize = 200_u16;
+    let mut grid = quadtree::SquareGrid::new(&extent_rw, cellsize);
+    debug!("{}", grid);
 
     let feature_set_iter = WalkDir::new(&path_features).into_iter()
         .filter_map(jsonl_path_closure)
         .map(|path| parser::CityJSONFeatureVertices::file_to_tuple(path))
         .filter_map(|res| res.ok());
-
-    let _: Vec<parser::FeatureTuple> = feature_set_iter.collect();
+    let mut feature_set: Vec<parser::Feature> = Vec::with_capacity(nr_features);
+    for (fid, feature) in feature_set_iter.enumerate() {
+        let centroid = feature.centroid(&cm);
+        let _ = grid.insert(&centroid, fid);
+        feature_set.push(feature);
+    }
 
     Ok(())
 }

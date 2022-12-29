@@ -157,6 +157,25 @@ For each node/leaf, done in parallel:
 3. convert to gltf with cjio
 4. write the gltf to the `.glb` path that is set in `tileset.json`
 
+#### Estimating memory use for a country like Netherlands
+
+The Netherlands extent: `Polygon ((13565.3984375 306846.1875, 278026.125 306846.1875, 278026.125 619315.6875, 13565.3984375 619315.6875, 13565.3984375 306846.1875))`
+
+y-side = 312469.5
+x-side = 264460.7
+
+Square grid: 312469.5 x 312469.5 meters.
+Assuming a cellsize of 600m (~600m is the smallest tile in the 3D BAG).
+Nr. cells = `ceil(312469.5/600) = 521^2 = 271441`.
+
+We store the square grid in 3D vector, where the 3rd dimension is the cell contents.
+So we have one vector for the x-side, one vector for each y "column", and one vector for each cell that stores the pointers to the features.
+The features are stored in a separate container and grid cell stores pointers to them.
+So we have 1 + 521 + 271441 vectors, plus number of features x `usize`.
+An empty Vec is 128bit, and let's assume 10mio features which are all the buildings in the Netherlands.
+
+Then a square grid with 600m cells, covering the Netherlands and indexing 10mio features is `(1 + 521 + 271441) × 128 + 10000000 × 64` bits = 84.35Mb.
+
 #### Merging CityJSONFeatures in Python and writing gltf
 
 A simple cjio-based script merges a list of `.city.jsonl` files and exports a `.glb` from it.

@@ -87,10 +87,10 @@ impl CityJSONFeatureVertices {
     /// Feature centroid (2D) computed as the average coordinate.
     /// The centroid coordinates are real-world coordinates (thus they are transformed back to
     /// real-world coordinates from the quantized coordinates).
-    fn centroid(&self, transform: &Transform) -> (f64, f64) {
+    fn centroid(&self, transform: &Transform) -> [f64; 2] {
         let [ctr_x, ctr_y] = self.centroid_quantized();
-        ((ctr_x as f64 * transform.scale[0]) + transform.translate[0],
-         (ctr_y as f64 * transform.scale[1]) + transform.translate[1])
+        [(ctr_x as f64 * transform.scale[0]) + transform.translate[0],
+         (ctr_y as f64 * transform.scale[1]) + transform.translate[1]]
     }
 
     /// Compute the 3D bounding box of the feature.
@@ -133,16 +133,30 @@ impl CityJSONFeatureVertices {
     }
 
     /// Extracts some information from the CityJSONFeature and returns a tuple with them.
-    pub fn file_to_tuple<P: AsRef<Path>>(path: P) -> Result<FeatureTuple, Box<dyn std::error::Error>> {
+    pub fn file_to_tuple<P: AsRef<Path>>(path: P) -> Result<Feature, Box<dyn std::error::Error>> {
         let cf: CityJSONFeatureVertices = Self::from_file(path.as_ref())?;
-        let center = cf.centroid_quantized();
-        Ok((quadtree::morton_encode(&(center[0] as f64), &(center[1] as f64)), cf.vertex_count(), path.as_ref().to_path_buf()))
+        Ok(Feature{
+            centroid_quantized: cf.centroid_quantized(),
+            nr_vertices: cf.vertex_count(),
+            path_jsonl: path.as_ref().to_path_buf(),
+        })
     }
 }
 
 /// Stores the information that is computed from a CityJSONFeature.
-/// (morton code of centroid, vertex count, path to the file)
-pub type FeatureTuple = (u128, u16, PathBuf);
+pub struct Feature {
+    centroid_quantized: [i32;2],
+    nr_vertices: u16,
+    path_jsonl: PathBuf
+}
+
+impl Feature {
+    pub fn centroid(&self, cm: &CityJSONMetadata) -> [f64; 2] {
+        let [ctr_x, ctr_y] = self.centroid_quantized;
+        [(ctr_x as f64 * cm.transform.scale[0]) + cm.transform.translate[0],
+         (ctr_y as f64 * cm.transform.scale[1]) + cm.transform.translate[1]]
+    }
+}
 
 
 #[cfg(test)]
