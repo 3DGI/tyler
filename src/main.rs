@@ -12,6 +12,8 @@ static FORMATS: [&str; 1] = [
     "3dtiles",
 ];
 
+type FeatureSet = Vec<parser::Feature>;
+
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
@@ -120,12 +122,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .filter_map(jsonl_path_closure)
         .map(|path| parser::CityJSONFeatureVertices::file_to_tuple(path))
         .filter_map(|res| res.ok());
-    let mut feature_set: Vec<parser::Feature> = Vec::with_capacity(nr_features);
+    let mut feature_set: FeatureSet = Vec::with_capacity(nr_features);
     for (fid, feature) in feature_set_iter.enumerate() {
         let centroid = feature.centroid(&cm);
-        let _ = grid.insert(&centroid, fid);
+        grid.insert(&centroid, fid);
         feature_set.push(feature);
     }
+
+    // Debug
+    debug!("exporting grid to working directory");
+    grid.export(&feature_set, &cm)?;
 
     Ok(())
 }

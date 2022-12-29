@@ -1,4 +1,6 @@
 use std::fmt::{Display, Formatter};
+use std::fs::File;
+use std::io::prelude::*;
 
 pub fn morton_encode(x: &f64, y: &f64) -> u128 {
     1
@@ -100,6 +102,36 @@ impl SquareGrid {
         let cell_id = self.locate_point(point);
         self.data[cell_id[0]][cell_id[1]].push(feature_id);
         cell_id
+    }
+
+    /// Exports the grid and the feature centroids into TSV files into the working directory.
+    /// Two files are created, `grid.tsv` and `features.tsv`.
+    pub fn export(&self, feature_set: &crate::FeatureSet, cm: &crate::parser::CityJSONMetadata) -> std::io::Result<()> {
+        let mut file_grid = File::create("grid.tsv")?;
+        let mut file_features = File::create("features.tsv")?;
+
+        for (col_i, col) in self.data.iter().enumerate() {
+            for (row_i, cell) in col.iter().enumerate() {
+                let wkt = self.cell_to_wkt(&row_i, &col_i);
+                file_grid.write_all(format!("{}-{}\t{}\n", &row_i, &col_i, wkt).as_bytes()).expect("cannot write grid line");
+                let mut cellbuffer = String::new();
+                for fid in cell {
+                    let f = &feature_set[*fid];
+                    let centroid = f.centroid(cm);
+                    cellbuffer += format!("{}\t{}-{}\tPOINT({} {})\n", fid, &row_i, &col_i, centroid[0], centroid[1]).as_str();
+                }
+                file_features.write_all(cellbuffer.as_bytes()).expect("cannot write cell contents");
+            }
+        }
+        Ok(())
+    }
+
+    fn cell_to_wkt(&self, row_i: &usize, col_i: &usize) -> String {
+        let minx = self.origin[0] + (row_i * self.cellsize as usize) as f64;
+        let miny = self.origin[1] + (col_i * self.cellsize as usize) as f64;
+        format!("POLYGON(({minx} {miny}, {maxx} {miny}, {maxx} {maxy}, {minx} {maxy}, {minx} {miny}))",
+                minx=minx, miny=miny,
+                maxx=minx + self.cellsize as f64, maxy=miny + self.cellsize as f64)
     }
 }
 
