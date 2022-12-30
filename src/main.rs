@@ -1,15 +1,17 @@
 mod parser;
 mod quadtree;
 
-use std::path::{Path};
+use std::path::{Path, PathBuf};
 use std::fs;
 
 use log::{debug, error, info};
 use clap::{crate_version, Arg, ArgAction, Command};
 use walkdir::WalkDir;
+use subprocess::{Exec, Redirection};
 
-static FORMATS: [&str; 1] = [
+static FORMATS: [&str; 2] = [
     "3dtiles",
+    "cityjson"
 ];
 
 type FeatureSet = Vec<parser::Feature>;
@@ -65,6 +67,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .default_value("200")
                 .value_parser(clap::value_parser!(u16))
                 .help("Set the cell size for the square grid.")
+        )
+        .arg(
+            Arg::new("python")
+                .long("python-bin")
+                .default_value("python3")
+                .value_parser(clap::value_parser!(String))
+                .help("Path to the python interpreter (>=3.8) to use for converting the CityJSONFeatures to the target format. The interpreter must have a recent [cjio](https://github.com/cityjson/cjio) installed.")
         );
     let matches = cmd.get_matches();
 
@@ -81,10 +90,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         fs::create_dir_all(&path_output)?;
         info!("Created output directory {:#?}", &path_output);
     }
+    let output_format = matches.get_one::<String>("format").expect("format is required").as_str();
     let do_export = matches.contains_id("export");
-    let cellsize: u16 = if matches.contains_id("cellsize") {
-        *matches.get_one::<u16>("cellsize").expect("could not parse the 'cellsize' argument to u16")
-    } else { 200_u16 };
+    let cellsize: u16 = *matches.get_one::<u16>("cellsize").expect("could not parse the 'cellsize' argument to u16");
+    let python_bin = matches.get_one::<String>("python").expect("could not parse the python interpreter path from the arguments").as_str();
 
     let cm = parser::CityJSONMetadata::from_file(&path_metadata)?;
 
@@ -120,6 +129,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if z_min < extent_qc[2] { extent_qc[2] = z_min } else if z_max > extent_qc[5] { extent_qc[5] = z_max }
         nr_features = nf;
     }
+    debug!("found {} features", nr_features);
     debug!("extent_qc: {:?}", &extent_qc);
     // Get the real-world coordinates for the extent
     let extent_rw_min = extent_qc[0..3].into_iter().enumerate().map(|(i, qc)| (*qc as f64 * cm.transform.scale[i]) + cm.transform.translate[i]);
@@ -146,6 +156,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if do_export {
         debug!("exporting grid to working directory");
         grid.export(&feature_set, &cm)?;
+    }
+
+    // Export by calling a python subprocess to merge the .jsonl files and convert them to the
+    // target format
+    let python_script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("resources")
+        .join("python")
+        .join("convert_cityjsonfeatures.py");
+
+    let output_extension = match output_format {
+        "3dtiles" => "glb",
+        "cityjson" => "city.json",
+        _ => ""
+    };
+
+    // TODO: would be much nicer if SquareGrid implements an Iterator that returns a (CellID, Cell)
+    for (col_i, col) in grid.data.iter().enumerate() {
+        for (row_i, cell) in col.iter().enumerate() {
+            if cell.is_empty() { continue }
+            let mut feature_paths: Vec<String> = Vec::with_capacity(cell.len());
+            feature_paths = cell.iter()
+                .map(|fid| feature_set[*fid].path_jsonl.clone().into_os_string().into_string().unwrap())
+                .collect();
+            let file_name = format!("{}-{}", row_i, col_i);
+            let output_file = path_output.join(file_name).with_extension(output_extension);
+            info!("converting {}-{}", row_i, col_i);
+            let exit_status = Exec::cmd(python_bin)
+                .arg(&python_script)
+                .arg(output_format)
+                .arg(output_file)
+                .arg(&path_metadata)
+                .arg(feature_paths.join(","))
+                .stdout(Redirection::Pipe)
+                .stderr(Redirection::Merge)
+                .capture()?
+                .stdout_str();
+            debug!("{}", exit_status);
+        }
     }
 
     Ok(())

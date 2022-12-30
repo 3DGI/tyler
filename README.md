@@ -11,6 +11,7 @@ As input, *tyler* takes [CityJSON Features](https://www.cityjson.org/specs/1.1.3
 As output, *tyler* can create:
 
 - 3D Tiles
+- CityJSON tiles
 
 ## Usage
 
@@ -34,6 +35,19 @@ tyler \
   --output directory_for_output \
   --format 3dtiles
 ```
+
+### Python
+
+Currently, *tyler* requires python, more specifically [cjio](https://github.com/cityjson/cjio) to convert merge the CityJSONFeatures into tiles and convert them to the target format.
+By default, *tyler* uses the system python interpreter at `python3`.
+However, with the `--python-bin` option you can provide the path to an alternative interpreter, for instance from a virtualenv where you have installed *cjio*.
+
+```shell
+tyler \
+  --python-bin /my/venv/bin/python
+  ...
+```
+
 
 ## Algorithm
 
@@ -213,6 +227,8 @@ An empty Vec is 128bit, and let's assume 10mio features which are all the buildi
 Then a square grid with 600m cells, covering the Netherlands and indexing 10mio features is `(1 + 521 + 271441) × 128 + 10000000 × 64` bits = 84.35Mb.
 
 #### Merging CityJSONFeatures in Python and writing gltf
+
+The script below has been integrated into *tyler*, and it is stored in `resources/python/convert_cityjsonfeatures.py`.
 
 A simple cjio-based script merges a list of `.city.jsonl` files and exports a `.glb` from it.
 

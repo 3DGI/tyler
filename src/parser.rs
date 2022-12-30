@@ -147,7 +147,7 @@ impl CityJSONFeatureVertices {
 pub struct Feature {
     centroid_quantized: [i32;2],
     nr_vertices: u16,
-    path_jsonl: PathBuf
+    pub path_jsonl: PathBuf
 }
 
 impl Feature {

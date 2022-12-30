@@ -46,7 +46,7 @@ pub struct SquareGrid {
     origin: [f64; 2],
     nr_cells: usize,
     cellsize: u16,
-    data: Vec<Vec<Cell>>,
+    pub data: Vec<Vec<Cell>>,
 }
 
 impl Display for SquareGrid {
