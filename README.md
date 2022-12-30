@@ -36,6 +36,14 @@ tyler \
   --format 3dtiles
 ```
 
+Execution logs are outputted to the console.
+You can control the loging level (`debug`, `info`, `error`) by setting the `RUST_LOG` environment variable.
+For instance turn on the debug messages.
+
+```shell
+RUST_LOG=debug tyler ...
+```
+
 ### Python
 
 Currently, *tyler* requires python, more specifically [cjio](https://github.com/cityjson/cjio) to convert merge the CityJSONFeatures into tiles and convert them to the target format.
@@ -47,6 +55,7 @@ tyler \
   --python-bin /my/venv/bin/python
   ...
 ```
+
 
 
 ## Algorithm

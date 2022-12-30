@@ -44,7 +44,7 @@ pub fn morton_encode(x: &f64, y: &f64) -> u128 {
 #[derive(Debug)]
 pub struct SquareGrid {
     origin: [f64; 2],
-    nr_cells: usize,
+    pub nr_cells: usize,
     cellsize: u16,
     pub data: Vec<Vec<Cell>>,
 }
@@ -136,7 +136,7 @@ impl SquareGrid {
 }
 
 type Cell = Vec<usize>;
-type CellId = [usize; 2];
+pub type CellId = [usize; 2];
 
 #[cfg(test)]
 mod tests {

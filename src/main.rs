@@ -8,6 +8,7 @@ use log::{debug, error, info};
 use clap::{crate_version, Arg, ArgAction, Command};
 use walkdir::WalkDir;
 use subprocess::{Exec, Redirection};
+use rayon::prelude::*;
 
 static FORMATS: [&str; 2] = [
     "3dtiles",
@@ -172,29 +173,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // TODO: would be much nicer if SquareGrid implements an Iterator that returns a (CellID, Cell)
+    let mut cellids: Vec<quadtree::CellId> = Vec::with_capacity(grid.nr_cells^2);
     for (col_i, col) in grid.data.iter().enumerate() {
         for (row_i, cell) in col.iter().enumerate() {
-            if cell.is_empty() { continue }
-            let mut feature_paths: Vec<String> = Vec::with_capacity(cell.len());
-            feature_paths = cell.iter()
-                .map(|fid| feature_set[*fid].path_jsonl.clone().into_os_string().into_string().unwrap())
-                .collect();
-            let file_name = format!("{}-{}", row_i, col_i);
-            let output_file = path_output.join(file_name).with_extension(output_extension);
-            info!("converting {}-{}", row_i, col_i);
-            let exit_status = Exec::cmd(python_bin)
-                .arg(&python_script)
-                .arg(output_format)
-                .arg(output_file)
-                .arg(&path_metadata)
-                .arg(feature_paths.join(","))
-                .stdout(Redirection::Pipe)
-                .stderr(Redirection::Merge)
-                .capture()?
-                .stdout_str();
-            debug!("{}", exit_status);
+            cellids.push([row_i, col_i])
         }
     }
+    cellids.into_par_iter()
+        .for_each(|cellid| {
+            let cell = &grid.data[cellid[0]][cellid[1]];
+            if !cell.is_empty() {
+                let mut feature_paths: Vec<String> = Vec::with_capacity(cell.len());
+                feature_paths = cell.iter()
+                    .map(|fid| feature_set[*fid].path_jsonl.clone().into_os_string().into_string().unwrap())
+                    .collect();
+                let file_name = format!("{}-{}", cellid[0], cellid[1]);
+                let output_file = path_output.join(file_name).with_extension(output_extension);
+                info!("converting {}-{}", cellid[0], cellid[1]);
+                let exit_status = Exec::cmd(python_bin)
+                    .arg(&python_script)
+                    .arg(output_format)
+                    .arg(output_file)
+                    .arg(&path_metadata)
+                    .arg(feature_paths.join(","))
+                    .stdout(Redirection::Pipe)
+                    .stderr(Redirection::Merge)
+                    .capture()
+                    .unwrap()
+                    .stdout_str();
+                debug!("{}", exit_status);
+                }
+        });
 
     Ok(())
 }
