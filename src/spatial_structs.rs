@@ -1,3 +1,4 @@
+//! Spatial data structures for indexing the features.
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::prelude::*;

@@ -1,4 +1,4 @@
-use crate::quadtree;
+use crate::spatial_structs;
 
 use std::fs::{read_to_string};
 use std::path::{Path, PathBuf};

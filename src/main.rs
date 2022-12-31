@@ -1,22 +1,19 @@
+mod formats;
 mod parser;
-mod quadtree;
+mod spatial_structs;
 
-use std::path::{Path, PathBuf};
 use std::fs;
+use std::path::{Path, PathBuf};
 
-use log::{debug, error, info};
 use clap::{crate_version, Arg, ArgAction, Command};
-use walkdir::WalkDir;
-use subprocess::{Exec, Redirection};
+use log::{debug, error, info};
 use rayon::prelude::*;
+use subprocess::{Exec, Redirection};
+use walkdir::WalkDir;
 
-static FORMATS: [&str; 2] = [
-    "3dtiles",
-    "cityjson"
-];
+static FORMATS: [&str; 2] = ["3dtiles", "cityjson"];
 
 type FeatureSet = Vec<parser::Feature>;
-
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
@@ -81,20 +78,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path_metadata = Path::new(matches.get_one::<String>("metadata").expect("required"))
         .canonicalize()
         .expect("Could not find the METADATA file.");
-    if !path_metadata.is_file() { panic!("METADATA must be an existing file") }
+    if !path_metadata.is_file() {
+        panic!("METADATA must be an existing file")
+    }
     let path_features = Path::new(matches.get_one::<String>("features").expect("required"))
         .canonicalize()
         .expect("Could not find the FEATURES directory.");
-    if !path_features.is_dir() { panic!("FEATURES must be an existing directory") }
-    let path_output = Path::new(matches.get_one::<String>("output").expect("required")).to_path_buf();
+    if !path_features.is_dir() {
+        panic!("FEATURES must be an existing directory")
+    }
+    let path_output =
+        Path::new(matches.get_one::<String>("output").expect("required")).to_path_buf();
     if !path_output.is_dir() {
         fs::create_dir_all(&path_output)?;
         info!("Created output directory {:#?}", &path_output);
     }
-    let output_format = matches.get_one::<String>("format").expect("format is required").as_str();
+    let output_format = matches
+        .get_one::<String>("format")
+        .expect("format is required")
+        .as_str();
     let do_export = matches.contains_id("export");
-    let cellsize: u16 = *matches.get_one::<u16>("cellsize").expect("could not parse the 'cellsize' argument to u16");
-    let python_bin = matches.get_one::<String>("python").expect("could not parse the python interpreter path from the arguments").as_str();
+    let cellsize: u16 = *matches
+        .get_one::<u16>("cellsize")
+        .expect("could not parse the 'cellsize' argument to u16");
+    let python_bin = matches
+        .get_one::<String>("python")
+        .expect("could not parse the python interpreter path from the arguments")
+        .as_str();
 
     let cm = parser::CityJSONMetadata::from_file(&path_metadata)?;
 
@@ -104,8 +114,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(ext) = entry.path().extension() {
                 if ext == "jsonl" {
                     Some(entry.path().to_path_buf())
-                } else { None }
-            } else { None }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
         } else {
             // TODO: notify the user if some path cannot be accessed (eg. permission), https://docs.rs/walkdir/latest/walkdir/struct.Error.html
             None
@@ -119,30 +133,55 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .filter_map(jsonl_path_closure)
         .enumerate();
     // Init the extent with from the first feature.
-    let (mut nr_features, feature_path) = features_enum_iter.next().expect(".jsonl file should be accessible");
+    let (mut nr_features, feature_path) = features_enum_iter
+        .next()
+        .expect(".jsonl file should be accessible");
     let cf = parser::CityJSONFeatureVertices::from_file(feature_path)?;
     let mut extent_qc = cf.bbox();
     for (nf, fp) in features_enum_iter {
         let cf = parser::CityJSONFeatureVertices::from_file(fp)?;
         let [x_min, y_min, z_min, x_max, y_max, z_max] = cf.bbox();
-        if x_min < extent_qc[0] { extent_qc[0] = x_min } else if x_max > extent_qc[3] { extent_qc[3] = x_max }
-        if y_min < extent_qc[1] { extent_qc[1] = y_min } else if y_max > extent_qc[4] { extent_qc[4] = y_max }
-        if z_min < extent_qc[2] { extent_qc[2] = z_min } else if z_max > extent_qc[5] { extent_qc[5] = z_max }
+        if x_min < extent_qc[0] {
+            extent_qc[0] = x_min
+        } else if x_max > extent_qc[3] {
+            extent_qc[3] = x_max
+        }
+        if y_min < extent_qc[1] {
+            extent_qc[1] = y_min
+        } else if y_max > extent_qc[4] {
+            extent_qc[4] = y_max
+        }
+        if z_min < extent_qc[2] {
+            extent_qc[2] = z_min
+        } else if z_max > extent_qc[5] {
+            extent_qc[5] = z_max
+        }
         nr_features = nf;
     }
     debug!("found {} features", nr_features);
     debug!("extent_qc: {:?}", &extent_qc);
     // Get the real-world coordinates for the extent
-    let extent_rw_min = extent_qc[0..3].into_iter().enumerate().map(|(i, qc)| (*qc as f64 * cm.transform.scale[i]) + cm.transform.translate[i]);
-    let extent_rw_max = extent_qc[3..6].into_iter().enumerate().map(|(i, qc)| (*qc as f64 * cm.transform.scale[i]) + cm.transform.translate[i]);
-    let extent_rw: [f64; 6] = extent_rw_min.chain(extent_rw_max).collect::<Vec<f64>>().try_into().expect("should be able to create an [f64; 6] from the extent_rw vector");
+    let extent_rw_min = extent_qc[0..3]
+        .into_iter()
+        .enumerate()
+        .map(|(i, qc)| (*qc as f64 * cm.transform.scale[i]) + cm.transform.translate[i]);
+    let extent_rw_max = extent_qc[3..6]
+        .into_iter()
+        .enumerate()
+        .map(|(i, qc)| (*qc as f64 * cm.transform.scale[i]) + cm.transform.translate[i]);
+    let extent_rw: [f64; 6] = extent_rw_min
+        .chain(extent_rw_max)
+        .collect::<Vec<f64>>()
+        .try_into()
+        .expect("should be able to create an [f64; 6] from the extent_rw vector");
     debug!("extent real-world: {:?}", &extent_rw);
 
     // Init the grid from the extent
-    let mut grid = quadtree::SquareGrid::new(&extent_rw, cellsize);
+    let mut grid = spatial_structs::SquareGrid::new(&extent_rw, cellsize);
     debug!("{}", grid);
 
-    let feature_set_iter = WalkDir::new(&path_features).into_iter()
+    let feature_set_iter = WalkDir::new(&path_features)
+        .into_iter()
         .filter_map(jsonl_path_closure)
         .map(|path| parser::CityJSONFeatureVertices::file_to_tuple(path))
         .filter_map(|res| res.ok());
@@ -169,41 +208,48 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let output_extension = match output_format {
         "3dtiles" => "glb",
         "cityjson" => "city.json",
-        _ => ""
+        _ => "",
     };
 
     // TODO: would be much nicer if SquareGrid implements an Iterator that returns a (CellID, Cell)
-    let mut cellids: Vec<quadtree::CellId> = Vec::with_capacity(grid.nr_cells^2);
+    let mut cellids: Vec<spatial_structs::CellId> = Vec::with_capacity(grid.nr_cells ^ 2);
     for (col_i, col) in grid.data.iter().enumerate() {
         for (row_i, cell) in col.iter().enumerate() {
             cellids.push([row_i, col_i])
         }
     }
-    cellids.into_par_iter()
-        .for_each(|cellid| {
-            let cell = &grid.data[cellid[0]][cellid[1]];
-            if !cell.is_empty() {
-                let mut feature_paths: Vec<String> = Vec::with_capacity(cell.len());
-                feature_paths = cell.iter()
-                    .map(|fid| feature_set[*fid].path_jsonl.clone().into_os_string().into_string().unwrap())
-                    .collect();
-                let file_name = format!("{}-{}", cellid[0], cellid[1]);
-                let output_file = path_output.join(file_name).with_extension(output_extension);
-                info!("converting {}-{}", cellid[0], cellid[1]);
-                let exit_status = Exec::cmd(python_bin)
-                    .arg(&python_script)
-                    .arg(output_format)
-                    .arg(output_file)
-                    .arg(&path_metadata)
-                    .arg(feature_paths.join(","))
-                    .stdout(Redirection::Pipe)
-                    .stderr(Redirection::Merge)
-                    .capture()
-                    .unwrap()
-                    .stdout_str();
-                debug!("{}", exit_status);
-                }
-        });
+    cellids.into_par_iter().for_each(|cellid| {
+        let cell = &grid.data[cellid[0]][cellid[1]];
+        if !cell.is_empty() {
+            let mut feature_paths: Vec<String> = Vec::with_capacity(cell.len());
+            feature_paths = cell
+                .iter()
+                .map(|fid| {
+                    feature_set[*fid]
+                        .path_jsonl
+                        .clone()
+                        .into_os_string()
+                        .into_string()
+                        .unwrap()
+                })
+                .collect();
+            let file_name = format!("{}-{}", cellid[0], cellid[1]);
+            let output_file = path_output.join(file_name).with_extension(output_extension);
+            info!("converting {}-{}", cellid[0], cellid[1]);
+            let exit_status = Exec::cmd(python_bin)
+                .arg(&python_script)
+                .arg(output_format)
+                .arg(output_file)
+                .arg(&path_metadata)
+                .arg(feature_paths.join(","))
+                .stdout(Redirection::Pipe)
+                .stderr(Redirection::Merge)
+                .capture()
+                .unwrap()
+                .stdout_str();
+            debug!("{}", exit_status);
+        }
+    });
 
     Ok(())
 }
