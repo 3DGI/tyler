@@ -15,6 +15,10 @@ static FORMATS: [&str; 2] = ["3dtiles", "cityjson"];
 
 type FeatureSet = Vec<parser::Feature>;
 
+/// 3D bounding box.
+/// [min x, min y, min z, max x, max y, max z]
+pub type Bbox = [f64; 6];
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
 
@@ -197,6 +201,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         debug!("exporting grid to working directory");
         grid.export(&feature_set, &cm)?;
     }
+
+    // 3D Tiles
+    let mut tileset = formats::cesium3dtiles::Tileset::from(&grid);
 
     // Export by calling a python subprocess to merge the .jsonl files and convert them to the
     // target format

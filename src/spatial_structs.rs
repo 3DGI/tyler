@@ -45,6 +45,7 @@ pub fn morton_encode(x: &f64, y: &f64) -> u128 {
 #[derive(Debug)]
 pub struct SquareGrid {
     origin: [f64; 2],
+    pub bbox: crate::Bbox,
     pub nr_cells: usize,
     cellsize: u16,
     pub data: Vec<Vec<Cell>>,
@@ -52,8 +53,11 @@ pub struct SquareGrid {
 
 impl Display for SquareGrid {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "SquareGrid (origin: {:?}, nr_cells: {}, cellsize: {}, data: not-displayed)",
-               self.origin, self.nr_cells, self.cellsize)
+        write!(
+            f,
+            "SquareGrid (origin: {:?}, nr_cells: {}, cellsize: {}, data: not-displayed)",
+            self.origin, self.nr_cells, self.cellsize
+        )
     }
 }
 
@@ -62,7 +66,7 @@ impl SquareGrid {
     /// The grid and the cells are square.
     /// The grid origin is the `extent` origin.
     /// The grid is returned as an origin coordinate and the number of cells.
-    pub fn new(extent: &[f64; 6], cellsize: u16) -> Self {
+    pub fn new(extent: &crate::Bbox, cellsize: u16) -> Self {
         // Add some buffer to the extent, to make sure all points will be within the grid.
         // We are assuming quantized, metric coordinates with a scaling factor of 0.001, thus
         // 10 units translates to 10mm.
@@ -77,13 +81,21 @@ impl SquareGrid {
         // column create a cell to store the feature IDs.
         // We create the vectors with length nr_cells+1, because we use `ceil` to determine the
         // point location in the grid.
-        row.resize_with(nr_cells+1, || {
+        row.resize_with(nr_cells + 1, || {
             let mut column: Vec<Vec<usize>> = Vec::with_capacity(nr_cells);
-            column.resize(nr_cells+1, Vec::new());
+            column.resize(nr_cells + 1, Vec::new());
             column
         });
         Self {
             origin: [extent[0] - buffer, extent[1] - buffer],
+            bbox: [
+                extent[0] - buffer,
+                extent[1] - buffer,
+                extent[2] - buffer,
+                extent[3] + buffer,
+                extent[4] + buffer,
+                extent[5] + buffer,
+            ],
             nr_cells,
             cellsize,
             data: row,
@@ -107,21 +119,33 @@ impl SquareGrid {
 
     /// Exports the grid and the feature centroids into TSV files into the working directory.
     /// Two files are created, `grid.tsv` and `features.tsv`.
-    pub fn export(&self, feature_set: &crate::FeatureSet, cm: &crate::parser::CityJSONMetadata) -> std::io::Result<()> {
+    pub fn export(
+        &self,
+        feature_set: &crate::FeatureSet,
+        cm: &crate::parser::CityJSONMetadata,
+    ) -> std::io::Result<()> {
         let mut file_grid = File::create("grid.tsv")?;
         let mut file_features = File::create("features.tsv")?;
 
         for (col_i, col) in self.data.iter().enumerate() {
             for (row_i, cell) in col.iter().enumerate() {
                 let wkt = self.cell_to_wkt(&row_i, &col_i);
-                file_grid.write_all(format!("{}-{}\t{}\n", &row_i, &col_i, wkt).as_bytes()).expect("cannot write grid line");
+                file_grid
+                    .write_all(format!("{}-{}\t{}\n", &row_i, &col_i, wkt).as_bytes())
+                    .expect("cannot write grid line");
                 let mut cellbuffer = String::new();
                 for fid in cell {
                     let f = &feature_set[*fid];
                     let centroid = f.centroid(cm);
-                    cellbuffer += format!("{}\t{}-{}\tPOINT({} {})\n", fid, &row_i, &col_i, centroid[0], centroid[1]).as_str();
+                    cellbuffer += format!(
+                        "{}\t{}-{}\tPOINT({} {})\n",
+                        fid, &row_i, &col_i, centroid[0], centroid[1]
+                    )
+                    .as_str();
                 }
-                file_features.write_all(cellbuffer.as_bytes()).expect("cannot write cell contents");
+                file_features
+                    .write_all(cellbuffer.as_bytes())
+                    .expect("cannot write cell contents");
             }
         }
         Ok(())
@@ -130,9 +154,13 @@ impl SquareGrid {
     fn cell_to_wkt(&self, row_i: &usize, col_i: &usize) -> String {
         let minx = self.origin[0] + (row_i * self.cellsize as usize) as f64;
         let miny = self.origin[1] + (col_i * self.cellsize as usize) as f64;
-        format!("POLYGON(({minx} {miny}, {maxx} {miny}, {maxx} {maxy}, {minx} {maxy}, {minx} {miny}))",
-                minx=minx, miny=miny,
-                maxx=minx + self.cellsize as f64, maxy=miny + self.cellsize as f64)
+        format!(
+            "POLYGON(({minx} {miny}, {maxx} {miny}, {maxx} {maxy}, {minx} {maxy}, {minx} {miny}))",
+            minx = minx,
+            miny = miny,
+            maxx = minx + self.cellsize as f64,
+            maxy = miny + self.cellsize as f64
+        )
     }
 }
 

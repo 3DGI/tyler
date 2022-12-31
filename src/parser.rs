@@ -1,10 +1,10 @@
 use crate::spatial_structs;
 
-use std::fs::{read_to_string};
+use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
-use serde_json::{from_str};
+use serde_json::from_str;
 
 /// A partial [CityJSON object](https://www.cityjson.org/specs/1.1.3/#cityjson-object).
 /// It is partial, because we only store the metadata that is necessary for parsing the
@@ -49,9 +49,7 @@ impl CityJSONMetadata {
     }
 }
 
-
 impl CityJSONFeatureVertices {
-
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {
         let cf_str = read_to_string(path.as_ref())?;
         let cf: CityJSONFeatureVertices = from_str(&cf_str)?;
@@ -69,10 +67,10 @@ impl CityJSONFeatureVertices {
     /// coordinates.
     /// It is more efficient to apply the transformation once, when the centroid is computed, than
     /// applying it to each vertex in the loop of computing the average coordinate.
-    fn centroid_quantized(&self) -> [i32;2] {
+    fn centroid_quantized(&self) -> [i32; 2] {
         let mut x_sum: i64 = 0;
         let mut y_sum: i64 = 0;
-        for [x,y,z] in self.vertices.iter() {
+        for [x, y, z] in self.vertices.iter() {
             x_sum = x_sum + *x as i64;
             y_sum = y_sum + *y as i64;
         }
@@ -81,7 +79,10 @@ impl CityJSONFeatureVertices {
         // real-world coordinates. Thus, when the quantized centroid is scaled to the real-world
         // coordinate with a factor `< 0` (eg. 0.001), we will get accurate-enough coordinates
         // for the centroid.
-        [(x_sum / self.vertices.len() as i64) as i32, (y_sum / self.vertices.len() as i64) as i32]
+        [
+            (x_sum / self.vertices.len() as i64) as i32,
+            (y_sum / self.vertices.len() as i64) as i32,
+        ]
     }
 
     /// Feature centroid (2D) computed as the average coordinate.
@@ -89,21 +90,33 @@ impl CityJSONFeatureVertices {
     /// real-world coordinates from the quantized coordinates).
     fn centroid(&self, transform: &Transform) -> [f64; 2] {
         let [ctr_x, ctr_y] = self.centroid_quantized();
-        [(ctr_x as f64 * transform.scale[0]) + transform.translate[0],
-         (ctr_y as f64 * transform.scale[1]) + transform.translate[1]]
+        [
+            (ctr_x as f64 * transform.scale[0]) + transform.translate[0],
+            (ctr_y as f64 * transform.scale[1]) + transform.translate[1],
+        ]
     }
 
     /// Compute the 3D bounding box of the feature.
-    pub fn bbox(&self) -> [i32;6] {
+    /// Returns quantized coordinates.
+    pub fn bbox(&self) -> [i32; 6] {
         let [mut x_min, mut y_min, mut z_min] = self.vertices[0].clone();
         let [mut x_max, mut y_max, mut z_max] = self.vertices[0].clone();
-        for [x,y,z] in self.vertices.iter() {
-            if *x < x_min { x_min = x.clone() }
-            else if *x > x_max { x_max = x.clone() }
-            if *y < y_min { y_min = y.clone() }
-            else if *y > y_max { y_max = y.clone() }
-            if *z < z_min { z_min = z.clone() }
-            else if *z > z_max { z_max = z.clone() }
+        for [x, y, z] in self.vertices.iter() {
+            if *x < x_min {
+                x_min = x.clone()
+            } else if *x > x_max {
+                x_max = x.clone()
+            }
+            if *y < y_min {
+                y_min = y.clone()
+            } else if *y > y_max {
+                y_max = y.clone()
+            }
+            if *z < z_min {
+                z_min = z.clone()
+            } else if *z > z_max {
+                z_max = z.clone()
+            }
         }
         [x_min, y_min, z_min, x_max, y_max, z_max]
     }
@@ -112,20 +125,29 @@ impl CityJSONFeatureVertices {
     ///
     /// Combines the [centroid_quantized] and [bbox] methods to compute the values in a single
     /// loop over the vertices.
-    fn centroid_quantized_bbox(&self) -> [i32;8] {
+    fn centroid_quantized_bbox(&self) -> [i32; 8] {
         let mut x_sum: i32 = 0;
         let mut y_sum: i32 = 0;
         let [mut x_min, mut y_min, mut z_min] = self.vertices[0].clone();
         let [mut x_max, mut y_max, mut z_max] = self.vertices[0].clone();
-        for [x,y,z] in self.vertices.iter() {
+        for [x, y, z] in self.vertices.iter() {
             x_sum = x_sum + x;
             y_sum = y_sum + y;
-            if *x < x_min { x_min = x.clone() }
-            else if *x > x_max { x_max = x.clone() }
-            if *y < y_min { y_min = y.clone() }
-            else if *y > y_max { y_max = y.clone() }
-            if *z < z_min { z_min = z.clone() }
-            else if *z > z_max { z_max = z.clone() }
+            if *x < x_min {
+                x_min = x.clone()
+            } else if *x > x_max {
+                x_max = x.clone()
+            }
+            if *y < y_min {
+                y_min = y.clone()
+            } else if *y > y_max {
+                y_max = y.clone()
+            }
+            if *z < z_min {
+                z_min = z.clone()
+            } else if *z > z_max {
+                z_max = z.clone()
+            }
         }
         let x_ctr = x_sum / self.vertices.len() as i32;
         let y_ctr = y_sum / self.vertices.len() as i32;
@@ -135,7 +157,7 @@ impl CityJSONFeatureVertices {
     /// Extracts some information from the CityJSONFeature and returns a tuple with them.
     pub fn file_to_tuple<P: AsRef<Path>>(path: P) -> Result<Feature, Box<dyn std::error::Error>> {
         let cf: CityJSONFeatureVertices = Self::from_file(path.as_ref())?;
-        Ok(Feature{
+        Ok(Feature {
             centroid_quantized: cf.centroid_quantized(),
             nr_vertices: cf.vertex_count(),
             path_jsonl: path.as_ref().to_path_buf(),
@@ -145,19 +167,20 @@ impl CityJSONFeatureVertices {
 
 /// Stores the information that is computed from a CityJSONFeature.
 pub struct Feature {
-    centroid_quantized: [i32;2],
+    centroid_quantized: [i32; 2],
     nr_vertices: u16,
-    pub path_jsonl: PathBuf
+    pub path_jsonl: PathBuf,
 }
 
 impl Feature {
     pub fn centroid(&self, cm: &CityJSONMetadata) -> [f64; 2] {
         let [ctr_x, ctr_y] = self.centroid_quantized;
-        [(ctr_x as f64 * cm.transform.scale[0]) + cm.transform.translate[0],
-         (ctr_y as f64 * cm.transform.scale[1]) + cm.transform.translate[1]]
+        [
+            (ctr_x as f64 * cm.transform.scale[0]) + cm.transform.translate[0],
+            (ctr_y as f64 * cm.transform.scale[1]) + cm.transform.translate[1],
+        ]
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -224,8 +247,10 @@ mod tests {
         let pb: PathBuf = test_data_dir().join("3dbag_x00.city.json");
         let cm: CityJSONMetadata = CityJSONMetadata::from_file(&pb).unwrap();
 
-        let ctr_real_world: (f64, f64) = ((ctr_quantized[0] as f64 * cm.transform.scale[0]) + cm.transform.translate[0],
-                                          (ctr_quantized[1] as f64 * cm.transform.scale[1]) + cm.transform.translate[1]);
+        let ctr_real_world: (f64, f64) = (
+            (ctr_quantized[0] as f64 * cm.transform.scale[0]) + cm.transform.translate[0],
+            (ctr_quantized[1] as f64 * cm.transform.scale[1]) + cm.transform.translate[1],
+        );
         println!("real-world centroid: {:#?}", ctr_real_world);
 
         Ok(())

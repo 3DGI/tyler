@@ -8,12 +8,14 @@ pub mod cesium3dtiles {
     use serde::Serialize;
     use std::collections::HashMap;
 
+    // TODO: need to reproject everything to earth-centered, earth-fixed (ECEF) reference frame (EPSG 4978)
+
     /// [Tileset](https://github.com/CesiumGS/3d-tiles/tree/main/specification#tileset).
     ///
     /// Not supported: `extras`.
     #[derive(Serialize, Default, Debug)]
     #[serde(rename_all = "camelCase")]
-    struct Tileset {
+    pub struct Tileset {
         asset: Asset,
         geometric_error: GeometricError,
         root: Tile,
@@ -25,6 +27,39 @@ pub mod cesium3dtiles {
         extensions_required: Option<Vec<ExtensionName>>,
         #[serde(skip_serializing_if = "Option::is_none")]
         extensions: Option<Extensions>,
+    }
+
+    impl From<&crate::spatial_structs::SquareGrid> for Tileset {
+        fn from(grid: &crate::spatial_structs::SquareGrid) -> Self {
+            let mut extensions: Extensions = HashMap::new();
+            let e1 = Extension::ContentGtlf {
+                extensions_used: None,
+                extensions_required: None,
+            };
+            extensions.insert(ExtensionName::ContentGltf, e1);
+
+            let root_volume = BoundingVolume::from(&grid.bbox);
+
+            let root = Tile {
+                bounding_volume: root_volume,
+                geometric_error: 0.0,
+                viewer_request_volume: None,
+                refine: Some(Refinement::Replace),
+                transform: None,
+                content: None,
+                children: None,
+            };
+
+            Self {
+                asset: Default::default(),
+                geometric_error: 100.0,
+                root,
+                properties: None,
+                extensions_used: Some(vec![ExtensionName::ContentGltf]),
+                extensions_required: Some(vec![ExtensionName::ContentGltf]),
+                extensions: Some(extensions),
+            }
+        }
     }
 
     /// [Asset](https://github.com/CesiumGS/3d-tiles/tree/main/specification#asset).
@@ -124,6 +159,53 @@ pub mod cesium3dtiles {
         }
     }
 
+    /// Compute the oriented-bounding box for 3D Tiles, from a 'regular' bounding box.
+    ///
+    /// The output is an array of 12 numbers that define an oriented bounding box in a
+    /// right-handed 3-axis (x, y, z) Cartesian coordinate system where the z-axis is up.
+    /// The first three elements define the x, y, and z values for the center of the box.
+    /// The next three elements (with indices 3, 4, and 5) define the x-axis direction
+    /// and half-length.
+    /// The next three elements (indices 6, 7, and 8) define the y-axis direction and
+    /// half-length.
+    /// The last three elements (indices 9, 10, and 11) define the z-axis direction and
+    /// half-length.
+    impl From<&crate::Bbox> for BoundingVolume {
+        fn from(bbox: &crate::Bbox) -> Self {
+            let center: [f64; 3] = [
+                (bbox[0] + bbox[3]) / 2.0,
+                (bbox[1] + bbox[4]) / 2.0,
+                (bbox[2] + bbox[5]) / 2.0,
+            ];
+            // Coordinate of the middlepoint of the west-edge of the bbox, so that the
+            // X-axis is defined as (center, x_axis_dir).
+            let x_axis_dir: [f64; 3] = [
+                bbox[3],
+                (bbox[1] + bbox[4]) / 2.0,
+                (bbox[2] + bbox[5]) / 2.0,
+            ];
+            let y_axis_dir: [f64; 3] = [
+                (bbox[0] + bbox[3]) / 2.0,
+                bbox[1],
+                (bbox[2] + bbox[5]) / 2.0,
+            ];
+            let z_axis_dir: [f64; 3] = [
+                (bbox[0] + bbox[3]) / 2.0,
+                (bbox[1] + bbox[4]) / 2.0,
+                bbox[5],
+            ];
+            // an array cannot be built directly from an iterator, so we need to
+            // "try_(to convert the vector)_into" an array
+            let bounding_volume_array: [f64; 12] = [center, x_axis_dir, y_axis_dir, z_axis_dir]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<f64>>()
+                .try_into()
+                .unwrap();
+            Self::Box(bounding_volume_array)
+        }
+    }
+
     /// [Tile.refine](https://github.com/CesiumGS/3d-tiles/tree/main/specification#tilerefine).
     #[derive(Serialize, Debug)]
     #[serde(untagged, rename_all = "UPPERCASE")]
@@ -156,6 +238,13 @@ pub mod cesium3dtiles {
     mod tests {
         use super::*;
         use serde_json::to_string_pretty;
+
+        #[test]
+        fn test_boundingvolume_from_bbox() {
+            let bbox: crate::Bbox = [84995.279, 446316.813, -5.333, 85644.748, 446996.132, 52.881];
+            let bounding_volume = BoundingVolume::from(&bbox);
+            println!("{:?}", bounding_volume);
+        }
 
         /// Verify that we can serialize the 3DTILES_content_gltf as an empty object when it is just
         /// declared as a 'null' extension in the tileset.
