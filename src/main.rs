@@ -218,13 +218,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ => "",
     };
 
-    // TODO: would be much nicer if SquareGrid implements an Iterator that returns a (CellID, Cell)
     let mut cellids: Vec<spatial_structs::CellId> = Vec::with_capacity(grid.nr_cells ^ 2);
-    for (col_i, col) in grid.data.iter().enumerate() {
-        for (row_i, cell) in col.iter().enumerate() {
-            cellids.push([row_i, col_i])
-        }
-    }
+    cellids = grid.into_iter().map(|(cellid, cell)| cellid).collect();
+
     cellids.into_par_iter().for_each(|cellid| {
         let cell = &grid.data[cellid[0]][cellid[1]];
         if !cell.is_empty() {

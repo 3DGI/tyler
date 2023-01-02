@@ -164,6 +164,47 @@ impl SquareGrid {
     }
 }
 
+/// Returns a tuple of `(CellId, &Cell)` for each cell in column-major order.
+impl<'squaregrid> IntoIterator for &'squaregrid SquareGrid {
+    type Item = (CellId, &'squaregrid Cell);
+    type IntoIter = SquareGridIterator<'squaregrid>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        SquareGridIterator {
+            row_index: 0,
+            col_index: 0,
+            items: &self.data,
+        }
+    }
+}
+
+pub struct SquareGridIterator<'squaregrid> {
+    row_index: usize,
+    col_index: usize,
+    items: &'squaregrid Vec<Vec<Cell>>,
+}
+
+impl<'squaregrid> Iterator for SquareGridIterator<'squaregrid> {
+    type Item = (CellId, &'squaregrid Cell);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(column) = self.items.get(self.col_index) {
+            if let Some(cell) = column.get(self.row_index) {
+                let item = Some(([self.row_index, self.col_index], cell));
+                self.row_index += 1;
+                item
+            } else {
+                // We are at the end of the current column, so jump to the next
+                self.col_index += 1;
+                self.row_index = 0;
+                self.next()
+            }
+        } else {
+            None
+        }
+    }
+}
+
 type Cell = Vec<usize>;
 pub type CellId = [usize; 2];
 
