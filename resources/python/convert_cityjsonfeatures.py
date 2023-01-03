@@ -46,6 +46,7 @@ if __name__ == "__main__":
         with output_file.open("w") as fo:
             fo.write(json.dumps(cm.j, separators=(',', ':')))
     elif output_format == "3dtiles":
+        cm.reproject(4978)
         glb = cm.export2glb()
         glb.seek(0)
         with output_file.open("wb") as bo:

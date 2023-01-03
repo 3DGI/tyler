@@ -1,5 +1,3 @@
-use crate::spatial_structs;
-
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 
@@ -70,7 +68,7 @@ impl CityJSONFeatureVertices {
     fn centroid_quantized(&self) -> [i32; 2] {
         let mut x_sum: i64 = 0;
         let mut y_sum: i64 = 0;
-        for [x, y, z] in self.vertices.iter() {
+        for [x, y, _z] in self.vertices.iter() {
             x_sum = x_sum + *x as i64;
             y_sum = y_sum + *y as i64;
         }
@@ -186,7 +184,6 @@ impl Feature {
 mod tests {
     use super::*;
     use serde_json::from_str;
-    use std::fs::read_to_string;
 
     fn test_data_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))

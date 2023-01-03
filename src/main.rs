@@ -221,7 +221,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let mut cellids: Vec<spatial_structs::CellId> = Vec::with_capacity(grid.length ^ 2);
-    cellids = grid.into_iter().map(|(cellid, cell)| cellid).collect();
+    cellids = grid.into_iter().map(|(cellid, _cell)| cellid).collect();
 
     cellids.into_par_iter().for_each(|cellid| {
         let cell = &grid.data[cellid[0]][cellid[1]];

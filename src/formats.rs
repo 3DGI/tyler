@@ -10,8 +10,6 @@ pub mod cesium3dtiles {
     use std::fs::File;
     use std::path::Path;
 
-    // TODO: need to reproject everything to earth-centered, earth-fixed (ECEF) reference frame (EPSG 4978)
-
     /// [Tileset](https://github.com/CesiumGS/3d-tiles/tree/main/specification#tileset).
     ///
     /// Not supported: `extras`.
@@ -34,7 +32,7 @@ pub mod cesium3dtiles {
     impl From<&crate::spatial_structs::SquareGrid> for Tileset {
         fn from(grid: &crate::spatial_structs::SquareGrid) -> Self {
             let mut root_children: Vec<Tile> = Vec::with_capacity(grid.length ^ 2);
-            for (cellid, cell) in grid {
+            for (cellid, _cell) in grid {
                 let cell_bbox = grid.cell_bbox(&cellid);
                 let bounding_volume = BoundingVolume::from(&cell_bbox);
                 // The geometric error of a tile is its 'size'.
@@ -42,7 +40,7 @@ pub mod cesium3dtiles {
                 // its side on the x-axis.
                 let geometric_error = cell_bbox[3] - cell_bbox[0];
                 let content = Content {
-                    bounding_volume: None,
+                    bounding_volume: Some(bounding_volume),
                     uri: format!("{}-{}.glb", cellid[0], cellid[1]),
                 };
 
@@ -185,7 +183,7 @@ pub mod cesium3dtiles {
     }
 
     /// [boundingVolume](https://github.com/CesiumGS/3d-tiles/tree/main/specification#bounding-volume).
-    #[derive(Serialize, Debug)]
+    #[derive(Serialize, Debug, Copy, Clone)]
     #[serde(rename_all = "lowercase")]
     enum BoundingVolume {
         Box([f64; 12]),
@@ -248,7 +246,7 @@ pub mod cesium3dtiles {
 
     /// [Tile.refine](https://github.com/CesiumGS/3d-tiles/tree/main/specification#tilerefine).
     #[derive(Serialize, Debug)]
-    #[serde(untagged, rename_all = "UPPERCASE")]
+    #[serde(rename_all = "UPPERCASE")]
     enum Refinement {
         Add,
         Replace,
@@ -278,6 +276,13 @@ pub mod cesium3dtiles {
     mod tests {
         use super::*;
         use serde_json::to_string_pretty;
+
+        #[test]
+        fn test_refinement() {
+            let r = Refinement::Replace;
+            let j = serde_json::to_string(&r).unwrap();
+            assert_eq!(j, r#""REPLACE""#.to_string());
+        }
 
         #[test]
         fn test_boundingvolume_from_bbox() {
