@@ -7,6 +7,8 @@ pub mod cesium3dtiles {
     //! Not supported: `extras`.
     use serde::Serialize;
     use std::collections::HashMap;
+    use std::fs::File;
+    use std::path::Path;
 
     // TODO: need to reproject everything to earth-centered, earth-fixed (ECEF) reference frame (EPSG 4978)
 
@@ -31,6 +33,45 @@ pub mod cesium3dtiles {
 
     impl From<&crate::spatial_structs::SquareGrid> for Tileset {
         fn from(grid: &crate::spatial_structs::SquareGrid) -> Self {
+            let mut root_children: Vec<Tile> = Vec::with_capacity(grid.length ^ 2);
+            for (cellid, cell) in grid {
+                let cell_bbox = grid.cell_bbox(&cellid);
+                let bounding_volume = BoundingVolume::from(&cell_bbox);
+                // The geometric error of a tile is its 'size'.
+                // Since we have square tiles, we compute its size as the length of
+                // its side on the x-axis.
+                let geometric_error = cell_bbox[3] - cell_bbox[0];
+                let content = Content {
+                    bounding_volume: None,
+                    uri: format!("{}-{}.glb", cellid[0], cellid[1]),
+                };
+
+                // TODO: For each LoD add a child
+
+                root_children.push(Tile {
+                    bounding_volume,
+                    geometric_error,
+                    viewer_request_volume: None,
+                    refine: None,
+                    transform: None,
+                    content: Some(content),
+                    children: None,
+                })
+            }
+
+            let root_volume = BoundingVolume::from(&grid.bbox);
+            let root_geometric_error = grid.bbox[3] - grid.bbox[0];
+            let root = Tile {
+                bounding_volume: root_volume,
+                geometric_error: root_geometric_error,
+                viewer_request_volume: None,
+                refine: Some(Refinement::Replace),
+                transform: None,
+                content: None,
+                children: Some(root_children),
+            };
+
+            // Using gltf tile content
             let mut extensions: Extensions = HashMap::new();
             let e1 = Extension::ContentGtlf {
                 extensions_used: None,
@@ -38,27 +79,24 @@ pub mod cesium3dtiles {
             };
             extensions.insert(ExtensionName::ContentGltf, e1);
 
-            let root_volume = BoundingVolume::from(&grid.bbox);
-
-            let root = Tile {
-                bounding_volume: root_volume,
-                geometric_error: 0.0,
-                viewer_request_volume: None,
-                refine: Some(Refinement::Replace),
-                transform: None,
-                content: None,
-                children: None,
-            };
-
             Self {
                 asset: Default::default(),
-                geometric_error: 100.0,
+                geometric_error: root_geometric_error * 1.5,
                 root,
                 properties: None,
                 extensions_used: Some(vec![ExtensionName::ContentGltf]),
                 extensions_required: Some(vec![ExtensionName::ContentGltf]),
                 extensions: Some(extensions),
             }
+        }
+    }
+
+    impl Tileset {
+        /// Write the tileset to a `tileset.json` file
+        pub fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<(), Box<dyn std::error::Error>> {
+            let file_out = File::create(path.as_ref())?;
+            serde_json::to_writer(&file_out, self)?;
+            Ok(())
         }
     }
 
@@ -103,6 +141,8 @@ pub mod cesium3dtiles {
     enum Extension {
         #[default]
         None,
+        /// [3DTILES_content_gltf](https://github.com/CesiumGS/3d-tiles/tree/main/extensions/3DTILES_content_gltf).
+        /// Allows to use glTF tile content instead of Batched 3DModel (.b3dm).
         #[serde(rename = "3DTILES_content_gltf")]
         ContentGtlf {
             #[serde(rename = "extensionsUsed", skip_serializing_if = "Option::is_none")]

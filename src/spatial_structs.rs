@@ -9,6 +9,8 @@ pub fn morton_encode(x: &f64, y: &f64) -> u128 {
 
 /// Represents a square grid with square cells.
 /// The grid stores the feature-indices in its cells.
+/// The `length` of the grid is the number of cells of one dimension, thus the total
+/// number of cells is obtained by `length * length`.
 ///
 /// ```shell
 ///  (column)     (column)
@@ -46,7 +48,7 @@ pub fn morton_encode(x: &f64, y: &f64) -> u128 {
 pub struct SquareGrid {
     origin: [f64; 2],
     pub bbox: crate::Bbox,
-    pub nr_cells: usize,
+    pub length: usize,
     cellsize: u16,
     pub data: Vec<Vec<Cell>>,
 }
@@ -56,7 +58,7 @@ impl Display for SquareGrid {
         write!(
             f,
             "SquareGrid (origin: {:?}, nr_cells: {}, cellsize: {}, data: not-displayed)",
-            self.origin, self.nr_cells, self.cellsize
+            self.origin, self.length, self.cellsize
         )
     }
 }
@@ -74,16 +76,16 @@ impl SquareGrid {
         let dx = (extent[3] - extent[0]).abs() + buffer * 2.0;
         let dy = (extent[4] - extent[1]).abs() + buffer * 2.0;
         let gridsize = if dx > dy { dx } else { dy };
-        let nr_cells = (gridsize / cellsize as f64).ceil() as usize;
+        let length = (gridsize / cellsize as f64).ceil() as usize;
         // A row-vector (x-axis) to store the column-vectors (y-axis).
-        let mut row: Vec<Vec<Vec<usize>>> = Vec::with_capacity(nr_cells);
+        let mut row: Vec<Vec<Vec<usize>>> = Vec::with_capacity(length);
         // For each column create a column vector that stores the cells and for each row in the
         // column create a cell to store the feature IDs.
-        // We create the vectors with length nr_cells+1, because we use `ceil` to determine the
+        // We create the vectors with length 'length'+1, because we use `ceil` to determine the
         // point location in the grid.
-        row.resize_with(nr_cells + 1, || {
-            let mut column: Vec<Vec<usize>> = Vec::with_capacity(nr_cells);
-            column.resize(nr_cells + 1, Vec::new());
+        row.resize_with(length + 1, || {
+            let mut column: Vec<Vec<usize>> = Vec::with_capacity(length);
+            column.resize(length + 1, Vec::new());
             column
         });
         Self {
@@ -96,7 +98,7 @@ impl SquareGrid {
                 extent[4] + buffer,
                 extent[5] + buffer,
             ],
-            nr_cells,
+            length,
             cellsize,
             data: row,
         }
@@ -127,33 +129,31 @@ impl SquareGrid {
         let mut file_grid = File::create("grid.tsv")?;
         let mut file_features = File::create("features.tsv")?;
 
-        for (col_i, col) in self.data.iter().enumerate() {
-            for (row_i, cell) in col.iter().enumerate() {
-                let wkt = self.cell_to_wkt(&row_i, &col_i);
-                file_grid
-                    .write_all(format!("{}-{}\t{}\n", &row_i, &col_i, wkt).as_bytes())
-                    .expect("cannot write grid line");
-                let mut cellbuffer = String::new();
-                for fid in cell {
-                    let f = &feature_set[*fid];
-                    let centroid = f.centroid(cm);
-                    cellbuffer += format!(
-                        "{}\t{}-{}\tPOINT({} {})\n",
-                        fid, &row_i, &col_i, centroid[0], centroid[1]
-                    )
-                    .as_str();
-                }
-                file_features
-                    .write_all(cellbuffer.as_bytes())
-                    .expect("cannot write cell contents");
+        for (cellid, cell) in self {
+            let wkt = self.cell_to_wkt(&cellid);
+            file_grid
+                .write_all(format!("{}-{}\t{}\n", &cellid[0], &cellid[1], wkt).as_bytes())
+                .expect("cannot write grid line");
+            let mut cellbuffer = String::new();
+            for fid in cell {
+                let f = &feature_set[*fid];
+                let centroid = f.centroid(cm);
+                cellbuffer += format!(
+                    "{}\t{}-{}\tPOINT({} {})\n",
+                    fid, &cellid[0], &cellid[1], centroid[0], centroid[1]
+                )
+                .as_str();
             }
+            file_features
+                .write_all(cellbuffer.as_bytes())
+                .expect("cannot write cell contents");
         }
         Ok(())
     }
 
-    fn cell_to_wkt(&self, row_i: &usize, col_i: &usize) -> String {
-        let minx = self.origin[0] + (row_i * self.cellsize as usize) as f64;
-        let miny = self.origin[1] + (col_i * self.cellsize as usize) as f64;
+    fn cell_to_wkt(&self, cellid: &CellId) -> String {
+        let minx = self.origin[0] + (cellid[0] * self.cellsize as usize) as f64;
+        let miny = self.origin[1] + (cellid[1] * self.cellsize as usize) as f64;
         format!(
             "POLYGON(({minx} {miny}, {maxx} {miny}, {maxx} {maxy}, {minx} {maxy}, {minx} {miny}))",
             minx = minx,
@@ -161,6 +161,16 @@ impl SquareGrid {
             maxx = minx + self.cellsize as f64,
             maxy = miny + self.cellsize as f64
         )
+    }
+
+    pub fn cell_bbox(&self, cellid: &CellId) -> crate::Bbox {
+        let minx = self.origin[0] + (cellid[0] * self.cellsize as usize) as f64;
+        let miny = self.origin[1] + (cellid[1] * self.cellsize as usize) as f64;
+        let minz = self.bbox[2];
+        let maxx = minx + self.cellsize as f64;
+        let maxy = miny + self.cellsize as f64;
+        let maxz = self.bbox[5];
+        [minx, miny, minz, maxx, maxy, maxz]
     }
 }
 

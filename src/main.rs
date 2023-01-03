@@ -203,7 +203,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // 3D Tiles
-    let mut tileset = formats::cesium3dtiles::Tileset::from(&grid);
+    let tileset_path = path_output.join("tileset.json");
+    let tileset = formats::cesium3dtiles::Tileset::from(&grid);
+    tileset.to_file(tileset_path)?;
 
     // Export by calling a python subprocess to merge the .jsonl files and convert them to the
     // target format
@@ -215,10 +217,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let output_extension = match output_format {
         "3dtiles" => "glb",
         "cityjson" => "city.json",
-        _ => "",
+        _ => "unknown",
     };
 
-    let mut cellids: Vec<spatial_structs::CellId> = Vec::with_capacity(grid.nr_cells ^ 2);
+    let mut cellids: Vec<spatial_structs::CellId> = Vec::with_capacity(grid.length ^ 2);
     cellids = grid.into_iter().map(|(cellid, cell)| cellid).collect();
 
     cellids.into_par_iter().for_each(|cellid| {
