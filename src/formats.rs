@@ -48,6 +48,12 @@ pub mod cesium3dtiles {
 
             let mut root_children: Vec<Tile> = Vec::with_capacity(grid.length ^ 2);
             for (cellid, _cell) in grid {
+                // FIXME: !!! DEBUG !!! hardcoded for 3d bag delft input
+                let cell_to_export: Vec<[usize; 2]> = vec![[1, 1], [1, 2], [1, 3], [2, 1]];
+                if !cell_to_export.contains(&cellid) {
+                    continue;
+                }
+
                 let cell_bbox = grid.cell_bbox(&cellid);
                 debug!("{}-{} bbox: {:?}", cellid[0], cellid[1], &cell_bbox);
                 let bounding_volume =
