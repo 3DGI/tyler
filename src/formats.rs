@@ -37,7 +37,7 @@ pub mod cesium3dtiles {
         fn from(grid: &crate::spatial_structs::SquareGrid) -> Self {
             let crs_from = format!("EPSG:{}", grid.epsg);
             // Because we have a boundingVolume.box. For a boundingVolume.region we need 4979.
-            let crs_to = "EPSG:4978";
+            let crs_to = "EPSG:4979";
             let transformer = Proj::new_known_crs(&crs_from, &crs_to, None).unwrap();
 
             // y-up to z-up transform needed because we are using gltf assets, which is y-up
@@ -57,7 +57,7 @@ pub mod cesium3dtiles {
                 let cell_bbox = grid.cell_bbox(&cellid);
                 debug!("{}-{} bbox: {:?}", cellid[0], cellid[1], &cell_bbox);
                 let bounding_volume =
-                    BoundingVolume::box_from_bbox(&cell_bbox, &transformer).unwrap();
+                    BoundingVolume::region_from_bbox(&cell_bbox, &transformer).unwrap();
                 debug!(
                     "{}-{} boundingVolume: {:?}",
                     cellid[0], cellid[1], &bounding_volume
@@ -86,7 +86,7 @@ pub mod cesium3dtiles {
                 })
             }
 
-            let root_volume = BoundingVolume::box_from_bbox(&grid.bbox, &transformer).unwrap();
+            let root_volume = BoundingVolume::region_from_bbox(&grid.bbox, &transformer).unwrap();
             let root_geometric_error = grid.bbox[3] - grid.bbox[0];
             let root = Tile {
                 bounding_volume: root_volume,
