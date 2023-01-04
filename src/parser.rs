@@ -10,7 +10,7 @@ use serde_json::from_str;
 #[derive(Deserialize, Debug)]
 pub struct CityJSONMetadata {
     pub transform: Transform,
-    metadata: Metadata,
+    pub metadata: Metadata,
 }
 
 #[derive(Deserialize, Debug)]
@@ -21,8 +21,46 @@ pub struct Transform {
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-struct Metadata {
-    reference_system: String,
+pub struct Metadata {
+    pub reference_system: CRS,
+}
+
+/// Coordinate Reference System as defined by the
+/// [referenceSystem](https://www.cityjson.org/specs/1.1.3/#referencesystem-crs) CityJSON object.
+#[derive(Deserialize, Debug)]
+pub struct CRS(String);
+
+impl CRS {
+    /// Return the EPSG code from the CRS definition, if the CRS definition is indeed an EPSG.
+    ///
+    /// ## Examples
+    /// ```
+    /// let crs = CRS("https://www.opengis.net/def/crs/EPSG/0/7415");
+    /// let epsg_code = crs.to_epsg().unwrap();
+    /// assert_eq!(7415_u16, epsg_code);
+    /// ```
+    pub fn to_epsg(&self) -> Result<u16, Box<dyn std::error::Error>> {
+        let parts: Vec<&str> = self.0.split("/").collect();
+        if let Some(authority) = parts.get(parts.len() - 3) {
+            if *authority != "EPSG" {
+                return Err(Box::try_from(format!(
+                    "the CRS definition should be EPSG: {}",
+                    self.0
+                ))
+                .unwrap());
+            }
+        }
+        return if let Some(c) = parts.last() {
+            let code: u16 = c.parse::<u16>().unwrap();
+            Ok(code)
+        } else {
+            Err(Box::try_from(format!(
+                "the CRS definition should contain the EPSG code as its last element: {}",
+                self.0
+            ))
+            .unwrap())
+        };
+    }
 }
 
 /// Container for storing the CityJSONFeature vertices.
@@ -195,6 +233,13 @@ mod tests {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests")
             .join("output")
+    }
+
+    #[test]
+    fn test_crs_to_epsg() {
+        let crs = CRS("https://www.opengis.net/def/crs/EPSG/0/7415".to_string());
+        let epsg_code = crs.to_epsg().unwrap();
+        assert_eq!(7415_u16, epsg_code);
     }
 
     #[test]

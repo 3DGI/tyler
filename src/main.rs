@@ -1,5 +1,6 @@
 mod formats;
 mod parser;
+mod proj;
 mod spatial_structs;
 
 use std::fs;
@@ -181,7 +182,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     debug!("extent real-world: {:?}", &extent_rw);
 
     // Init the grid from the extent
-    let mut grid = spatial_structs::SquareGrid::new(&extent_rw, cellsize);
+    let epsg = cm.metadata.reference_system.to_epsg()?;
+    let mut grid = spatial_structs::SquareGrid::new(&extent_rw, cellsize, epsg);
     debug!("{}", grid);
 
     let feature_set_iter = WalkDir::new(&path_features)

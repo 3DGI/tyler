@@ -5,10 +5,13 @@ pub mod cesium3dtiles {
     //! Cesium [3D Tiles](https://github.com/CesiumGS/3d-tiles).
     //! Supported version: 1.1.
     //! Not supported: `extras`.
-    use serde::Serialize;
     use std::collections::HashMap;
     use std::fs::File;
     use std::path::Path;
+
+    use serde::Serialize;
+
+    use crate::proj::Proj;
 
     /// [Tileset](https://github.com/CesiumGS/3d-tiles/tree/main/specification#tileset).
     ///
@@ -31,10 +34,16 @@ pub mod cesium3dtiles {
 
     impl From<&crate::spatial_structs::SquareGrid> for Tileset {
         fn from(grid: &crate::spatial_structs::SquareGrid) -> Self {
+            let crs_from = format!("EPSG:{}", grid.epsg);
+            // Because we have a boundingVolume.box. For a boundingVolume.region we need 4979.
+            let crs_to = "EPSG:4978";
+            let transformer = Proj::new_known_crs(&crs_from, &crs_to, None).unwrap();
+
             let mut root_children: Vec<Tile> = Vec::with_capacity(grid.length ^ 2);
             for (cellid, _cell) in grid {
                 let cell_bbox = grid.cell_bbox(&cellid);
-                let bounding_volume = BoundingVolume::from(&cell_bbox);
+                let bounding_volume =
+                    BoundingVolume::from_bbox_reproject(&cell_bbox, &transformer).unwrap();
                 // The geometric error of a tile is its 'size'.
                 // Since we have square tiles, we compute its size as the length of
                 // its side on the x-axis.
@@ -57,7 +66,8 @@ pub mod cesium3dtiles {
                 })
             }
 
-            let root_volume = BoundingVolume::from(&grid.bbox);
+            let root_volume =
+                BoundingVolume::from_bbox_reproject(&grid.bbox, &transformer).unwrap();
             let root_geometric_error = grid.bbox[3] - grid.bbox[0];
             let root = Tile {
                 bounding_volume: root_volume,
@@ -241,6 +251,24 @@ pub mod cesium3dtiles {
                 .try_into()
                 .unwrap();
             Self::Box(bounding_volume_array)
+        }
+    }
+
+    impl BoundingVolume {
+        fn from_bbox_reproject(
+            bbox: &crate::Bbox,
+            transformer: &Proj,
+        ) -> Result<Self, Box<dyn std::error::Error>> {
+            let min_coord = transformer.convert((bbox[0], bbox[1], bbox[2]))?;
+            let max_coord = transformer.convert((bbox[3], bbox[4], bbox[5]))?;
+            Ok(BoundingVolume::from(&[
+                min_coord.0,
+                min_coord.1,
+                min_coord.2,
+                max_coord.0,
+                max_coord.1,
+                max_coord.2,
+            ]))
         }
     }
 

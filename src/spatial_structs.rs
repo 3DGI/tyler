@@ -11,6 +11,10 @@ pub fn morton_encode(x: &f64, y: &f64) -> u128 {
 /// The grid stores the feature-indices in its cells.
 /// The `length` of the grid is the number of cells of one dimension, thus the total
 /// number of cells is obtained by `length * length`.
+/// 
+/// The EPSG code of the input features is also stored in the grid, because the grid is initialized 
+/// directly from the feature coordinates without reprojection. Often we need to reproject the grid 
+/// to another CRS, for instance in order to convert it to 3D Tiles.
 ///
 /// ```shell
 ///  (column)     (column)
@@ -51,6 +55,7 @@ pub struct SquareGrid {
     pub length: usize,
     cellsize: u16,
     pub data: Vec<Vec<Cell>>,
+    pub epsg: u16,
 }
 
 impl Display for SquareGrid {
@@ -68,7 +73,7 @@ impl SquareGrid {
     /// The grid and the cells are square.
     /// The grid origin is the `extent` origin.
     /// The grid is returned as an origin coordinate and the number of cells.
-    pub fn new(extent: &crate::Bbox, cellsize: u16) -> Self {
+    pub fn new(extent: &crate::Bbox, cellsize: u16, epsg: u16) -> Self {
         // Add some buffer to the extent, to make sure all points will be within the grid.
         // We are assuming quantized, metric coordinates with a scaling factor of 0.001, thus
         // 10 units translates to 10mm.
@@ -77,6 +82,7 @@ impl SquareGrid {
         let dy = (extent[4] - extent[1]).abs() + buffer * 2.0;
         let gridsize = if dx > dy { dx } else { dy };
         let length = (gridsize / cellsize as f64).ceil() as usize;
+        // FIXME: sort out the column/row order and cellids
         // A row-vector (x-axis) to store the column-vectors (y-axis).
         let mut row: Vec<Vec<Vec<usize>>> = Vec::with_capacity(length);
         // For each column create a column vector that stores the cells and for each row in the
@@ -101,6 +107,7 @@ impl SquareGrid {
             length,
             cellsize,
             data: row,
+            epsg
         }
     }
 
@@ -225,13 +232,13 @@ mod tests {
     #[test]
     fn test_create_grid() {
         let extent = [84995.279, 446316.813, -5.333, 85644.748, 446996.132, 52.881];
-        let grid = SquareGrid::new(&extent, 500);
+        let grid = SquareGrid::new(&extent, 500, 7415);
         println!("grid: {:?}", grid);
     }
 
     #[test]
     fn test_locate_point() {
-        let grid = SquareGrid::new(&[0.0, 0.0, 0.0, 4.0, 4.0, 4.0], 1);
+        let grid = SquareGrid::new(&[0.0, 0.0, 0.0, 4.0, 4.0, 4.0], 1, 0);
         let grid_idx = grid.locate_point(&[2.5, 1.5]);
         assert_eq!(grid_idx, [3_usize, 2_usize]);
     }
