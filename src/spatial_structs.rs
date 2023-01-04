@@ -50,7 +50,7 @@ pub fn morton_encode(x: &f64, y: &f64) -> u128 {
 ///
 #[derive(Debug)]
 pub struct SquareGrid {
-    origin: [f64; 2],
+    origin: [f64; 3],
     pub bbox: crate::Bbox,
     pub length: usize,
     cellsize: u16,
@@ -62,8 +62,8 @@ impl Display for SquareGrid {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "SquareGrid (origin: {:?}, nr_cells: {}, cellsize: {}, data: not-displayed)",
-            self.origin, self.length, self.cellsize
+            "SquareGrid (origin: {:?}, bbox: {:?}, length: {}, cellsize: {}, data: not-displayed, epsg: {})",
+            self.origin, self.bbox, self.length, self.cellsize, self.epsg
         )
     }
 }
@@ -81,29 +81,31 @@ impl SquareGrid {
         let dx = (extent[3] - extent[0]).abs() + buffer * 2.0;
         let dy = (extent[4] - extent[1]).abs() + buffer * 2.0;
         let gridsize = if dx > dy { dx } else { dy };
-        let length = (gridsize / cellsize as f64).floor() as usize;
+        let length = (gridsize / cellsize as f64).ceil() as usize;
         // A row-vector (x-axis) to store the column-vectors (y-axis).
         let mut row: Vec<Vec<Vec<usize>>> = Vec::with_capacity(length);
         // For each column create a column vector that stores the cells and for each row in the
         // column create a cell to store the feature IDs.
-        // We create the vectors with length 'length'+1, because we use `ceil` to determine the
-        // point location in the grid.
-        row.resize_with(length + 1, || {
+        row.resize_with(length, || {
             let mut column: Vec<Vec<usize>> = Vec::with_capacity(length);
-            column.resize(length + 1, Vec::new());
+            column.resize(length, Vec::new());
             column
         });
         log::debug!("SquareGrid row length: {}", row.len());
+        let origin = [extent[0] - buffer, extent[1] - buffer, extent[2] - buffer];
+        // compute new dimension from the calculated length
+        let d = length as f64 * cellsize as f64;
+        let bbox = [
+            origin[0],
+            origin[1],
+            origin[2],
+            origin[0] + d,
+            origin[1] + d,
+            extent[5] + buffer,
+        ];
         Self {
-            origin: [extent[0] - buffer, extent[1] - buffer],
-            bbox: [
-                extent[0] - buffer,
-                extent[1] - buffer,
-                extent[2] - buffer,
-                extent[3] + buffer,
-                extent[4] + buffer,
-                extent[5] + buffer,
-            ],
+            origin,
+            bbox,
             length,
             cellsize,
             data: row,
