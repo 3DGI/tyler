@@ -37,7 +37,7 @@ pub mod cesium3dtiles {
         fn from(grid: &crate::spatial_structs::SquareGrid) -> Self {
             let crs_from = format!("EPSG:{}", grid.epsg);
             // Because we have a boundingVolume.box. For a boundingVolume.region we need 4979.
-            let crs_to = "EPSG:4979";
+            let crs_to = "EPSG:4978";
             let transformer = Proj::new_known_crs(&crs_from, &crs_to, None).unwrap();
 
             // y-up to z-up transform needed because we are using gltf assets, which is y-up
@@ -48,16 +48,10 @@ pub mod cesium3dtiles {
 
             let mut root_children: Vec<Tile> = Vec::with_capacity(grid.length ^ 2);
             for (cellid, _cell) in grid {
-                // FIXME: !!! DEBUG !!! hardcoded for 3d bag delft input
-                let cell_to_export: Vec<[usize; 2]> = vec![[1, 1], [1, 2], [1, 3], [2, 1]];
-                if !cell_to_export.contains(&cellid) {
-                    continue;
-                }
-
                 let cell_bbox = grid.cell_bbox(&cellid);
                 debug!("{}-{} bbox: {:?}", cellid[0], cellid[1], &cell_bbox);
                 let bounding_volume =
-                    BoundingVolume::region_from_bbox(&cell_bbox, &transformer).unwrap();
+                    BoundingVolume::box_from_bbox(&cell_bbox, &transformer).unwrap();
                 debug!(
                     "{}-{} boundingVolume: {:?}",
                     cellid[0], cellid[1], &bounding_volume
@@ -86,7 +80,9 @@ pub mod cesium3dtiles {
                 })
             }
 
-            let root_volume = BoundingVolume::region_from_bbox(&grid.bbox, &transformer).unwrap();
+            let root_volume = BoundingVolume::box_from_bbox(&grid.bbox, &transformer).unwrap();
+            debug!("root bbox: {:?}", &grid.bbox);
+            debug!("root boundingVolume: {:?}", &root_volume);
             let root_geometric_error = grid.bbox[3] - grid.bbox[0];
             let root = Tile {
                 bounding_volume: root_volume,
@@ -226,7 +222,9 @@ pub mod cesium3dtiles {
         }
     }
 
-    /// Compute the oriented-bounding box for 3D Tiles, from a 'regular' bounding box.
+    /// Compute the boundingVolume.box from a 'regular' bounding box.
+    ///
+    /// This function does not reproject the bounding box coordinates.
     ///
     /// The output is an array of 12 numbers that define an oriented bounding box in a
     /// right-handed 3-axis (x, y, z) Cartesian coordinate system where the z-axis is up.
@@ -239,9 +237,9 @@ pub mod cesium3dtiles {
     /// half-length.
     impl From<&crate::Bbox> for BoundingVolume {
         fn from(bbox: &crate::Bbox) -> Self {
-            let dx = bbox[0] - bbox[3];
-            let dy = bbox[1] - bbox[4];
-            let dz = bbox[2] - bbox[5];
+            let dx = bbox[3] - bbox[0];
+            let dy = bbox[4] - bbox[1];
+            let dz = bbox[5] - bbox[2];
             let center: [f64; 3] = [bbox[0] + dx * 0.5, bbox[1] + dy * 0.5, bbox[2] + dz * 0.5];
             // The x-direction and half-length
             let x_axis_dir: [f64; 3] = [dx * 0.5, 0.0, 0.0];
@@ -262,17 +260,61 @@ pub mod cesium3dtiles {
     }
 
     impl BoundingVolume {
+        /// Compute the boundingVolume.box from a 'regular' bounding box.
+        ///
+        /// This function does reproject the bounding box coordinates.
+        ///
+        /// The CRS transformation `transformer` must have `EPSG:4978` as target CRS in
+        /// order to get a correct `boundingVolume.box`. The `transformer` is not initialized in
+        /// this function, because it is expected that this function is called in a loop, and thus
+        /// it is more optimal to init the transformation outside of the loop.
+        ///
+        /// ## Note on CRS transformation
+        /// We assume that the transformation is from a projected, Cartesian system to
+        /// [ECEF](https://en.wikipedia.org/wiki/Earth-centered,_Earth-fixed_coordinate_system).
+        /// The coordinates of a polygon on the northern-hemisphere in ECEF look like in the image
+        /// below. Note that the minimum point is the top-left corner of the polygon.
+        ///
+        /// ![ecef polygon](../docs/img/ecef.jpg)
+        ///
+        /// In a projected Cartesian CRS we have the minimum point of a polygon in the lower-left
+        /// corner (at least in the Netherlands...).
+        ///
+        /// ```
+        /// (0,10) (10,10)   (0,0)  (0,10)
+        ///      +--+           +------+
+        ///      |  |     --->  | ECEF |
+        ///      +--+           +------+
+        /// (0,0)  (10,0)    (10,0) (10,10)
+        /// ```
+        ///
+        /// Then the input bbox (in 3D) of `[0,0,0,10,10,10]` becomes `[10,0,0,0,10,10]` after the
+        /// coordinate transformation.
+        /// Therefore, we have to swap the values at the indices `0` and `3` in order to get a
+        /// correct `[minX, minY, minZ, maxX, maxY, maxZ]` bbox after the transformation.
+        ///
         fn box_from_bbox(
             bbox: &crate::Bbox,
             transformer: &Proj,
         ) -> Result<Self, Box<dyn std::error::Error>> {
             let min_coord = transformer.convert((bbox[0], bbox[1], bbox[2]))?;
             let max_coord = transformer.convert((bbox[3], bbox[4], bbox[5]))?;
+            debug!(
+                "reprojected bbox: {:?}",
+                [
+                    max_coord.0,
+                    min_coord.1,
+                    min_coord.2,
+                    min_coord.0,
+                    max_coord.1,
+                    max_coord.2,
+                ]
+            );
             Ok(BoundingVolume::from(&[
-                min_coord.0,
+                max_coord.0,
                 min_coord.1,
                 min_coord.2,
-                max_coord.0,
+                min_coord.0,
                 max_coord.1,
                 max_coord.2,
             ]))
@@ -308,9 +350,13 @@ pub mod cesium3dtiles {
     struct Transform([f64; 16]);
 
     impl Default for Transform {
+        #[rustfmt::skip]
         fn default() -> Self {
             Self([
-                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+                1.0, 0.0, 0.0, 0.0,
+                0.0, 1.0, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
             ])
         }
     }
