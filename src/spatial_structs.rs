@@ -81,8 +81,7 @@ impl SquareGrid {
         let dx = (extent[3] - extent[0]).abs() + buffer * 2.0;
         let dy = (extent[4] - extent[1]).abs() + buffer * 2.0;
         let gridsize = if dx > dy { dx } else { dy };
-        let length = (gridsize / cellsize as f64).ceil() as usize;
-        // FIXME: sort out the column/row order and cellids
+        let length = (gridsize / cellsize as f64).floor() as usize;
         // A row-vector (x-axis) to store the column-vectors (y-axis).
         let mut row: Vec<Vec<Vec<usize>>> = Vec::with_capacity(length);
         // For each column create a column vector that stores the cells and for each row in the
@@ -94,6 +93,7 @@ impl SquareGrid {
             column.resize(length + 1, Vec::new());
             column
         });
+        log::debug!("SquareGrid row length: {}", row.len());
         Self {
             origin: [extent[0] - buffer, extent[1] - buffer],
             bbox: [
