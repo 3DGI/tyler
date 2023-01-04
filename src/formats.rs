@@ -40,6 +40,12 @@ pub mod cesium3dtiles {
             let crs_to = "EPSG:4978";
             let transformer = Proj::new_known_crs(&crs_from, &crs_to, None).unwrap();
 
+            // y-up to z-up transform needed because we are using gltf assets, which is y-up
+            // https://github.com/CesiumGS/3d-tiles/tree/main/specification#y-up-to-z-up
+            let y_up_to_z_up = Transform([
+                1.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ]);
+
             let mut root_children: Vec<Tile> = Vec::with_capacity(grid.length ^ 2);
             for (cellid, _cell) in grid {
                 let cell_bbox = grid.cell_bbox(&cellid);
@@ -264,6 +270,17 @@ pub mod cesium3dtiles {
                 max_coord.0,
                 max_coord.1,
                 max_coord.2,
+            ]))
+        }
+
+        fn region_from_bbox(
+            bbox: &crate::Bbox,
+            transformer: &Proj,
+        ) -> Result<Self, Box<dyn std::error::Error>> {
+            let (south, west, minh) = transformer.convert((bbox[0], bbox[1], bbox[2]))?;
+            let (north, east, maxh) = transformer.convert((bbox[3], bbox[4], bbox[5]))?;
+            Ok(BoundingVolume::Region([
+                west, south, east, north, minh, maxh,
             ]))
         }
     }
