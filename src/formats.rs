@@ -57,7 +57,7 @@ pub mod cesium3dtiles {
                 let cell_bbox = grid.cell_bbox(&cellid);
                 debug!("{}-{} bbox: {:?}", cellid[0], cellid[1], &cell_bbox);
                 let bounding_volume =
-                    BoundingVolume::from_bbox_reproject(&cell_bbox, &transformer).unwrap();
+                    BoundingVolume::box_from_bbox(&cell_bbox, &transformer).unwrap();
                 debug!(
                     "{}-{} boundingVolume: {:?}",
                     cellid[0], cellid[1], &bounding_volume
@@ -86,8 +86,7 @@ pub mod cesium3dtiles {
                 })
             }
 
-            let root_volume =
-                BoundingVolume::from_bbox_reproject(&grid.bbox, &transformer).unwrap();
+            let root_volume = BoundingVolume::box_from_bbox(&grid.bbox, &transformer).unwrap();
             let root_geometric_error = grid.bbox[3] - grid.bbox[0];
             let root = Tile {
                 bounding_volume: root_volume,
@@ -263,7 +262,7 @@ pub mod cesium3dtiles {
     }
 
     impl BoundingVolume {
-        fn from_bbox_reproject(
+        fn box_from_bbox(
             bbox: &crate::Bbox,
             transformer: &Proj,
         ) -> Result<Self, Box<dyn std::error::Error>> {
@@ -283,10 +282,15 @@ pub mod cesium3dtiles {
             bbox: &crate::Bbox,
             transformer: &Proj,
         ) -> Result<Self, Box<dyn std::error::Error>> {
-            let (south, west, minh) = transformer.convert((bbox[0], bbox[1], bbox[2]))?;
-            let (north, east, maxh) = transformer.convert((bbox[3], bbox[4], bbox[5]))?;
+            let (west, south, minh) = transformer.convert((bbox[0], bbox[1], bbox[2]))?;
+            let (east, north, maxh) = transformer.convert((bbox[3], bbox[4], bbox[5]))?;
             Ok(BoundingVolume::Region([
-                west, south, east, north, minh, maxh,
+                west.to_radians(),
+                south.to_radians(),
+                east.to_radians(),
+                north.to_radians(),
+                minh,
+                maxh,
             ]))
         }
     }
