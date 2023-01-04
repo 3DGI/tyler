@@ -40,7 +40,7 @@ fn transform_epsg(
     let ptr = result_from_create(ctx, unsafe {
         proj_create_crs_to_crs(ctx, from_c.as_ptr(), to_c.as_ptr(), proj_area)
     })
-        .map_err(|e| ProjCreateError::ProjError(e.message(ctx)))?;
+    .map_err(|e| ProjCreateError::ProjError(e.message(ctx)))?;
     // Normalise input and output order to Lon, Lat / Easting Northing by inserting
     // An axis swap operation if necessary
     let normalised = unsafe {
@@ -83,8 +83,8 @@ fn area_set_bbox(parea: *mut proj_sys::PJ_AREA, new_area: Option<Area>) {
 }
 
 pub trait Coord<T>
-    where
-        T: CoordinateType,
+where
+    T: CoordinateType,
 {
     fn x(&self) -> T;
     fn y(&self) -> T;
@@ -124,9 +124,9 @@ impl Proj {
     }
 
     pub fn convert<C, F>(&self, point: C) -> Result<C, ProjError>
-        where
-            C: Coord<F>,
-            F: CoordinateType,
+    where
+        C: Coord<F>,
+        F: CoordinateType,
     {
         let c_x: c_double = point.x().to_f64().ok_or(ProjError::FloatConversion)?;
         let c_y: c_double = point.y().to_f64().ok_or(ProjError::FloatConversion)?;
@@ -242,5 +242,37 @@ fn error_message(code: c_int) -> Result<String, str::Utf8Error> {
     unsafe {
         let rv = proj_errno_string(code);
         _string(rv)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_convert() {
+        let crs_from = "EPSG:7415";
+        // Because we have a boundingVolume.box. For a boundingVolume.region we need 4979.
+        let crs_to = "EPSG:4978";
+        let transformer = Proj::new_known_crs(&crs_from, &crs_to, None).unwrap();
+        let result = transformer.convert((85285.279, 446606.813, 10.0)).unwrap();
+        println!("{:?}", result);
+        // assert_relative_eq!(result.x() as f64, 3923215.044, epsilon = 1e-2);
+        // assert_relative_eq!(result.y() as f64, 299940.760, epsilon = 1e-2);
+        // assert_relative_eq!(result.z() as f64, 5003047.651, epsilon = 1e-2);
+
+        // [0] = {f64} 85185.2799868164
+        // [1] = {f64} 446506.81397216802
+        // [2] = {f64} -15.333460330963135
+        // [3] = {f64} 85385.2799868164
+        // [4] = {f64} 446706.81397216802
+        // [5] = {f64} 62.881539669036869
+
+        // [0] = {f64} 3923286.6789069851
+        // [1] = {f64} 299847.35238179943
+        // [2] = {f64} 5002965.2671014387
+        // [3] = {f64} 3923160.3138962006
+        // [4] = {f64} 300035.46416343335
+        // [5] = {f64} 5003151.7442537257
     }
 }

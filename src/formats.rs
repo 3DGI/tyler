@@ -9,6 +9,7 @@ pub mod cesium3dtiles {
     use std::fs::File;
     use std::path::Path;
 
+    use log::debug;
     use serde::Serialize;
 
     use crate::proj::Proj;
@@ -42,14 +43,21 @@ pub mod cesium3dtiles {
             let mut root_children: Vec<Tile> = Vec::with_capacity(grid.length ^ 2);
             for (cellid, _cell) in grid {
                 let cell_bbox = grid.cell_bbox(&cellid);
+                debug!("{}-{} bbox: {:?}", cellid[0], cellid[1], &cell_bbox);
                 let bounding_volume =
                     BoundingVolume::from_bbox_reproject(&cell_bbox, &transformer).unwrap();
+                debug!(
+                    "{}-{} boundingVolume: {:?}",
+                    cellid[0], cellid[1], &bounding_volume
+                );
                 // The geometric error of a tile is its 'size'.
                 // Since we have square tiles, we compute its size as the length of
                 // its side on the x-axis.
-                let geometric_error = cell_bbox[3] - cell_bbox[0];
+                // let geometric_error = cell_bbox[3] - cell_bbox[0];
+                // but because now this is a leaf, the geometric error has to be close or equal to 0
+                let geometric_error = 0.0;
                 let content = Content {
-                    bounding_volume: Some(bounding_volume),
+                    bounding_volume: None,
                     uri: format!("{}-{}.glb", cellid[0], cellid[1]),
                 };
 
@@ -220,28 +228,16 @@ pub mod cesium3dtiles {
     /// half-length.
     impl From<&crate::Bbox> for BoundingVolume {
         fn from(bbox: &crate::Bbox) -> Self {
-            let center: [f64; 3] = [
-                (bbox[0] + bbox[3]) / 2.0,
-                (bbox[1] + bbox[4]) / 2.0,
-                (bbox[2] + bbox[5]) / 2.0,
-            ];
-            // Coordinate of the middlepoint of the west-edge of the bbox, so that the
-            // X-axis is defined as (center, x_axis_dir).
-            let x_axis_dir: [f64; 3] = [
-                bbox[3],
-                (bbox[1] + bbox[4]) / 2.0,
-                (bbox[2] + bbox[5]) / 2.0,
-            ];
-            let y_axis_dir: [f64; 3] = [
-                (bbox[0] + bbox[3]) / 2.0,
-                bbox[1],
-                (bbox[2] + bbox[5]) / 2.0,
-            ];
-            let z_axis_dir: [f64; 3] = [
-                (bbox[0] + bbox[3]) / 2.0,
-                (bbox[1] + bbox[4]) / 2.0,
-                bbox[5],
-            ];
+            let dx = bbox[0] - bbox[3];
+            let dy = bbox[1] - bbox[4];
+            let dz = bbox[2] - bbox[5];
+            let center: [f64; 3] = [bbox[0] + dx * 0.5, bbox[1] + dy * 0.5, bbox[2] + dz * 0.5];
+            // The x-direction and half-length
+            let x_axis_dir: [f64; 3] = [dx * 0.5, 0.0, 0.0];
+            // The y-direction and half-length
+            let y_axis_dir: [f64; 3] = [0.0, dy * 0.5, 0.0];
+            // The z-direction and half-length
+            let z_axis_dir: [f64; 3] = [0.0, 0.0, dz * 0.5];
             // an array cannot be built directly from an iterator, so we need to
             // "try_(to convert the vector)_into" an array
             let bounding_volume_array: [f64; 12] = [center, x_axis_dir, y_axis_dir, z_axis_dir]
@@ -296,6 +292,7 @@ pub mod cesium3dtiles {
     #[derive(Serialize, Default, Debug)]
     #[serde(rename_all = "camelCase")]
     struct Content {
+        #[serde(skip_serializing_if = "Option::is_none")]
         bounding_volume: Option<BoundingVolume>,
         uri: String,
     }

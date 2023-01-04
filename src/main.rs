@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use clap::{crate_version, Arg, ArgAction, Command};
-use log::{debug, error, info};
+use log::{debug, info};
 use rayon::prelude::*;
 use subprocess::{Exec, Redirection};
 use walkdir::WalkDir;
