@@ -11,9 +11,9 @@ pub fn morton_encode(x: &f64, y: &f64) -> u128 {
 /// The grid stores the feature-indices in its cells.
 /// The `length` of the grid is the number of cells of one dimension, thus the total
 /// number of cells is obtained by `length * length`.
-/// 
-/// The EPSG code of the input features is also stored in the grid, because the grid is initialized 
-/// directly from the feature coordinates without reprojection. Often we need to reproject the grid 
+///
+/// The EPSG code of the input features is also stored in the grid, because the grid is initialized
+/// directly from the feature coordinates without reprojection. Often we need to reproject the grid
 /// to another CRS, for instance in order to convert it to 3D Tiles.
 ///
 /// ```shell
@@ -107,7 +107,7 @@ impl SquareGrid {
             length,
             cellsize,
             data: row,
-            epsg
+            epsg,
         }
     }
 
@@ -115,8 +115,8 @@ impl SquareGrid {
     fn locate_point(&self, point: &[f64; 2]) -> CellId {
         let dx = point[0] - self.origin[0];
         let dy = point[1] - self.origin[1];
-        let row_i = (dx / self.cellsize as f64).ceil() as usize;
-        let col_i = (dy / self.cellsize as f64).ceil() as usize;
+        let col_i = (dx / self.cellsize as f64).floor() as usize;
+        let row_i = (dy / self.cellsize as f64).floor() as usize;
         [row_i, col_i]
     }
 
@@ -136,6 +136,16 @@ impl SquareGrid {
         let mut file_grid = File::create("grid.tsv")?;
         let mut file_features = File::create("features.tsv")?;
 
+        let root_wkt = format!(
+            "POLYGON(({minx} {miny}, {maxx} {miny}, {maxx} {maxy}, {minx} {maxy}, {minx} {miny}))",
+            minx = self.bbox[0],
+            miny = self.bbox[1],
+            maxx = self.bbox[3],
+            maxy = self.bbox[4]
+        );
+        file_grid
+            .write_all(format!("x-x\t{}\n", root_wkt).as_bytes())
+            .expect("cannot write grid line");
         for (cellid, cell) in self {
             let wkt = self.cell_to_wkt(&cellid);
             file_grid
