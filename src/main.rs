@@ -204,12 +204,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         grid.export(&feature_set, &cm)?;
     }
 
-    // TODO: export the 3d tiles into the /tiles directory besides the tileset.json
-
     // 3D Tiles
     let tileset_path = path_output.join("tileset.json");
     let tileset = formats::cesium3dtiles::Tileset::from(&grid);
     tileset.to_file(tileset_path)?;
+
+    let path_output_tiles = path_output.join("tiles");
+    if !path_output_tiles.is_dir() {
+        fs::create_dir_all(&path_output_tiles)?;
+        info!("Created output directory {:#?}", &path_output_tiles);
+    }
 
     // Export by calling a python subprocess to merge the .jsonl files and convert them to the
     // target format
@@ -243,7 +247,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 })
                 .collect();
             let file_name = format!("{}-{}", cellid[0], cellid[1]);
-            let output_file = path_output.join(file_name).with_extension(output_extension);
+            let output_file = path_output_tiles
+                .join(file_name)
+                .with_extension(output_extension);
             info!("converting {}-{}", cellid[0], cellid[1]);
             let exit_status = Exec::cmd(python_bin)
                 .arg(&python_script)

@@ -56,6 +56,11 @@ tyler \
   ...
 ```
 
+### Exporting 3D Tiles
+
+Output files:
+- `<output argument>`/tileset.json
+- `<output argument>`/tiles/*.glb
 
 
 ## Algorithm

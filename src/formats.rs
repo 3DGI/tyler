@@ -64,7 +64,8 @@ pub mod cesium3dtiles {
                 let geometric_error = 0.0;
                 let content = Content {
                     bounding_volume: None,
-                    uri: format!("{}-{}.glb", cellid[0], cellid[1]),
+                    // Hardcoded ./tiles directory!
+                    uri: format!("tiles/{}-{}.glb", cellid[0], cellid[1]),
                 };
 
                 // TODO: For each LoD add a child
