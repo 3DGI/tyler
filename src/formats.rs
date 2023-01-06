@@ -346,7 +346,7 @@ pub mod cesium3dtiles {
     }
 
     /// [Tile.transform](https://github.com/CesiumGS/3d-tiles/tree/main/specification#tiletransform)
-    #[derive(Serialize, Debug)]
+    #[derive(Serialize, Debug, Copy, Clone)]
     struct Transform([f64; 16]);
 
     impl Default for Transform {

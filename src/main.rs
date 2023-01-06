@@ -204,6 +204,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         grid.export(&feature_set, &cm)?;
     }
 
+    // TODO: export the 3d tiles into the /tiles directory besides the tileset.json
+
     // 3D Tiles
     let tileset_path = path_output.join("tileset.json");
     let tileset = formats::cesium3dtiles::Tileset::from(&grid);
