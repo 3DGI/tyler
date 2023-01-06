@@ -56,29 +56,58 @@ pub mod cesium3dtiles {
                     "{}-{} boundingVolume: {:?}",
                     cellid[0], cellid[1], &bounding_volume
                 );
+
+                // We are adding a child for each LoD.
+                // TODO: but we are cheating here now, because we know that the input data has 3 LoDs...
+
                 // The geometric error of a tile is its 'size'.
                 // Since we have square tiles, we compute its size as the length of
                 // its side on the x-axis.
-                // let geometric_error = cell_bbox[3] - cell_bbox[0];
-                // but because now this is a leaf, the geometric error has to be close or equal to 0
-                let geometric_error = 0.0;
-                let content = Content {
-                    bounding_volume: None,
-                    // Hardcoded ./tiles directory!
-                    uri: format!("tiles/{}-{}.glb", cellid[0], cellid[1]),
+                let dx = cell_bbox[3] - cell_bbox[0];
+
+                // this is a leaf node, so the geometric_error is 0
+                // LoD2.2
+                let tile_lod22 = Tile {
+                    bounding_volume,
+                    geometric_error: 0.0,
+                    viewer_request_volume: None,
+                    refine: Some(Refinement::Replace),
+                    transform: None,
+                    content: Some(Content {
+                        bounding_volume: None,
+                        uri: format!("tiles/{}-{}-0-0.glb", cellid[0], cellid[1]),
+                    }),
+                    children: None,
                 };
 
-                // TODO: For each LoD add a child
+                // LoD 1.3
+                let tile_lod13 = Tile {
+                    bounding_volume,
+                    geometric_error: 5.0,
+                    viewer_request_volume: None,
+                    refine: Some(Refinement::Replace),
+                    transform: None,
+                    content: Some(Content {
+                        bounding_volume: None,
+                        uri: format!("tiles/{}-{}-0.glb", cellid[0], cellid[1]),
+                    }),
+                    children: Some(vec![tile_lod22]),
+                };
 
+                // LoD 1.2
                 root_children.push(Tile {
                     bounding_volume,
-                    geometric_error,
+                    // geometric_error: dx * 0.3,
+                    geometric_error: 10.0,
                     viewer_request_volume: None,
-                    refine: None,
+                    refine: Some(Refinement::Replace),
                     transform: None,
-                    content: Some(content),
-                    children: None,
-                })
+                    content: Some(Content {
+                        bounding_volume: None,
+                        uri: format!("tiles/{}-{}.glb", cellid[0], cellid[1]),
+                    }),
+                    children: Some(vec![tile_lod13]),
+                });
             }
 
             let root_volume = BoundingVolume::box_from_bbox(&grid.bbox, &transformer).unwrap();

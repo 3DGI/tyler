@@ -163,7 +163,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         nr_features = nf;
     }
-    debug!("found {} features", nr_features);
+    info!("Found {} features", nr_features);
     debug!("extent_qc: {:?}", &extent_qc);
     // Get the real-world coordinates for the extent
     let extent_rw_min = extent_qc[0..3]
@@ -231,6 +231,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut cellids: Vec<spatial_structs::CellId> = Vec::with_capacity(grid.length ^ 2);
     cellids = grid.into_iter().map(|(cellid, _cell)| cellid).collect();
 
+    info!("Exporting {} tiles", &grid.length ^ 2);
     cellids.into_par_iter().for_each(|cellid| {
         let cell = &grid.data[cellid[0]][cellid[1]];
         if !cell.is_empty() {
@@ -250,7 +251,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let output_file = path_output_tiles
                 .join(file_name)
                 .with_extension(output_extension);
-            info!("converting {}-{}", cellid[0], cellid[1]);
+            debug!("converting {}-{}", cellid[0], cellid[1]);
             let exit_status = Exec::cmd(python_bin)
                 .arg(&python_script)
                 .arg(output_format)
