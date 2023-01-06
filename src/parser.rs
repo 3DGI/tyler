@@ -74,7 +74,7 @@ impl CRS {
 /// from the zerovec crate, and I didn't investigate further.
 #[derive(Deserialize, Debug)]
 pub struct CityJSONFeatureVertices {
-    vertices: Vec<[i32; 3]>,
+    vertices: Vec<[i64; 3]>,
 }
 
 impl CityJSONMetadata {
@@ -134,7 +134,7 @@ impl CityJSONFeatureVertices {
 
     /// Compute the 3D bounding box of the feature.
     /// Returns quantized coordinates.
-    pub fn bbox(&self) -> [i32; 6] {
+    pub fn bbox(&self) -> [i64; 6] {
         let [mut x_min, mut y_min, mut z_min] = self.vertices[0].clone();
         let [mut x_max, mut y_max, mut z_max] = self.vertices[0].clone();
         for [x, y, z] in self.vertices.iter() {
@@ -161,9 +161,9 @@ impl CityJSONFeatureVertices {
     ///
     /// Combines the [centroid_quantized] and [bbox] methods to compute the values in a single
     /// loop over the vertices.
-    fn centroid_quantized_bbox(&self) -> [i32; 8] {
-        let mut x_sum: i32 = 0;
-        let mut y_sum: i32 = 0;
+    fn centroid_quantized_bbox(&self) -> [i64; 8] {
+        let mut x_sum: i64 = 0;
+        let mut y_sum: i64 = 0;
         let [mut x_min, mut y_min, mut z_min] = self.vertices[0].clone();
         let [mut x_max, mut y_max, mut z_max] = self.vertices[0].clone();
         for [x, y, z] in self.vertices.iter() {
@@ -185,8 +185,8 @@ impl CityJSONFeatureVertices {
                 z_max = z.clone()
             }
         }
-        let x_ctr = x_sum / self.vertices.len() as i32;
-        let y_ctr = y_sum / self.vertices.len() as i32;
+        let x_ctr = x_sum / self.vertices.len() as i64;
+        let y_ctr = y_sum / self.vertices.len() as i64;
         [x_ctr, y_ctr, x_min, y_min, z_min, x_max, y_max, z_max]
     }
 

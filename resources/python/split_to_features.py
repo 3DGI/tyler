@@ -62,14 +62,15 @@ dz = extent[5] - extent[2]
 center = [extent[0] + dx * 0.5, extent[1] + dy * 0.5, extent[2] + dz * 0.5]
 translate = center
 print(f"Computed translation property: {translate}")
-important_digits_for_scaling = 3
+important_digits_for_scaling = 5
 
 
 # --- Write the metadata file
 with cityjson_path_list[0].open(mode='r', encoding='utf-8-sig') as f:
     cm = cityjson.reader(file=f, ignore_duplicate_keys=False)
     cm.upgrade_version("1.1", digit=important_digits_for_scaling)
-    cm.j["transform"]["translate"] = translate
+    cm.decompress()
+    cm.compress(important_digits=important_digits_for_scaling, translate=translate)
     outfile = output_dir / "metadata.city.json"
     with outfile.open("w") as fo:
         fo.write(cm.cityjson_for_features())
