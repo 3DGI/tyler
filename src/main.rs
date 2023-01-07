@@ -102,7 +102,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .get_one::<String>("format")
         .expect("format is required")
         .as_str();
-    let do_export = matches.contains_id("export");
+    let do_export = matches.get_one::<bool>("export").copied().unwrap();
     let cellsize: u16 = *matches
         .get_one::<u16>("cellsize")
         .expect("could not parse the 'cellsize' argument to u16");
@@ -279,6 +279,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if !capturedata.success() {
                     error!("subprocess stdout: {}", capturedata.stdout_str());
                     error!("subprocess stderr: {}", capturedata.stderr_str());
+                } else {
+                    debug!("subproces stdout {}", capturedata.stdout_str());
                 }
             } else if let Err(popen_error) = res_exit_status {
                 error!("{}", popen_error);
