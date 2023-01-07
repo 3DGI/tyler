@@ -110,6 +110,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .get_one::<String>("python")
         .expect("could not parse the python interpreter path from the arguments")
         .as_str();
+    if !Path::new(&python_bin).is_file() {
+        panic!("Python interpreter does not exist {}", python_bin);
+    }
 
     let cm = parser::CityJSONMetadata::from_file(&path_metadata)?;
 
@@ -228,10 +231,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ => "unknown",
     };
 
-    let mut cellids: Vec<spatial_structs::CellId> = Vec::with_capacity(grid.length ^ 2);
+    let mut cellids: Vec<spatial_structs::CellId> = Vec::with_capacity(grid.length * grid.length);
     cellids = grid.into_iter().map(|(cellid, _cell)| cellid).collect();
 
-    info!("Exporting {} tiles", &grid.length ^ 2);
+    info!("Exporting {} tiles", grid.length * grid.length);
     cellids.into_par_iter().for_each(|cellid| {
         let cell = &grid.data[cellid[0]][cellid[1]];
         if !cell.is_empty() {

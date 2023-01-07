@@ -46,7 +46,7 @@ pub mod cesium3dtiles {
                 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
             ]);
 
-            let mut root_children: Vec<Tile> = Vec::with_capacity(grid.length ^ 2);
+            let mut root_children: Vec<Tile> = Vec::with_capacity(grid.length * grid.length);
             for (cellid, _cell) in grid {
                 let cell_bbox = grid.cell_bbox(&cellid);
                 debug!("{}-{} bbox: {:?}", cellid[0], cellid[1], &cell_bbox);
