@@ -117,21 +117,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cm = parser::CityJSONMetadata::from_file(&path_metadata)?;
 
     // Return the file path if the 'DirEntry' is a .jsonl file (eg. .city.jsonl).
-    // CityJSONFeature paths are relative to 'path_features'.
     let jsonl_path_closure = |res: Result<walkdir::DirEntry, walkdir::Error>| {
         if let Ok(entry) = res {
             if let Some(ext) = entry.path().extension() {
                 if ext == "jsonl" {
-                    if let Ok(fp) = entry.path().strip_prefix(&path_features) {
-                        Some(fp.to_path_buf())
-                    } else {
-                        error!(
-                            "Unable to construct a relative path for {:?} with base {:?}",
-                            &entry.path(),
-                            &path_features
-                        );
-                        None
-                    }
+                    Some(entry.path().to_path_buf())
                 } else {
                     None
                 }
@@ -154,10 +144,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (mut nr_features, feature_path) = features_enum_iter
         .next()
         .expect(".jsonl file should be accessible");
-    let cf = parser::CityJSONFeatureVertices::from_file(&path_features.join(feature_path))?;
+    let cf = parser::CityJSONFeatureVertices::from_file(&feature_path)?;
     let mut extent_qc = cf.bbox();
     for (nf, fp) in features_enum_iter {
-        let cf = parser::CityJSONFeatureVertices::from_file(&path_features.join(fp))?;
+        let cf = parser::CityJSONFeatureVertices::from_file(&fp)?;
         let [x_min, y_min, z_min, x_max, y_max, z_max] = cf.bbox();
         if x_min < extent_qc[0] {
             extent_qc[0] = x_min
@@ -202,14 +192,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let feature_set_iter = WalkDir::new(&path_features)
         .into_iter()
         .filter_map(jsonl_path_closure)
-        .map(|feature_path| {
-            parser::CityJSONFeatureVertices::file_to_tuple(&path_features.join(feature_path))
-        })
+        .map(|feature_path| parser::CityJSONFeatureVertices::file_to_tuple(&feature_path))
         .filter_map(|res| res.ok());
     let mut feature_set: FeatureSet = Vec::with_capacity(nr_features);
-    for (fid, feature) in feature_set_iter.enumerate() {
+    for (fid, mut feature) in feature_set_iter.enumerate() {
         let centroid = feature.centroid(&cm);
         grid.insert(&centroid, fid);
+        // CityJSONFeature paths are relative to 'path_features', otherwise we get an
+        // 'Argument too long' error when calling the subprocess.
+        let relative_path = feature
+            .path_jsonl
+            .strip_prefix(&path_features)
+            .unwrap()
+            .to_path_buf();
+        feature.path_jsonl = relative_path;
         feature_set.push(feature);
     }
 
