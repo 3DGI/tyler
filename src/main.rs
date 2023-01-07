@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use clap::{crate_version, Arg, ArgAction, Command};
-use log::{debug, info};
+use log::{debug, error, info};
 use rayon::prelude::*;
 use subprocess::{Exec, Redirection};
 use walkdir::WalkDir;
@@ -252,7 +252,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .join(file_name)
                 .with_extension(output_extension);
             debug!("converting {}-{}", cellid[0], cellid[1]);
-            let exit_status = Exec::cmd(python_bin)
+            let res_exit_status = Exec::cmd(python_bin)
                 .arg(&python_script)
                 .arg(output_format)
                 .arg(output_file)
@@ -260,10 +260,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .arg(feature_paths.join(","))
                 .stdout(Redirection::Pipe)
                 .stderr(Redirection::Merge)
-                .capture()
-                .unwrap()
-                .stdout_str();
-            debug!("{}", exit_status);
+                .capture();
+            if let Ok(capturedata) = res_exit_status {
+                if !capturedata.success() {
+                    error!("subprocess stdout: {}", capturedata.stdout_str());
+                    error!("subprocess stderr: {}", capturedata.stderr_str());
+                }
+            } else if let Err(popen_error) = res_exit_status {
+                error!("{}", popen_error);
+            }
         }
     });
 
