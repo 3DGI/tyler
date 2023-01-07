@@ -263,7 +263,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .join(file_name)
                 .with_extension(output_extension);
             debug!("converting {}-{}", cellid[0], cellid[1]);
-            let res_exit_status = Exec::cmd(python_bin)
+            let res_exit_status = Exec::shell(python_bin)
                 .arg(&python_script)
                 .arg(output_format)
                 .arg(output_file)
