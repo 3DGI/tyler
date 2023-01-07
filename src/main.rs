@@ -154,10 +154,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (mut nr_features, feature_path) = features_enum_iter
         .next()
         .expect(".jsonl file should be accessible");
-    let cf = parser::CityJSONFeatureVertices::from_file(feature_path)?;
+    let cf = parser::CityJSONFeatureVertices::from_file(&path_features.join(feature_path))?;
     let mut extent_qc = cf.bbox();
     for (nf, fp) in features_enum_iter {
-        let cf = parser::CityJSONFeatureVertices::from_file(fp)?;
+        let cf = parser::CityJSONFeatureVertices::from_file(&path_features.join(fp))?;
         let [x_min, y_min, z_min, x_max, y_max, z_max] = cf.bbox();
         if x_min < extent_qc[0] {
             extent_qc[0] = x_min
@@ -285,6 +285,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     });
-
+    info!("Done");
     Ok(())
 }
