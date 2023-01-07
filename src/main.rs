@@ -117,11 +117,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cm = parser::CityJSONMetadata::from_file(&path_metadata)?;
 
     // Return the file path if the 'DirEntry' is a .jsonl file (eg. .city.jsonl).
+    // CityJSONFeature paths are relative to 'path_features'.
     let jsonl_path_closure = |res: Result<walkdir::DirEntry, walkdir::Error>| {
         if let Ok(entry) = res {
             if let Some(ext) = entry.path().extension() {
                 if ext == "jsonl" {
-                    Some(entry.path().to_path_buf())
+                    if let Ok(fp) = entry.path().strip_prefix(&path_features) {
+                        Some(fp.to_path_buf())
+                    } else {
+                        error!(
+                            "Unable to construct a relative path for {:?} with base {:?}",
+                            &entry.path(),
+                            &path_features
+                        );
+                        None
+                    }
                 } else {
                     None
                 }
@@ -260,6 +270,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .arg(output_format)
                 .arg(output_file)
                 .arg(&path_metadata)
+                .arg(&path_features)
                 .arg(feature_paths.join(","))
                 .stdout(Redirection::Pipe)
                 .stderr(Redirection::Merge)

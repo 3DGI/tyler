@@ -39,8 +39,10 @@ if __name__ == "__main__":
     output_file = Path(argv[2])
     # the main .city.json file with the transformation properties
     cityjson_path = Path(argv[3]).resolve()
+    # root directory for the .city.jsonl files
+    cityjsonfeatures_paths_root = Path(argv[4]).resolve()
     # comma separated list of .city.jsonl files
-    cityjsonfeatures_paths = [Path(p).resolve() for p in argv[4].split(",")]
+    cityjsonfeatures_paths = [(cityjsonfeatures_paths_root / p).resolve() for p in argv[5].split(",")]
 
     cm = merge(cityjson_path, cityjsonfeatures_paths)
     if output_format == "cityjson":
