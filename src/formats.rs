@@ -49,13 +49,13 @@ pub mod cesium3dtiles {
             let mut root_children: Vec<Tile> = Vec::with_capacity(grid.length * grid.length);
             for (cellid, _cell) in grid {
                 let cell_bbox = grid.cell_bbox(&cellid);
-                debug!("{}-{} bbox: {:?}", cellid[0], cellid[1], &cell_bbox);
+                // debug!("{}-{} bbox: {:?}", cellid[0], cellid[1], &cell_bbox);
                 let bounding_volume =
                     BoundingVolume::box_from_bbox(&cell_bbox, &transformer).unwrap();
-                debug!(
-                    "{}-{} boundingVolume: {:?}",
-                    cellid[0], cellid[1], &bounding_volume
-                );
+                // debug!(
+                //     "{}-{} boundingVolume: {:?}",
+                //     cellid[0], cellid[1], &bounding_volume
+                // );
 
                 // We are adding a child for each LoD.
                 // TODO: but we are cheating here now, because we know that the input data has 3 LoDs...
@@ -329,17 +329,6 @@ pub mod cesium3dtiles {
         ) -> Result<Self, Box<dyn std::error::Error>> {
             let min_coord = transformer.convert((bbox[0], bbox[1], bbox[2]))?;
             let max_coord = transformer.convert((bbox[3], bbox[4], bbox[5]))?;
-            debug!(
-                "reprojected bbox: {:?}",
-                [
-                    max_coord.0,
-                    min_coord.1,
-                    min_coord.2,
-                    min_coord.0,
-                    max_coord.1,
-                    max_coord.2,
-                ]
-            );
             Ok(BoundingVolume::from(&[
                 max_coord.0,
                 min_coord.1,
