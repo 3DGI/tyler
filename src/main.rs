@@ -202,7 +202,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let feature_set_iter = WalkDir::new(&path_features)
         .into_iter()
         .filter_map(jsonl_path_closure)
-        .map(|path| parser::CityJSONFeatureVertices::file_to_tuple(path))
+        .map(|feature_path| {
+            parser::CityJSONFeatureVertices::file_to_tuple(&path_features.join(feature_path))
+        })
         .filter_map(|res| res.ok());
     let mut feature_set: FeatureSet = Vec::with_capacity(nr_features);
     for (fid, feature) in feature_set_iter.enumerate() {
@@ -276,11 +278,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .stderr(Redirection::Merge)
                 .capture();
             if let Ok(capturedata) = res_exit_status {
+                let stdout = capturedata.stdout_str();
                 if !capturedata.success() {
-                    error!("subprocess stdout: {}", capturedata.stdout_str());
-                    error!("subprocess stderr: {}", capturedata.stderr_str());
-                } else {
-                    debug!("subproces stdout {}", capturedata.stdout_str());
+                    error!("{}-{} subprocess stdout: {}", cellid[0], cellid[1], stdout);
+                    error!(
+                        "{}-{} subprocess stderr: {}",
+                        cellid[0],
+                        cellid[1],
+                        capturedata.stderr_str()
+                    );
+                } else if !stdout.is_empty() && stdout != "\n" {
+                    debug!(
+                        "{}-{} subproces stdout {}",
+                        cellid[0],
+                        cellid[1],
+                        capturedata.stdout_str()
+                    );
                 }
             } else if let Err(popen_error) = res_exit_status {
                 error!("{}", popen_error);

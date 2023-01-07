@@ -50,6 +50,7 @@ pub mod cesium3dtiles {
             for (cellid, cell) in grid {
                 if cell.is_empty() {
                     // Empty cell, don't create tiles for it
+                    debug!("cell {}-{} is empty", cellid[0], cellid[1]);
                     continue;
                 }
                 let cell_bbox = grid.cell_bbox(&cellid);
