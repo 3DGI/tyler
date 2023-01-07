@@ -47,7 +47,11 @@ pub mod cesium3dtiles {
             ]);
 
             let mut root_children: Vec<Tile> = Vec::with_capacity(grid.length * grid.length);
-            for (cellid, _cell) in grid {
+            for (cellid, cell) in grid {
+                if cell.is_empty() {
+                    // Empty cell, don't create tiles for it
+                    continue;
+                }
                 let cell_bbox = grid.cell_bbox(&cellid);
                 // debug!("{}-{} bbox: {:?}", cellid[0], cellid[1], &cell_bbox);
                 let bounding_volume =
