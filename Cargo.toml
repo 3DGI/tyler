@@ -15,7 +15,7 @@ walkdir = "2.3.2"
 subprocess = "0.2.9"
 rayon = "1.6.1"
 # crates needed for the proj adaptation
-proj-sys = { version = "0.23.1" }
+proj-sys = { version = "0.23.1" , features = ["network"]}
 num-traits = "0.2.14"
 libc = "0.2.119"
 thiserror = "1.0.30"
