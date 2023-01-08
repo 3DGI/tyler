@@ -6,7 +6,7 @@ from copy import deepcopy
 from cjio.cityjson import CityJSON
 
 
-def merge(cityjson_path, features_paths):
+def merge(cityjson_path, path_features_input_file: Path):
     lcount = 1
     # -- read first line
     with cityjson_path.open("r") as fo:
@@ -16,16 +16,19 @@ def merge(cityjson_path, features_paths):
         cm.j["CityObjects"] = {}
     if "vertices" not in cm.j:
         cm.j["vertices"] = []
-    for path in features_paths:
-        if path.suffix == ".jsonl":
-            with path.open("r") as fo:
-                j1 = json.load(fo)
-            if not ("type" in j1 and j1["type"] == 'CityJSONFeature'):
-                raise IOError(
-                    "Line {} is not of type 'CityJSONFeature'.".format(lcount))
-            cm.add_cityjsonfeature(j1)
-        else:
-            print(f"Not a .jsonl file {path}")
+    with path_features_input_file.open("r") as input_file:
+        for p in input_file:
+            path = Path(p.strip("\n")).resolve()
+            if path.suffix == ".jsonl":
+                with path.open("r") as fo:
+                    j1 = json.load(fo)
+                if not ("type" in j1 and j1["type"] == 'CityJSONFeature'):
+                    raise IOError(
+                        "Line {} is not of type 'CityJSONFeature'.".format(lcount))
+                cm.add_cityjsonfeature(j1)
+            else:
+                print(f"Not a .jsonl file {path}, suffix: {path.suffix}")
+    path_features_input_file.unlink()
     return cm
 
 
@@ -39,12 +42,10 @@ if __name__ == "__main__":
     output_file = Path(argv[2])
     # the main .city.json file with the transformation properties
     cityjson_path = Path(argv[3]).resolve()
-    # root directory for the .city.jsonl files
-    cityjsonfeatures_paths_root = Path(argv[4]).resolve()
-    # comma separated list of .city.jsonl files
-    cityjsonfeatures_paths = [(cityjsonfeatures_paths_root / p).resolve() for p in argv[5].split(",")]
+    # a file with the list of feature paths
+    path_features_input_file = Path(argv[4]).resolve()
 
-    cm = merge(cityjson_path, cityjsonfeatures_paths)
+    cm = merge(cityjson_path, path_features_input_file)
     if output_format == "cityjson":
         with output_file.open("w") as fo:
             fo.write(json.dumps(cm.j, separators=(',', ':')))
@@ -64,3 +65,5 @@ if __name__ == "__main__":
                 bo.write(glb.getvalue())
     else:
         raise ValueError("unsupported format and we should have reached this branch anyway")
+
+    # /home/bdukai/software/cjio/venv_38/lib/python3.8/site-packages/pyproj/transformer.py:197: UserWarning: Best transformation is not available due to missing Grid(short_name=nl_nsgi_nlgeo2018.tif, full_name=, package_name=, url=https://cdn.proj.org/nl_nsgi_nlgeo2018.tif, direct_download=True, open_license=True, available=False)

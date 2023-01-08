@@ -4,6 +4,8 @@ mod proj;
 mod spatial_structs;
 
 use std::fs;
+use std::fs::File;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use clap::{crate_version, Arg, ArgAction, Command};
@@ -198,14 +200,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (fid, mut feature) in feature_set_iter.enumerate() {
         let centroid = feature.centroid(&cm);
         grid.insert(&centroid, fid);
-        // CityJSONFeature paths are relative to 'path_features', otherwise we get an
-        // 'Argument too long' error when calling the subprocess.
-        let relative_path = feature
-            .path_jsonl
-            .strip_prefix(&path_features)
-            .unwrap()
-            .to_path_buf();
-        feature.path_jsonl = relative_path;
         feature_set.push(feature);
     }
 
@@ -224,6 +218,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !path_output_tiles.is_dir() {
         fs::create_dir_all(&path_output_tiles)?;
         info!("Created output directory {:#?}", &path_output_tiles);
+    }
+    let path_features_input_dir = path_output.join("inputs");
+    if !path_features_input_dir.is_dir() {
+        fs::create_dir_all(&path_features_input_dir)?;
+        info!("Created output directory {:#?}", &path_features_input_dir);
     }
 
     // Export by calling a python subprocess to merge the .jsonl files and convert them to the
@@ -246,30 +245,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     cellids.into_par_iter().for_each(|cellid| {
         let cell = &grid.data[cellid[0]][cellid[1]];
         if !cell.is_empty() {
-            let mut feature_paths: Vec<String> = Vec::with_capacity(cell.len());
-            feature_paths = cell
-                .iter()
-                .map(|fid| {
-                    feature_set[*fid]
-                        .path_jsonl
-                        .clone()
-                        .into_os_string()
-                        .into_string()
-                        .unwrap()
-                })
-                .collect();
             let file_name = format!("{}-{}", cellid[0], cellid[1]);
             let output_file = path_output_tiles
-                .join(file_name)
+                .join(&file_name)
                 .with_extension(output_extension);
+            // We write the list of feature paths for a tile into a text file, instead of passing
+            // super long paths-string to the subprocess, because with very long arguments we can
+            // get an 'Argument list too long' error.
+            let path_features_input_file = path_features_input_dir
+                .join(&file_name)
+                .with_extension("input");
+            let mut feature_input = File::create(&path_features_input_file).unwrap_or_else(|_| {
+                panic!(
+                    "should be able to create a file {:?}",
+                    &path_features_input_file
+                )
+            });
+            for fid in cell.iter() {
+                let fp = feature_set[*fid]
+                    .path_jsonl
+                    .clone()
+                    .into_os_string()
+                    .into_string()
+                    .unwrap();
+                writeln!(feature_input, "{}", fp)
+                    .expect("should be able to write feature path to the input file");
+            }
+
             debug!("converting {}-{}", cellid[0], cellid[1]);
             let res_exit_status = Exec::cmd(python_bin)
                 .arg(&python_script)
                 .arg(output_format)
                 .arg(output_file)
                 .arg(&path_metadata)
-                .arg(&path_features)
-                .arg(feature_paths.join(","))
+                .arg(&path_features_input_file)
                 .stdout(Redirection::Pipe)
                 .stderr(Redirection::Merge)
                 .capture();
