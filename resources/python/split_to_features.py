@@ -62,7 +62,7 @@ dz = extent[5] - extent[2]
 center = [extent[0] + dx * 0.5, extent[1] + dy * 0.5, extent[2] + dz * 0.5]
 translate = center
 print(f"Computed translation property: {translate}")
-important_digits_for_scaling = 5
+important_digits_for_scaling = 3
 
 
 # --- Write the metadata file

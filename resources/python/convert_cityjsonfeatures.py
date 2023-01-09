@@ -58,7 +58,7 @@ if __name__ == "__main__":
         for lod, suffix in lod_file_names:
             cm_copy = deepcopy(cm)
             cm_copy.filter_lod(lod)
-            glb = cm_copy.export2glb()
+            glb = cm_copy.export2glb(do_triangulate=False)
             glb.seek(0)
             output_file_tile = (output_file.parent / (output_file.stem + suffix)).with_suffix(".glb")
             with output_file_tile.open("wb") as bo:
