@@ -10,6 +10,10 @@ import json
 
 from cjio import cityjson
 
+# zwaartepunt in Nederland
+TRANSLATE = [171800.0, 472700.0, 0.0]
+IMPORTANT_DIGITS = 3
+
 input_dir = Path(argv[1]).resolve()
 output_dir = Path(argv[2]).resolve()
 max_workers = int(argv[3]) if int(argv[3]) <= cpu_count() else cpu_count()
@@ -60,17 +64,16 @@ dx = extent[3] - extent[0]
 dy = extent[4] - extent[1]
 dz = extent[5] - extent[2]
 center = [extent[0] + dx * 0.5, extent[1] + dy * 0.5, extent[2] + dz * 0.5]
-translate = center
+translate = TRANSLATE
 print(f"Computed translation property: {translate}")
-important_digits_for_scaling = 3
 
 
 # --- Write the metadata file
 with cityjson_path_list[0].open(mode='r', encoding='utf-8-sig') as f:
     cm = cityjson.reader(file=f, ignore_duplicate_keys=False)
-    cm.upgrade_version("1.1", digit=important_digits_for_scaling)
+    cm.upgrade_version("1.1", digit=IMPORTANT_DIGITS)
     cm.decompress()
-    cm.compress(important_digits=important_digits_for_scaling, translate=translate)
+    cm.compress(important_digits=IMPORTANT_DIGITS, translate=translate)
     outfile = output_dir / "metadata.city.json"
     with outfile.open("w") as fo:
         fo.write(cm.cityjson_for_features())
@@ -81,9 +84,9 @@ del cm, outfile
 def file_to_feature_files(filepath: Path, out_dir: Path):
     with filepath.open(mode='r', encoding='utf-8-sig') as f:
         cm = cityjson.reader(file=f, ignore_duplicate_keys=False)
-        cm.upgrade_version("1.1", digit=important_digits_for_scaling)
+        cm.upgrade_version("1.1", digit=IMPORTANT_DIGITS)
         cm.decompress()
-        cm.compress(important_digits=important_digits_for_scaling, translate=translate)
+        cm.compress(important_digits=IMPORTANT_DIGITS, translate=translate)
 
         fail = []
         # e.g: 'gb2' in /home/cjio/gb2.city.json
