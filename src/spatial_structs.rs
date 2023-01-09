@@ -184,12 +184,12 @@ impl SquareGrid {
     }
 
     pub fn cell_bbox(&self, cellid: &CellId) -> crate::Bbox {
-        let minx = self.origin[0] + (cellid.0[0] * self.cellsize as usize) as f64;
-        let miny = self.origin[1] + (cellid.0[1] * self.cellsize as usize) as f64;
+        let minx = self.origin[0] + (cellid.row() * self.cellsize as usize) as f64;
+        let miny = self.origin[1] + (cellid.column() * self.cellsize as usize) as f64;
         let minz = self.bbox[2];
         let maxx = minx + self.cellsize as f64;
         let maxy = miny + self.cellsize as f64;
-        let maxz = self.bbox[5];
+        let maxz = minz + self.cellsize as f64;
         [minx, miny, minz, maxx, maxy, maxz]
     }
 

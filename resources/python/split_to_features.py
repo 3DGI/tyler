@@ -18,7 +18,10 @@ input_dir = Path(argv[1]).resolve()
 output_dir = Path(argv[2]).resolve()
 max_workers = int(argv[3]) if int(argv[3]) <= cpu_count() else cpu_count()
 
-cityjson_path_list = [cityjson_path for cityjson_path in input_dir.iterdir()]
+if input_dir.is_dir():
+    cityjson_path_list = [cityjson_path for cityjson_path in input_dir.iterdir()]
+else:
+    cityjson_path_list = [input_dir, ]
 if len(cityjson_path_list) <= max_workers:
     max_workers = len(cityjson_path_list)
 print(f"Using maximum {max_workers} workers")

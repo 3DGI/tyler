@@ -275,6 +275,7 @@ pub mod cesium3dtiles {
             let dx = bbox[3] - bbox[0];
             let dy = bbox[4] - bbox[1];
             let dz = bbox[5] - bbox[2];
+            debug!("bounding volume box dx {} dy {} dz {}", dx, dy, dz);
             let center: [f64; 3] = [bbox[0] + dx * 0.5, bbox[1] + dy * 0.5, bbox[2] + dz * 0.5];
             // The x-direction and half-length
             let x_axis_dir: [f64; 3] = [dx * 0.5, 0.0, 0.0];
@@ -334,6 +335,10 @@ pub mod cesium3dtiles {
         ) -> Result<Self, Box<dyn std::error::Error>> {
             let min_coord = transformer.convert((bbox[0], bbox[1], bbox[2]))?;
             let max_coord = transformer.convert((bbox[3], bbox[4], bbox[5]))?;
+            debug!(
+                "bounding volume reprojected box dz {}",
+                max_coord.2 - min_coord.2
+            );
             Ok(BoundingVolume::from(&[
                 max_coord.0,
                 min_coord.1,
