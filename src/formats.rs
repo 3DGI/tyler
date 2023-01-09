@@ -50,7 +50,7 @@ pub mod cesium3dtiles {
             for (cellid, cell) in grid {
                 if cell.is_empty() {
                     // Empty cell, don't create tiles for it
-                    debug!("cell {}-{} is empty", cellid[0], cellid[1]);
+                    debug!("cell {} is empty", cellid);
                     continue;
                 }
                 let cell_bbox = grid.cell_bbox(&cellid);
@@ -80,7 +80,7 @@ pub mod cesium3dtiles {
                     transform: None,
                     content: Some(Content {
                         bounding_volume: None,
-                        uri: format!("tiles/{}-{}-0-0.glb", cellid[0], cellid[1]),
+                        uri: format!("tiles/{}-0-0.glb", cellid),
                     }),
                     children: None,
                 };
@@ -94,7 +94,7 @@ pub mod cesium3dtiles {
                     transform: None,
                     content: Some(Content {
                         bounding_volume: None,
-                        uri: format!("tiles/{}-{}-0.glb", cellid[0], cellid[1]),
+                        uri: format!("tiles/{}-0.glb", cellid),
                     }),
                     children: Some(vec![tile_lod22]),
                 };
@@ -109,7 +109,7 @@ pub mod cesium3dtiles {
                     transform: None,
                     content: Some(Content {
                         bounding_volume: None,
-                        uri: format!("tiles/{}-{}.glb", cellid[0], cellid[1]),
+                        uri: format!("tiles/{}.glb", cellid),
                     }),
                     children: Some(vec![tile_lod13]),
                 });

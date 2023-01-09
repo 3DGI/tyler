@@ -243,9 +243,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Exporting {} tiles", grid.length * grid.length);
     cellids.into_par_iter().for_each(|cellid| {
-        let cell = &grid.data[cellid[0]][cellid[1]];
+        let cell = grid.cell(&cellid);
         if !cell.is_empty() {
-            let file_name = format!("{}-{}", cellid[0], cellid[1]);
+            let file_name = format!("{}", cellid);
             let output_file = path_output_tiles
                 .join(&file_name)
                 .with_extension(output_extension);
@@ -272,7 +272,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .expect("should be able to write feature path to the input file");
             }
 
-            debug!("converting {}-{}", cellid[0], cellid[1]);
+            debug!("converting {}", cellid);
             let res_exit_status = Exec::cmd(python_bin)
                 .arg(&python_script)
                 .arg(output_format)
@@ -285,20 +285,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Ok(capturedata) = res_exit_status {
                 let stdout = capturedata.stdout_str();
                 if !capturedata.success() {
-                    error!("{}-{} subprocess stdout: {}", cellid[0], cellid[1], stdout);
-                    error!(
-                        "{}-{} subprocess stderr: {}",
-                        cellid[0],
-                        cellid[1],
-                        capturedata.stderr_str()
-                    );
+                    error!("{} subprocess stdout: {}", cellid, stdout);
+                    error!("{} subprocess stderr: {}", cellid, capturedata.stderr_str());
                 } else if !stdout.is_empty() && stdout != "\n" {
-                    debug!(
-                        "{}-{} subproces stdout {}",
-                        cellid[0],
-                        cellid[1],
-                        capturedata.stdout_str()
-                    );
+                    debug!("{} subproces stdout {}", cellid, capturedata.stdout_str());
                 }
             } else if let Err(popen_error) = res_exit_status {
                 error!("{}", popen_error);

@@ -119,12 +119,13 @@ impl SquareGrid {
         let dy = point[1] - self.origin[1];
         let col_i = (dx / self.cellsize as f64).floor() as usize;
         let row_i = (dy / self.cellsize as f64).floor() as usize;
-        [row_i, col_i]
+        CellId([row_i, col_i])
     }
 
     pub fn insert(&mut self, point: &[f64; 2], feature_id: usize) -> CellId {
         let cell_id = self.locate_point(point);
-        self.data[cell_id[0]][cell_id[1]].push(feature_id);
+        let mut cell = self.cell_mut(&cell_id);
+        cell.push(feature_id);
         cell_id
     }
 
@@ -151,15 +152,15 @@ impl SquareGrid {
         for (cellid, cell) in self {
             let wkt = self.cell_to_wkt(&cellid);
             file_grid
-                .write_all(format!("{}-{}\t{}\n", &cellid[0], &cellid[1], wkt).as_bytes())
+                .write_all(format!("{}\t{}\n", &cellid, wkt).as_bytes())
                 .expect("cannot write grid line");
             let mut cellbuffer = String::new();
             for fid in cell {
                 let f = &feature_set[*fid];
                 let centroid = f.centroid(cm);
                 cellbuffer += format!(
-                    "{}\t{}-{}\tPOINT({} {})\n",
-                    fid, &cellid[0], &cellid[1], centroid[0], centroid[1]
+                    "{}\t{}\tPOINT({} {})\n",
+                    fid, &cellid, centroid[0], centroid[1]
                 )
                 .as_str();
             }
@@ -171,8 +172,8 @@ impl SquareGrid {
     }
 
     fn cell_to_wkt(&self, cellid: &CellId) -> String {
-        let minx = self.origin[0] + (cellid[0] * self.cellsize as usize) as f64;
-        let miny = self.origin[1] + (cellid[1] * self.cellsize as usize) as f64;
+        let minx = self.origin[0] + (cellid.row() * self.cellsize as usize) as f64;
+        let miny = self.origin[1] + (cellid.column() * self.cellsize as usize) as f64;
         format!(
             "POLYGON(({minx} {miny}, {maxx} {miny}, {maxx} {maxy}, {minx} {maxy}, {minx} {miny}))",
             minx = minx,
@@ -183,13 +184,21 @@ impl SquareGrid {
     }
 
     pub fn cell_bbox(&self, cellid: &CellId) -> crate::Bbox {
-        let minx = self.origin[0] + (cellid[0] * self.cellsize as usize) as f64;
-        let miny = self.origin[1] + (cellid[1] * self.cellsize as usize) as f64;
+        let minx = self.origin[0] + (cellid.0[0] * self.cellsize as usize) as f64;
+        let miny = self.origin[1] + (cellid.0[1] * self.cellsize as usize) as f64;
         let minz = self.bbox[2];
         let maxx = minx + self.cellsize as f64;
         let maxy = miny + self.cellsize as f64;
         let maxz = self.bbox[5];
         [minx, miny, minz, maxx, maxy, maxz]
+    }
+
+    pub fn cell(&self, cell_id: &CellId) -> &Cell {
+        &self.data[cell_id.column()][cell_id.row()]
+    }
+
+    pub fn cell_mut(&mut self, cell_id: &CellId) -> &mut Cell {
+        self.data[cell_id.column()][cell_id.row()].as_mut()
     }
 }
 
@@ -219,7 +228,7 @@ impl<'squaregrid> Iterator for SquareGridIterator<'squaregrid> {
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(column) = self.items.get(self.col_index) {
             if let Some(cell) = column.get(self.row_index) {
-                let item = Some(([self.row_index, self.col_index], cell));
+                let item = Some((CellId([self.row_index, self.col_index]), cell));
                 self.row_index += 1;
                 item
             } else {
@@ -235,7 +244,23 @@ impl<'squaregrid> Iterator for SquareGridIterator<'squaregrid> {
 }
 
 type Cell = Vec<usize>;
-pub type CellId = [usize; 2];
+// pub type CellId = [usize; 2];
+pub struct CellId([usize; 2]);
+
+impl Display for CellId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}-{}", &self.row(), &self.column())
+    }
+}
+
+impl CellId {
+    pub fn row(&self) -> usize {
+        self.0[0]
+    }
+    pub fn column(&self) -> usize {
+        self.0[1]
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -252,6 +277,6 @@ mod tests {
     fn test_locate_point() {
         let grid = SquareGrid::new(&[0.0, 0.0, 0.0, 4.0, 4.0, 4.0], 1, 0);
         let grid_idx = grid.locate_point(&[2.5, 1.5]);
-        assert_eq!(grid_idx, [3_usize, 2_usize]);
+        assert_eq!(grid_idx.0, [3_usize, 2_usize]);
     }
 }
