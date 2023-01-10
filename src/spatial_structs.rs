@@ -189,7 +189,7 @@ impl SquareGrid {
         let minz = self.bbox[2];
         let maxx = minx + self.cellsize as f64;
         let maxy = miny + self.cellsize as f64;
-        let maxz = minz + self.cellsize as f64;
+        let maxz = self.bbox[5];
         [minx, miny, minz, maxx, maxy, maxz]
     }
 
