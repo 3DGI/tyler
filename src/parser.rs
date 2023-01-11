@@ -103,7 +103,7 @@ impl CityJSONFeatureVertices {
     /// coordinates.
     /// It is more efficient to apply the transformation once, when the centroid is computed, than
     /// applying it to each vertex in the loop of computing the average coordinate.
-    fn centroid_quantized(&self) -> [i32; 2] {
+    fn centroid_quantized(&self) -> [i64; 2] {
         let mut x_sum: i64 = 0;
         let mut y_sum: i64 = 0;
         for [x, y, _z] in self.vertices.iter() {
@@ -116,8 +116,8 @@ impl CityJSONFeatureVertices {
         // coordinate with a factor `< 0` (eg. 0.001), we will get accurate-enough coordinates
         // for the centroid.
         [
-            (x_sum / self.vertices.len() as i64) as i32,
-            (y_sum / self.vertices.len() as i64) as i32,
+            (x_sum / self.vertices.len() as i64) as i64,
+            (y_sum / self.vertices.len() as i64) as i64,
         ]
     }
 
@@ -193,19 +193,22 @@ impl CityJSONFeatureVertices {
     /// Extracts some information from the CityJSONFeature and returns a tuple with them.
     pub fn file_to_tuple<P: AsRef<Path>>(path: P) -> Result<Feature, Box<dyn std::error::Error>> {
         let cf: CityJSONFeatureVertices = Self::from_file(path.as_ref())?;
+        let ctr_bbox = cf.centroid_quantized_bbox();
         Ok(Feature {
-            centroid_quantized: cf.centroid_quantized(),
+            centroid_quantized: [ctr_bbox[0], ctr_bbox[1]],
             nr_vertices: cf.vertex_count(),
             path_jsonl: path.as_ref().to_path_buf(),
+            bbox_quantized: [ctr_bbox[2], ctr_bbox[3], ctr_bbox[4], ctr_bbox[5], ctr_bbox[6], ctr_bbox[7]],
         })
     }
 }
 
 /// Stores the information that is computed from a CityJSONFeature.
 pub struct Feature {
-    centroid_quantized: [i32; 2],
+    centroid_quantized: [i64; 2],
     nr_vertices: u16,
     pub path_jsonl: PathBuf,
+    pub bbox_quantized: [i64; 6],
 }
 
 impl Feature {

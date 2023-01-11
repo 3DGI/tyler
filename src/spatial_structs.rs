@@ -2,10 +2,7 @@
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::prelude::*;
-
-pub fn morton_encode(x: &f64, y: &f64) -> u128 {
-    1
-}
+use crate::FeatureSet;
 
 /// Represents a square grid with square cells.
 /// The grid stores the feature-indices in its cells.
@@ -244,7 +241,6 @@ impl<'squaregrid> Iterator for SquareGridIterator<'squaregrid> {
 }
 
 type Cell = Vec<usize>;
-// pub type CellId = [usize; 2];
 pub struct CellId([usize; 2]);
 
 impl Display for CellId {

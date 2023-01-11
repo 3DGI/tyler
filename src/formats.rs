@@ -33,9 +33,23 @@ pub mod cesium3dtiles {
         extensions: Option<Extensions>,
     }
 
-    impl From<&crate::spatial_structs::SquareGrid> for Tileset {
-        fn from(grid: &crate::spatial_structs::SquareGrid) -> Self {
-            let crs_from = format!("EPSG:{}", grid.epsg);
+    impl Tileset {
+        /// Write the tileset to a `tileset.json` file
+        pub fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<(), Box<dyn std::error::Error>> {
+            let file_out = File::create(path.as_ref())?;
+            serde_json::to_writer(&file_out, self)?;
+            Ok(())
+        }
+
+        pub fn from_grid(
+            grid: &crate::spatial_structs::SquareGrid,
+            citymodel: &crate::parser::CityJSONMetadata,
+            feature_set: &crate::FeatureSet,
+        ) -> Self {
+            let crs_from = format!(
+                "EPSG:{}",
+                citymodel.metadata.reference_system.to_epsg().unwrap()
+            );
             // Because we have a boundingVolume.box. For a boundingVolume.region we need 4979.
             let crs_to = "EPSG:4979";
             let transformer = Proj::new_known_crs(&crs_from, &crs_to, None).unwrap();
@@ -53,6 +67,50 @@ pub mod cesium3dtiles {
                     debug!("cell {} is empty", cellid);
                     continue;
                 }
+
+                let mut content_bbox_qc = feature_set[cell[0]].bbox_quantized;
+                for fi in cell {
+                    let bbox_qc = feature_set[*fi].bbox_quantized;
+                    if bbox_qc[0] < content_bbox_qc[0] {
+                        content_bbox_qc[0] = bbox_qc[0]
+                    } else if bbox_qc[3] > content_bbox_qc[3] {
+                        content_bbox_qc[3] = bbox_qc[3]
+                    }
+                    if bbox_qc[1] < content_bbox_qc[1] {
+                        content_bbox_qc[1] = bbox_qc[1]
+                    } else if bbox_qc[4] > content_bbox_qc[4] {
+                        content_bbox_qc[4] = bbox_qc[4]
+                    }
+                    if bbox_qc[2] < content_bbox_qc[2] {
+                        content_bbox_qc[2] = bbox_qc[2]
+                    } else if bbox_qc[5] > content_bbox_qc[5] {
+                        content_bbox_qc[5] = bbox_qc[5]
+                    }
+                }
+                let content_bbox_rw_min =
+                    content_bbox_qc[0..3]
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, qc)| {
+                            (*qc as f64 * citymodel.transform.scale[i])
+                                + citymodel.transform.translate[i]
+                        });
+                let content_bbox_rw_max =
+                    content_bbox_qc[3..6]
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, qc)| {
+                            (*qc as f64 * citymodel.transform.scale[i])
+                                + citymodel.transform.translate[i]
+                        });
+                let content_bbox_rw: [f64; 6] = content_bbox_rw_min
+                    .chain(content_bbox_rw_max)
+                    .collect::<Vec<f64>>()
+                    .try_into()
+                    .expect("should be able to create an [f64; 6] from the extent_rw vector");
+                let content_bounding_voume =
+                    BoundingVolume::region_from_bbox(&content_bbox_rw, &transformer).unwrap();
+
                 let cell_bbox = grid.cell_bbox(&cellid);
                 // debug!("{}-{} bbox: {:?}", cellid[0], cellid[1], &cell_bbox);
                 let bounding_volume =
@@ -79,7 +137,7 @@ pub mod cesium3dtiles {
                     refine: Some(Refinement::Replace),
                     transform: None,
                     content: Some(Content {
-                        bounding_volume: None,
+                        bounding_volume: Some(content_bounding_voume.clone()),
                         uri: format!("tiles/{}-0-0.glb", cellid),
                     }),
                     children: None,
@@ -93,7 +151,7 @@ pub mod cesium3dtiles {
                     refine: Some(Refinement::Replace),
                     transform: None,
                     content: Some(Content {
-                        bounding_volume: None,
+                        bounding_volume: Some(content_bounding_voume.clone()),
                         uri: format!("tiles/{}-0.glb", cellid),
                     }),
                     children: Some(vec![tile_lod22]),
@@ -108,7 +166,7 @@ pub mod cesium3dtiles {
                     refine: Some(Refinement::Replace),
                     transform: None,
                     content: Some(Content {
-                        bounding_volume: None,
+                        bounding_volume: Some(content_bounding_voume.clone()),
                         uri: format!("tiles/{}.glb", cellid),
                     }),
                     children: Some(vec![tile_lod13]),
@@ -146,15 +204,6 @@ pub mod cesium3dtiles {
                 extensions_required: Some(vec![ExtensionName::ContentGltf]),
                 extensions: Some(extensions),
             }
-        }
-    }
-
-    impl Tileset {
-        /// Write the tileset to a `tileset.json` file
-        pub fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<(), Box<dyn std::error::Error>> {
-            let file_out = File::create(path.as_ref())?;
-            serde_json::to_writer(&file_out, self)?;
-            Ok(())
         }
     }
 

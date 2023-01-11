@@ -211,7 +211,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 3D Tiles
     let tileset_path = path_output.join("tileset.json");
-    let tileset = formats::cesium3dtiles::Tileset::from(&grid);
+    let tileset = formats::cesium3dtiles::Tileset::from_grid(&grid, &cm, &feature_set);
     tileset.to_file(tileset_path)?;
 
     let path_output_tiles = path_output.join("tiles");
