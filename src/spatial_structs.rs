@@ -1,13 +1,16 @@
 //! Spatial data structures for indexing the features.
+use crate::FeatureSet;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::prelude::*;
-use crate::FeatureSet;
 
 /// Represents a square grid with square cells.
 /// The grid stores the feature-indices in its cells.
 /// The `length` of the grid is the number of cells of one dimension, thus the total
 /// number of cells is obtained by `length * length`.
+///
+/// Note the a 'column' in the grid is represented by the X-axis, and a 'row' by the Y-axis.
+/// See [CellId] for details.
 ///
 /// The EPSG code of the input features is also stored in the grid, because the grid is initialized
 /// directly from the feature coordinates without reprojection. Often we need to reproject the grid
@@ -70,11 +73,12 @@ impl SquareGrid {
     /// The grid and the cells are square.
     /// The grid origin is the `extent` origin.
     /// The grid is returned as an origin coordinate and the number of cells.
-    pub fn new(extent: &crate::Bbox, cellsize: u16, epsg: u16) -> Self {
+    pub fn new(extent: &crate::Bbox, cellsize: u16, epsg: u16, buffer: Option<f64>) -> Self {
         // Add some buffer to the extent, to make sure all points will be within the grid.
         // We are assuming quantized, metric coordinates with a scaling factor of 0.001, thus
         // 10 units translates to 10mm.
-        let buffer = 10_f64;
+        let buffer: f64 = buffer.unwrap_or(0.0);
+        // let buffer = 10_f64;
         let dx = (extent[3] - extent[0]).abs() + buffer * 2.0;
         let dy = (extent[4] - extent[1]).abs() + buffer * 2.0;
         let gridsize = if dx > dy { dx } else { dy };
@@ -116,7 +120,10 @@ impl SquareGrid {
         let dy = point[1] - self.origin[1];
         let col_i = (dx / self.cellsize as f64).floor() as usize;
         let row_i = (dy / self.cellsize as f64).floor() as usize;
-        CellId([row_i, col_i])
+        CellId {
+            row: row_i,
+            column: col_i,
+        }
     }
 
     pub fn insert(&mut self, point: &[f64; 2], feature_id: usize) -> CellId {
@@ -169,8 +176,8 @@ impl SquareGrid {
     }
 
     fn cell_to_wkt(&self, cellid: &CellId) -> String {
-        let minx = self.origin[0] + (cellid.row() * self.cellsize as usize) as f64;
-        let miny = self.origin[1] + (cellid.column() * self.cellsize as usize) as f64;
+        let minx = self.origin[0] + (cellid.column * self.cellsize as usize) as f64;
+        let miny = self.origin[1] + (cellid.row * self.cellsize as usize) as f64;
         format!(
             "POLYGON(({minx} {miny}, {maxx} {miny}, {maxx} {maxy}, {minx} {maxy}, {minx} {miny}))",
             minx = minx,
@@ -181,8 +188,8 @@ impl SquareGrid {
     }
 
     pub fn cell_bbox(&self, cellid: &CellId) -> crate::Bbox {
-        let minx = self.origin[0] + (cellid.row() * self.cellsize as usize) as f64;
-        let miny = self.origin[1] + (cellid.column() * self.cellsize as usize) as f64;
+        let minx = self.origin[0] + (cellid.column * self.cellsize as usize) as f64;
+        let miny = self.origin[1] + (cellid.row * self.cellsize as usize) as f64;
         let minz = self.bbox[2];
         let maxx = minx + self.cellsize as f64;
         let maxy = miny + self.cellsize as f64;
@@ -191,11 +198,11 @@ impl SquareGrid {
     }
 
     pub fn cell(&self, cell_id: &CellId) -> &Cell {
-        &self.data[cell_id.column()][cell_id.row()]
+        &self.data[cell_id.column][cell_id.row]
     }
 
     pub fn cell_mut(&mut self, cell_id: &CellId) -> &mut Cell {
-        self.data[cell_id.column()][cell_id.row()].as_mut()
+        self.data[cell_id.column][cell_id.row].as_mut()
     }
 }
 
@@ -225,7 +232,13 @@ impl<'squaregrid> Iterator for SquareGridIterator<'squaregrid> {
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(column) = self.items.get(self.col_index) {
             if let Some(cell) = column.get(self.row_index) {
-                let item = Some((CellId([self.row_index, self.col_index]), cell));
+                let item = Some((
+                    CellId {
+                        row: self.row_index,
+                        column: self.col_index,
+                    },
+                    cell,
+                ));
                 self.row_index += 1;
                 item
             } else {
@@ -241,20 +254,32 @@ impl<'squaregrid> Iterator for SquareGridIterator<'squaregrid> {
 }
 
 type Cell = Vec<usize>;
-pub struct CellId([usize; 2]);
+
+/// Grid cell identifier.
+/// The identifier is (row, column).
+///
+/// ```shell
+///   ^
+/// Y |
+///   | row-1     row-1
+///   |
+///   | row-0     row-0
+///   | column-0  column-1
+///   +--------------------->
+///                       X
+/// ```
+///
+#[derive(Debug, Ord, PartialOrd, PartialEq, Eq)]
+pub struct CellId {
+    // A row is along the y-axis
+    row: usize,
+    // A column is along the x-axis
+    column: usize,
+}
 
 impl Display for CellId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}-{}", &self.row(), &self.column())
-    }
-}
-
-impl CellId {
-    pub fn row(&self) -> usize {
-        self.0[0]
-    }
-    pub fn column(&self) -> usize {
-        self.0[1]
+        write!(f, "{}-{}", &self.row, &self.column)
     }
 }
 
@@ -265,14 +290,21 @@ mod tests {
     #[test]
     fn test_create_grid() {
         let extent = [84995.279, 446316.813, -5.333, 85644.748, 446996.132, 52.881];
-        let grid = SquareGrid::new(&extent, 500, 7415);
+        let grid = SquareGrid::new(&extent, 500, 7415, Some(0.0));
         println!("grid: {:?}", grid);
     }
 
     #[test]
     fn test_locate_point() {
-        let grid = SquareGrid::new(&[0.0, 0.0, 0.0, 4.0, 4.0, 4.0], 1, 0);
-        let grid_idx = grid.locate_point(&[2.5, 1.5]);
-        assert_eq!(grid_idx.0, [3_usize, 2_usize]);
+        let grid = SquareGrid::new(&[0.0, 0.0, 0.0, 4.0, 4.0, 4.0], 1, 0, Some(0.0));
+        let cellid = grid.locate_point(&[2.5, 1.5]);
+        println!("{}", cellid);
+        assert_eq!(
+            cellid,
+            CellId {
+                row: 1_usize,
+                column: 2_usize
+            }
+        );
     }
 }

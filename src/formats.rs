@@ -9,6 +9,7 @@ pub mod cesium3dtiles {
     use std::fs::File;
     use std::path::Path;
 
+    use crate::Bbox;
     use log::debug;
     use serde::Serialize;
 
@@ -103,7 +104,7 @@ pub mod cesium3dtiles {
                             (*qc as f64 * citymodel.transform.scale[i])
                                 + citymodel.transform.translate[i]
                         });
-                let content_bbox_rw: [f64; 6] = content_bbox_rw_min
+                let content_bbox_rw: Bbox = content_bbox_rw_min
                     .chain(content_bbox_rw_max)
                     .collect::<Vec<f64>>()
                     .try_into()
@@ -111,14 +112,12 @@ pub mod cesium3dtiles {
                 let content_bounding_voume =
                     BoundingVolume::region_from_bbox(&content_bbox_rw, &transformer).unwrap();
 
-                let cell_bbox = grid.cell_bbox(&cellid);
-                // debug!("{}-{} bbox: {:?}", cellid[0], cellid[1], &cell_bbox);
+                let mut cell_bbox = grid.cell_bbox(&cellid);
+                // Set the bounding volume height from the content height
+                cell_bbox[2] = content_bbox_rw[2];
+                cell_bbox[5] = content_bbox_rw[5];
                 let bounding_volume =
                     BoundingVolume::region_from_bbox(&cell_bbox, &transformer).unwrap();
-                // debug!(
-                //     "{}-{} boundingVolume: {:?}",
-                //     cellid[0], cellid[1], &bounding_volume
-                // );
 
                 // We are adding a child for each LoD.
                 // TODO: but we are cheating here now, because we know that the input data has 3 LoDs...
@@ -365,7 +364,7 @@ pub mod cesium3dtiles {
         /// In a projected Cartesian CRS we have the minimum point of a polygon in the lower-left
         /// corner (at least in the Netherlands...).
         ///
-        /// ```
+        /// ```shell
         /// (0,10) (10,10)   (0,0)  (0,10)
         ///      +--+           +------+
         ///      |  |     --->  | ECEF |

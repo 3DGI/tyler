@@ -188,7 +188,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Init the grid from the extent
     let epsg = cm.metadata.reference_system.to_epsg()?;
-    let mut grid = spatial_structs::SquareGrid::new(&extent_rw, cellsize, epsg);
+    let mut grid = spatial_structs::SquareGrid::new(&extent_rw, cellsize, epsg, Some(10.0));
     debug!("{}", grid);
 
     let feature_set_iter = WalkDir::new(&path_features)
