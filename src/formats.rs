@@ -126,7 +126,7 @@ pub mod cesium3dtiles {
                 // The geometric error of a tile is its 'size'.
                 // Since we have square tiles, we compute its size as the length of
                 // its side on the x-axis.
-                let dx = cell_bbox[3] - cell_bbox[0];
+                let dz = cell_bbox[5] - cell_bbox[2];
 
                 // this is a leaf node, so the geometric_error is 0
                 // LoD2.2
@@ -137,7 +137,7 @@ pub mod cesium3dtiles {
                     refine: Some(Refinement::Replace),
                     transform: None,
                     content: Some(Content {
-                        bounding_volume: Some(content_bounding_voume.clone()),
+                        bounding_volume: Some(content_bounding_voume),
                         uri: format!("tiles/{}-0-0.glb", cellid),
                     }),
                     children: None,
@@ -146,7 +146,7 @@ pub mod cesium3dtiles {
                 // LoD 1.3
                 let tile_lod13 = Tile {
                     bounding_volume,
-                    geometric_error: 5.0,
+                    geometric_error: dz * 0.1,
                     viewer_request_volume: None,
                     refine: Some(Refinement::Replace),
                     transform: None,
@@ -160,8 +160,8 @@ pub mod cesium3dtiles {
                 // LoD 1.2
                 root_children.push(Tile {
                     bounding_volume,
-                    // geometric_error: dx * 0.3,
-                    geometric_error: 10.0,
+                    geometric_error: dz * 0.3,
+                    // geometric_error: 10.0,
                     viewer_request_volume: None,
                     refine: Some(Refinement::Replace),
                     transform: None,

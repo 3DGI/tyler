@@ -55,6 +55,7 @@ if __name__ == "__main__":
         #  also hardcoded the same into Tileset.from() in tyler. Same for the tile/file
         #  names.
         lod_file_names = [("1.2", ""), ("1.3", "-0"), ("2.2", "-0-0")]
+        # lod_file_names = [("2.2", "-0-0"),]
         for lod, suffix in lod_file_names:
             cm_copy = deepcopy(cm)
             cm_copy.filter_lod(lod)
