@@ -4,6 +4,45 @@ use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::prelude::*;
 
+/// 64-bit mask
+fn part1by1_64(number: &u64) -> u64 {
+    let mut n = *number;
+    n &= 0x00000000ffffffff; // binary: 11111111111111111111111111111111,                                len: 32
+    n = (n | (n << 16)) & 0x0000FFFF0000FFFF; // binary: 1111111111111111000000001111111111111111,                        len: 40
+    n = (n | (n << 8)) & 0x00FF00FF00FF00FF; // binary: 11111111000000001111111100000000111111110000000011111111,        len: 56
+    n = (n | (n << 4)) & 0x0F0F0F0F0F0F0F0F; // binary: 111100001111000011110000111100001111000011110000111100001111,    len: 60
+    n = (n | (n << 2)) & 0x3333333333333333; // binary: 11001100110011001100110011001100110011001100110011001100110011,  len: 62
+    n = (n | (n << 1)) & 0x5555555555555555; // binary: 101010101010101010101010101010101010101010101010101010101010101, len: 63
+    n
+}
+
+/// Computing Morton-code from 64bit integers.
+///
+/// Reference: https://github.com/trevorprater/pymorton
+fn interleave(x: &u64, y: &u64) -> u64 {
+    part1by1_64(x) | (part1by1_64(y) << 1)
+}
+
+fn unpart1by1_64(mortoncode: &u64) -> u64 {
+    let mut n = *mortoncode;
+    n &= 0x5555555555555555; // binary: 101010101010101010101010101010101010101010101010101010101010101, len: 63
+    n = (n ^ (n >> 1)) & 0x3333333333333333; // binary: 11001100110011001100110011001100110011001100110011001100110011,  len: 62
+    n = (n ^ (n >> 2)) & 0x0f0f0f0f0f0f0f0f; // binary: 111100001111000011110000111100001111000011110000111100001111,    len: 60
+    n = (n ^ (n >> 4)) & 0x00ff00ff00ff00ff; // binary: 11111111000000001111111100000000111111110000000011111111,        len: 56
+    n = (n ^ (n >> 8)) & 0x0000ffff0000ffff; // binary: 1111111111111111000000001111111111111111,                        len: 40
+    n = (n ^ (n >> 16)) & 0x00000000ffffffff; // binary: 11111111111111111111111111111111,                                len: 32
+    n
+}
+
+/// Computing `[x, y]` from a Morton-code.
+///
+/// Reference: https://github.com/trevorprater/pymorton
+fn deinterleave(mortoncode: &u64) -> [u64; 2] {
+    [
+        unpart1by1_64(mortoncode),
+        unpart1by1_64(&(*mortoncode >> 1)),
+    ]
+}
 /// Represents a square grid with square cells.
 /// The grid stores the feature-indices in its cells.
 /// The `length` of the grid is the number of cells of one dimension, thus the total
@@ -306,5 +345,42 @@ mod tests {
                 column: 2_usize
             }
         );
+    }
+
+    #[test]
+    fn test_morton_encode() {
+        let mut cells_rowwise: Vec<(u64, u64)> = Vec::new();
+        for x in 0..4_u64 {
+            for y in 0..4u64 {
+                cells_rowwise.push((x, y));
+            }
+        }
+        let mut mortoncodes: Vec<u64> = cells_rowwise
+            .iter()
+            .map(|cell| interleave(&cell.0, &cell.1))
+            .collect();
+        mortoncodes.sort();
+        let cells_morton: Vec<[u64; 2]> = mortoncodes.iter().map(|mc| deinterleave(mc)).collect();
+
+        let expected: Vec<[u64; 2]> = vec![
+            [0, 0],
+            [1, 0],
+            [0, 1],
+            [1, 1],
+            [2, 0],
+            [3, 0],
+            [2, 1],
+            [3, 1],
+            [0, 2],
+            [1, 2],
+            [0, 3],
+            [1, 3],
+            [2, 2],
+            [3, 2],
+            [2, 3],
+            [3, 3],
+        ];
+
+        assert_eq!(cells_morton, expected)
     }
 }
