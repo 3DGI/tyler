@@ -45,6 +45,8 @@ if __name__ == "__main__":
     cityjson_path = Path(argv[3]).resolve()
     # a file with the list of feature paths
     path_features_input_file = Path(argv[4]).resolve()
+    # tile bbox (used in the terrain splitter)
+    bbox = argv[5]
 
     cm = merge(cityjson_path, path_features_input_file)
     if output_format == "cityjson":

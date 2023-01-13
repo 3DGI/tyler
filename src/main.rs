@@ -315,6 +315,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
+            let b = tile.bbox(&grid);
+            let bbox = format!("{},{},{},{}", b[0], b[1], b[3], b[4]);
+
             debug!("converting {}", &tileid);
             let res_exit_status = Exec::cmd(python_bin)
                 .arg(&python_script)
@@ -322,6 +325,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .arg(output_file)
                 .arg(&path_metadata)
                 .arg(&path_features_input_file)
+                .arg(bbox)
                 .stdout(Redirection::Pipe)
                 .stderr(Redirection::Merge)
                 .capture();
