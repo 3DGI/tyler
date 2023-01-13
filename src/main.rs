@@ -74,6 +74,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .help("Set the cell size for the square grid.")
         )
         .arg(
+            Arg::new("qtree_limit")
+                .long("quadtree-limit")
+                .default_value("10000")
+                .value_parser(clap::value_parser!(usize))
+                .help("The threshold for merging cells in the quadtree. If a quadrant has <= the limit its subtiles are merged.")
+        )
+        .arg(
+            Arg::new("qtree_criteria")
+                .long("quadtree-criteria")
+                .required(true)
+                .value_parser(["objects", "vertices"])
+                .help("The criteria to use when evaluating the quadtree-limit.")
+        )
+        .arg(
             Arg::new("python")
                 .long("python-bin")
                 .default_value("python3")
@@ -114,6 +128,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .as_str();
     if !Path::new(&python_bin).is_file() {
         panic!("Python interpreter does not exist {}", python_bin);
+    }
+    let ql: usize = *matches
+        .get_one::<usize>("qtree_limit")
+        .expect("could not parse the quadtree-limit from the arguments");
+    let qt_crit = matches
+        .get_one::<String>("qtree_criteria")
+        .expect("quadtree-criteria is required")
+        .as_str();
+    let mut quadtree_limit = spatial_structs::QuadTreeLimit::Objects(4000 as usize);
+    match qt_crit {
+        "objects" => quadtree_limit = spatial_structs::QuadTreeLimit::Objects(ql),
+        "vertices" => quadtree_limit = spatial_structs::QuadTreeLimit::Vertices(ql),
+        &_ => {}
     }
 
     let cm = parser::CityJSONMetadata::from_file(&path_metadata)?;
@@ -208,6 +235,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         debug!("exporting grid to working directory");
         grid.export(&feature_set, &cm)?;
     }
+
+    // Build quadtree
+    let quadtree = spatial_structs::QuadTree::from_grid(&grid, &feature_set, quadtree_limit);
 
     // 3D Tiles
     let tileset_path = path_output.join("tileset.json");

@@ -8,7 +8,7 @@ use std::io::prelude::*;
 ///
 /// We don't expect that the quadtree has more than 65535 levels (u16).
 #[derive(Clone, Debug)]
-struct QuadTree {
+pub struct QuadTree {
     x: usize,
     y: usize,
     z: u16,
@@ -19,7 +19,8 @@ struct QuadTree {
 }
 
 impl QuadTree {
-    pub fn from_grid(grid: &SquareGrid, limit: usize, feature_set: &FeatureSet) -> Self {
+    pub fn from_grid(grid: &SquareGrid, feature_set: &FeatureSet, limit: QuadTreeLimit) -> Self {
+        let mut merge_limit: usize = 0;
         let nr_cells = grid.length.pow(2) as f64;
         let max_level = (nr_cells.ln() / 4.0_f64.ln()).ceil() as u16;
         let mut mortoncodes: Vec<u64> = grid
@@ -35,14 +36,23 @@ impl QuadTree {
                     row: y as usize,
                     column: x as usize,
                 };
-                // Use the number of features as a limit
-                // let items = grid.cell(&cellid).len();
-                // Use the number of vertices as a limit
-                let items = grid
-                    .cell(&cellid)
-                    .iter()
-                    .map(|fid| feature_set[*fid].nr_vertices as usize)
-                    .sum();
+                let items: usize;
+                match limit {
+                    QuadTreeLimit::Objects(l) => {
+                        // Use the number of features as a limit
+                        items = grid.cell(&cellid).len();
+                        merge_limit = l;
+                    }
+                    QuadTreeLimit::Vertices(l) => {
+                        // Use the number of vertices as a limit
+                        items = grid
+                            .cell(&cellid)
+                            .iter()
+                            .map(|fid| feature_set[*fid].nr_vertices as usize)
+                            .sum();
+                        merge_limit = l;
+                    }
+                }
                 QuadTree {
                     x: x as usize,
                     y: y as usize,
@@ -54,7 +64,7 @@ impl QuadTree {
                 }
             })
             .collect();
-        Self::merge_tiles(0, tiles_morton, limit)
+        Self::merge_tiles(0, tiles_morton, merge_limit)
     }
 
     fn merge_tiles(level: u16, tiles: Vec<QuadTree>, limit: usize) -> QuadTree {
@@ -124,6 +134,12 @@ impl QuadTree {
     pub fn id(&self) -> String {
         format!("{}/{}/{}", self.z, self.x, self.y)
     }
+}
+
+#[derive(Debug)]
+pub enum QuadTreeLimit {
+    Objects(usize),
+    Vertices(usize),
 }
 
 /// 64-bit mask
@@ -525,7 +541,7 @@ mod tests {
                 }
             }
         }
-        let qtree = QuadTree::from_grid(&grid, 20, &feature_set);
+        let qtree = QuadTree::from_grid(&grid, &feature_set, QuadTreeLimit::Objects(20));
         qtree.visit_leaves();
     }
 }
