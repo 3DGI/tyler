@@ -88,6 +88,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .help("The criteria to use when evaluating the quadtree-limit.")
         )
         .arg(
+                Arg::new("object_type")
+                .long("object-type")
+                .action(ArgAction::Append)
+                .value_parser(clap::builder::EnumValueParser::<parser::CityObjectType>::new())
+                .help("The CityObject type to use for the 3D Tiles.")
+        )
+        .arg(
             Arg::new("python")
                 .long("python-bin")
                 .default_value("python3")
@@ -142,6 +149,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "vertices" => quadtree_limit = spatial_structs::QuadTreeLimit::Vertices(ql),
         &_ => {}
     }
+    let cotypes: Vec<&parser::CityObjectType> = matches
+        .get_many::<parser::CityObjectType>("object_type")
+        .expect("could not parse the cityobject-type from the argument")
+        .collect();
 
     let cm = parser::CityJSONMetadata::from_file(&path_metadata)?;
 
@@ -270,6 +281,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "cityjson" => "city.json",
         _ => "unknown",
     };
+    let cotypes_str: Vec<String> = cotypes.iter().map(|co| co.to_string()).collect();
+    let cotypes_arg = cotypes_str.join(",");
 
     let mut cellids: Vec<spatial_structs::CellId> = Vec::with_capacity(grid.length * grid.length);
     cellids = grid.into_iter().map(|(cellid, _cell)| cellid).collect();
@@ -326,6 +339,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .arg(&path_metadata)
                 .arg(&path_features_input_file)
                 .arg(bbox)
+                .arg(&cotypes_arg)
                 .stdout(Redirection::Pipe)
                 .stderr(Redirection::Merge)
                 .capture();

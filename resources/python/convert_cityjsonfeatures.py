@@ -47,6 +47,8 @@ if __name__ == "__main__":
     path_features_input_file = Path(argv[4]).resolve()
     # tile bbox (used in the terrain splitter)
     bbox = argv[5]
+    # CityObject types to use
+    cotypes = argv[6].split(",")
 
     cm = merge(cityjson_path, path_features_input_file)
     if output_format == "cityjson":
@@ -60,6 +62,7 @@ if __name__ == "__main__":
         # lod_file_names = [("1.2", ""), ("1.3", "-0"), ("2.2", "-0-0")] # grid with multi-lod
         # lod_file_names = [("2.2", "-0-0"),] # for grid with single lod
         lod_file_names = [("2.2", ""),] # for quadtree
+        cm = cm.get_subset_cotype(cotypes)
         for lod, suffix in lod_file_names:
             cm_copy = deepcopy(cm)
             cm_copy.filter_lod(lod)

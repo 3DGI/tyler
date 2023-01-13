@@ -1,3 +1,4 @@
+use std::fmt;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 
@@ -226,6 +227,21 @@ impl Feature {
             (ctr_x as f64 * cm.transform.scale[0]) + cm.transform.translate[0],
             (ctr_y as f64 * cm.transform.scale[1]) + cm.transform.translate[1],
         ]
+    }
+}
+
+#[derive(Debug, clap::ValueEnum, Clone)]
+pub enum CityObjectType {
+    Building,
+    BuildingPart,
+    LandUse,
+    PlantCover,
+    WaterBody,
+}
+
+impl fmt::Display for CityObjectType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
 
