@@ -19,7 +19,7 @@ struct QuadTree {
 }
 
 impl QuadTree {
-    pub fn from_grid(grid: &SquareGrid, limit: usize) -> Self {
+    pub fn from_grid(grid: &SquareGrid, limit: usize, feature_set: &FeatureSet) -> Self {
         let nr_cells = grid.length.pow(2) as f64;
         let max_level = (nr_cells.ln() / 4.0_f64.ln()).ceil() as u16;
         let mut mortoncodes: Vec<u64> = grid
@@ -35,7 +35,14 @@ impl QuadTree {
                     row: y as usize,
                     column: x as usize,
                 };
-                let items = grid.cell(&cellid).len();
+                // Use the number of features as a limit
+                // let items = grid.cell(&cellid).len();
+                // Use the number of vertices as a limit
+                let items = grid
+                    .cell(&cellid)
+                    .iter()
+                    .map(|fid| feature_set[*fid].nr_vertices as usize)
+                    .sum();
                 QuadTree {
                     x: x as usize,
                     y: y as usize,
@@ -518,7 +525,7 @@ mod tests {
                 }
             }
         }
-        let qtree = QuadTree::from_grid(&grid, 20);
+        let qtree = QuadTree::from_grid(&grid, 20, &feature_set);
         qtree.visit_leaves();
     }
 }
