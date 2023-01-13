@@ -56,38 +56,7 @@ pub mod cesium3dtiles {
             let crs_to = "EPSG:4979";
             let transformer = Proj::new_known_crs(&crs_from, &crs_to, None).unwrap();
 
-            // y-up to z-up transform needed because we are using gltf assets, which is y-up
-            // https://github.com/CesiumGS/3d-tiles/tree/main/specification#y-up-to-z-up
-            let y_up_to_z_up = Transform([
-                1.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-            ]);
-
-            let mut root_children: Vec<Tile> = Vec::new();
-            Self::generate_tiles(
-                quadtree,
-                grid,
-                &transformer,
-                citymodel,
-                feature_set,
-                &mut root_children,
-            );
-
-            let mut root_bbox = quadtree.bbox(grid);
-            root_bbox[2] = grid.bbox[2];
-            root_bbox[5] = grid.bbox[5];
-            let root_volume = BoundingVolume::region_from_bbox(&root_bbox, &transformer).unwrap();
-            debug!("root bbox: {:?}", &root_bbox);
-            debug!("root boundingVolume: {:?}", &root_volume);
-            let root_geometric_error = root_bbox[3] - root_bbox[0];
-            let root = Tile {
-                bounding_volume: root_volume,
-                geometric_error: root_geometric_error,
-                viewer_request_volume: None,
-                refine: Some(Refinement::Replace),
-                transform: None,
-                content: None,
-                children: Some(root_children),
-            };
+            let root = Self::generate_tiles(quadtree, grid, &transformer, citymodel, feature_set);
 
             // Using gltf tile content
             let mut extensions: Extensions = HashMap::new();
@@ -99,7 +68,7 @@ pub mod cesium3dtiles {
 
             Self {
                 asset: Default::default(),
-                geometric_error: root_geometric_error * 1.5,
+                geometric_error: root.geometric_error * 1.5,
                 root,
                 properties: None,
                 extensions_used: Some(vec![ExtensionName::ContentGltf]),
@@ -114,49 +83,44 @@ pub mod cesium3dtiles {
             transformer: &Proj,
             citymodel: &crate::parser::CityJSONMetadata,
             feature_set: &crate::FeatureSet,
-            children: &mut Vec<Tile>,
-        ) {
+        ) -> Tile {
             if !quadtree.children.is_empty() {
                 if quadtree.children.len() != 4 {
                     error!("Quadtree does not have 4 children {:?}", &quadtree);
                 }
-                Self::generate_tiles(
-                    &quadtree.children[0],
-                    grid,
-                    transformer,
-                    citymodel,
-                    feature_set,
-                    children,
-                );
-                Self::generate_tiles(
-                    &quadtree.children[1],
-                    grid,
-                    transformer,
-                    citymodel,
-                    feature_set,
-                    children,
-                );
-                Self::generate_tiles(
-                    &quadtree.children[2],
-                    grid,
-                    transformer,
-                    citymodel,
-                    feature_set,
-                    children,
-                );
-                Self::generate_tiles(
-                    &quadtree.children[3],
-                    grid,
-                    transformer,
-                    citymodel,
-                    feature_set,
-                    children,
-                );
+                // Tile bounding volume
+                let mut tile_bbox = quadtree.bbox(grid);
+                // Set the bounding volume height from the content height
+                tile_bbox[2] = grid.bbox[2];
+                tile_bbox[5] = grid.bbox[5];
+                let bounding_volume =
+                    BoundingVolume::region_from_bbox(&tile_bbox, &transformer).unwrap();
+
+                // The geometric error of a tile is its 'size'.
+                // Since we have square tiles, we compute its size as the length of
+                // its side on the x-axis.
+                let dz = tile_bbox[5] - tile_bbox[2];
+                let mut tile_children: Vec<Tile> = Vec::new();
+                for child in quadtree.children.iter() {
+                    tile_children.push(Self::generate_tiles(
+                        child,
+                        grid,
+                        transformer,
+                        citymodel,
+                        feature_set,
+                    ));
+                }
+                Tile {
+                    bounding_volume,
+                    geometric_error: dz,
+                    viewer_request_volume: None,
+                    refine: Some(Refinement::Replace),
+                    transform: None,
+                    content: None,
+                    children: Some(tile_children),
+                }
             } else {
                 // Compute the tile content bounding box <-- the bbox of all the cells in a tile
-                if quadtree.cells.is_empty() {
-                    return;
-                }
                 let mut tile_content_bbox_qc: [i64; 6] = [0, 0, 0, 0, 0, 0];
                 for cellid in &quadtree.cells {
                     let cell = grid.cell(cellid);
@@ -221,7 +185,7 @@ pub mod cesium3dtiles {
                 let content_bounding_voume =
                     BoundingVolume::region_from_bbox(&tile_content_bbox_rw, &transformer).unwrap();
 
-                children.push(Tile {
+                Tile {
                     bounding_volume,
                     geometric_error: 0.0,
                     viewer_request_volume: None,
@@ -232,7 +196,7 @@ pub mod cesium3dtiles {
                         uri: format!("tiles/{}.glb", quadtree.id()),
                     }),
                     children: None,
-                });
+                }
             }
         }
 
