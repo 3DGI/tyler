@@ -40,6 +40,7 @@ if __name__ == "__main__":
         raise ValueError(f"Output format {output_format} is not supported. Supported formats: {supported_formats}")
     # where to save the output
     output_file = Path(argv[2])
+    output_file.parent.mkdir(parents=True, exist_ok=True)
     # the main .city.json file with the transformation properties
     cityjson_path = Path(argv[3]).resolve()
     # a file with the list of feature paths
@@ -54,8 +55,9 @@ if __name__ == "__main__":
         # TODO: we are cheating here, because we know that the data has 3 LoD-s and we
         #  also hardcoded the same into Tileset.from() in tyler. Same for the tile/file
         #  names.
-        lod_file_names = [("1.2", ""), ("1.3", "-0"), ("2.2", "-0-0")]
-        # lod_file_names = [("2.2", "-0-0"),]
+        # lod_file_names = [("1.2", ""), ("1.3", "-0"), ("2.2", "-0-0")] # grid with multi-lod
+        # lod_file_names = [("2.2", "-0-0"),] # for grid with single lod
+        lod_file_names = [("2.2", ""),] # for quadtree
         for lod, suffix in lod_file_names:
             cm_copy = deepcopy(cm)
             cm_copy.filter_lod(lod)

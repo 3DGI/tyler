@@ -10,7 +10,7 @@ pub mod cesium3dtiles {
     use std::path::Path;
 
     use crate::Bbox;
-    use log::debug;
+    use log::{debug, error};
     use serde::Serialize;
 
     use crate::proj::Proj;
@@ -40,6 +40,200 @@ pub mod cesium3dtiles {
             let file_out = File::create(path.as_ref())?;
             serde_json::to_writer(&file_out, self)?;
             Ok(())
+        }
+
+        pub fn from_quadtree(
+            quadtree: &crate::spatial_structs::QuadTree,
+            grid: &crate::spatial_structs::SquareGrid,
+            citymodel: &crate::parser::CityJSONMetadata,
+            feature_set: &crate::FeatureSet,
+        ) -> Self {
+            let crs_from = format!(
+                "EPSG:{}",
+                citymodel.metadata.reference_system.to_epsg().unwrap()
+            );
+            // Because we have a boundingVolume.box. For a boundingVolume.region we need 4979.
+            let crs_to = "EPSG:4979";
+            let transformer = Proj::new_known_crs(&crs_from, &crs_to, None).unwrap();
+
+            // y-up to z-up transform needed because we are using gltf assets, which is y-up
+            // https://github.com/CesiumGS/3d-tiles/tree/main/specification#y-up-to-z-up
+            let y_up_to_z_up = Transform([
+                1.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ]);
+
+            let mut root_children: Vec<Tile> = Vec::new();
+            Self::generate_tiles(
+                quadtree,
+                grid,
+                &transformer,
+                citymodel,
+                feature_set,
+                &mut root_children,
+            );
+
+            let mut root_bbox = quadtree.bbox(grid);
+            root_bbox[2] = grid.bbox[2];
+            root_bbox[5] = grid.bbox[5];
+            let root_volume = BoundingVolume::region_from_bbox(&root_bbox, &transformer).unwrap();
+            debug!("root bbox: {:?}", &root_bbox);
+            debug!("root boundingVolume: {:?}", &root_volume);
+            let root_geometric_error = root_bbox[3] - root_bbox[0];
+            let root = Tile {
+                bounding_volume: root_volume,
+                geometric_error: root_geometric_error,
+                viewer_request_volume: None,
+                refine: Some(Refinement::Replace),
+                transform: None,
+                content: None,
+                children: Some(root_children),
+            };
+
+            // Using gltf tile content
+            let mut extensions: Extensions = HashMap::new();
+            let e1 = Extension::ContentGtlf {
+                extensions_used: None,
+                extensions_required: None,
+            };
+            extensions.insert(ExtensionName::ContentGltf, e1);
+
+            Self {
+                asset: Default::default(),
+                geometric_error: root_geometric_error * 1.5,
+                root,
+                properties: None,
+                extensions_used: Some(vec![ExtensionName::ContentGltf]),
+                extensions_required: Some(vec![ExtensionName::ContentGltf]),
+                extensions: Some(extensions),
+            }
+        }
+
+        fn generate_tiles(
+            quadtree: &crate::spatial_structs::QuadTree,
+            grid: &crate::spatial_structs::SquareGrid,
+            transformer: &Proj,
+            citymodel: &crate::parser::CityJSONMetadata,
+            feature_set: &crate::FeatureSet,
+            children: &mut Vec<Tile>,
+        ) {
+            if !quadtree.children.is_empty() {
+                if quadtree.children.len() != 4 {
+                    error!("Quadtree does not have 4 children {:?}", &quadtree);
+                }
+                Self::generate_tiles(
+                    &quadtree.children[0],
+                    grid,
+                    transformer,
+                    citymodel,
+                    feature_set,
+                    children,
+                );
+                Self::generate_tiles(
+                    &quadtree.children[1],
+                    grid,
+                    transformer,
+                    citymodel,
+                    feature_set,
+                    children,
+                );
+                Self::generate_tiles(
+                    &quadtree.children[2],
+                    grid,
+                    transformer,
+                    citymodel,
+                    feature_set,
+                    children,
+                );
+                Self::generate_tiles(
+                    &quadtree.children[3],
+                    grid,
+                    transformer,
+                    citymodel,
+                    feature_set,
+                    children,
+                );
+            } else {
+                // Compute the tile content bounding box <-- the bbox of all the cells in a tile
+                if quadtree.cells.is_empty() {
+                    return;
+                }
+                let mut tile_content_bbox_qc: [i64; 6] = [0, 0, 0, 0, 0, 0];
+                for cellid in &quadtree.cells {
+                    let cell = grid.cell(cellid);
+                    if !cell.is_empty() {
+                        tile_content_bbox_qc = feature_set[cell[0]].bbox_quantized;
+                        break;
+                    }
+                }
+                for cellid in &quadtree.cells {
+                    let cell = grid.cell(cellid);
+                    for fi in cell {
+                        let bbox_qc = feature_set[*fi].bbox_quantized;
+                        if bbox_qc[0] < tile_content_bbox_qc[0] {
+                            tile_content_bbox_qc[0] = bbox_qc[0]
+                        } else if bbox_qc[3] > tile_content_bbox_qc[3] {
+                            tile_content_bbox_qc[3] = bbox_qc[3]
+                        }
+                        if bbox_qc[1] < tile_content_bbox_qc[1] {
+                            tile_content_bbox_qc[1] = bbox_qc[1]
+                        } else if bbox_qc[4] > tile_content_bbox_qc[4] {
+                            tile_content_bbox_qc[4] = bbox_qc[4]
+                        }
+                        if bbox_qc[2] < tile_content_bbox_qc[2] {
+                            tile_content_bbox_qc[2] = bbox_qc[2]
+                        } else if bbox_qc[5] > tile_content_bbox_qc[5] {
+                            tile_content_bbox_qc[5] = bbox_qc[5]
+                        }
+                    }
+                }
+                let tile_content_bbox_rw_min = tile_content_bbox_qc[0..3]
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, qc)| {
+                        (*qc as f64 * citymodel.transform.scale[i])
+                            + citymodel.transform.translate[i]
+                    });
+                let tile_content_bbox_rw_max = tile_content_bbox_qc[3..6]
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, qc)| {
+                        (*qc as f64 * citymodel.transform.scale[i])
+                            + citymodel.transform.translate[i]
+                    });
+                let tile_content_bbox_rw: Bbox = tile_content_bbox_rw_min
+                    .chain(tile_content_bbox_rw_max)
+                    .collect::<Vec<f64>>()
+                    .try_into()
+                    .expect("should be able to create an [f64; 6] from the extent_rw vector");
+
+                // Tile bounding volume
+                let mut tile_bbox = quadtree.bbox(grid);
+                // Set the bounding volume height from the content height
+                tile_bbox[2] = tile_content_bbox_rw[2];
+                tile_bbox[5] = tile_content_bbox_rw[5];
+                let bounding_volume =
+                    BoundingVolume::region_from_bbox(&tile_bbox, &transformer).unwrap();
+
+                // The geometric error of a tile is its 'size'.
+                // Since we have square tiles, we compute its size as the length of
+                // its side on the x-axis.
+                let dz = tile_bbox[5] - tile_bbox[2];
+                let content_bounding_voume =
+                    BoundingVolume::region_from_bbox(&tile_content_bbox_rw, &transformer).unwrap();
+
+                children.push(Tile {
+                    bounding_volume,
+                    geometric_error: 0.0,
+                    viewer_request_volume: None,
+                    refine: Some(Refinement::Replace),
+                    transform: None,
+                    content: Some(Content {
+                        bounding_volume: Some(content_bounding_voume),
+                        uri: format!("tiles/{}.glb", quadtree.id()),
+                    }),
+                    children: None,
+                });
+            }
         }
 
         pub fn from_grid(

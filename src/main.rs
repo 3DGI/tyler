@@ -237,11 +237,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Build quadtree
+    info!("Building quadtree");
     let quadtree = spatial_structs::QuadTree::from_grid(&grid, &feature_set, quadtree_limit);
 
     // 3D Tiles
+    info!("Generating 3D Tiles tileset");
     let tileset_path = path_output.join("tileset.json");
-    let tileset = formats::cesium3dtiles::Tileset::from_grid(&grid, &cm, &feature_set);
+    let tileset =
+        formats::cesium3dtiles::Tileset::from_quadtree(&quadtree, &grid, &cm, &feature_set);
     tileset.to_file(tileset_path)?;
 
     let path_output_tiles = path_output.join("tiles");
@@ -271,11 +274,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut cellids: Vec<spatial_structs::CellId> = Vec::with_capacity(grid.length * grid.length);
     cellids = grid.into_iter().map(|(cellid, _cell)| cellid).collect();
 
-    info!("Exporting {} tiles", grid.length * grid.length);
-    cellids.into_par_iter().for_each(|cellid| {
-        let cell = grid.cell(&cellid);
-        if !cell.is_empty() {
-            let file_name = format!("{}", cellid);
+    let leaves: Vec<&spatial_structs::QuadTree> = quadtree.collect_leaves();
+    info!("Exporting {} tiles", leaves.len());
+    leaves.into_par_iter().for_each(|tile| {
+        if tile.nr_items > 0 {
+            let tileid = tile.id();
+            let file_name = format!("{}", &tileid);
             let output_file = path_output_tiles
                 .join(&file_name)
                 .with_extension(output_extension);
@@ -285,24 +289,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let path_features_input_file = path_features_input_dir
                 .join(&file_name)
                 .with_extension("input");
+            fs::create_dir_all(path_features_input_file.parent().unwrap()).unwrap_or_else(|_| {
+                panic!(
+                    "should be able to create the directory {:?}",
+                    path_features_input_file.parent().unwrap()
+                )
+            });
             let mut feature_input = File::create(&path_features_input_file).unwrap_or_else(|_| {
                 panic!(
                     "should be able to create a file {:?}",
                     &path_features_input_file
                 )
             });
-            for fid in cell.iter() {
-                let fp = feature_set[*fid]
-                    .path_jsonl
-                    .clone()
-                    .into_os_string()
-                    .into_string()
-                    .unwrap();
-                writeln!(feature_input, "{}", fp)
-                    .expect("should be able to write feature path to the input file");
+            for cellid in tile.cells.iter() {
+                let cell = grid.cell(cellid);
+                for fid in cell.iter() {
+                    let fp = feature_set[*fid]
+                        .path_jsonl
+                        .clone()
+                        .into_os_string()
+                        .into_string()
+                        .unwrap();
+                    writeln!(feature_input, "{}", fp)
+                        .expect("should be able to write feature path to the input file");
+                }
             }
 
-            debug!("converting {}", cellid);
+            debug!("converting {}", &tileid);
             let res_exit_status = Exec::cmd(python_bin)
                 .arg(&python_script)
                 .arg(output_format)
@@ -315,14 +328,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Ok(capturedata) = res_exit_status {
                 let stdout = capturedata.stdout_str();
                 if !capturedata.success() {
-                    error!("{} subprocess stdout: {}", cellid, stdout);
-                    error!("{} subprocess stderr: {}", cellid, capturedata.stderr_str());
+                    error!("{} subprocess stdout: {}", &tileid, stdout);
+                    error!(
+                        "{} subprocess stderr: {}",
+                        &tileid,
+                        capturedata.stderr_str()
+                    );
                 } else if !stdout.is_empty() && stdout != "\n" {
-                    debug!("{} subproces stdout {}", cellid, capturedata.stdout_str());
+                    debug!("{} subproces stdout {}", &tileid, capturedata.stdout_str());
                 }
             } else if let Err(popen_error) = res_exit_status {
                 error!("{}", popen_error);
             }
+        } else {
+            debug!("tile {} is empty", &tile.id())
         }
     });
     info!("Done");

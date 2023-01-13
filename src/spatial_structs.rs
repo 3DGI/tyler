@@ -1,5 +1,7 @@
 //! Spatial data structures for indexing the features.
+use crate::parser::Feature;
 use crate::FeatureSet;
+use log::{debug, error};
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::prelude::*;
@@ -13,9 +15,9 @@ pub struct QuadTree {
     y: usize,
     z: u16,
     side_length: u64,
-    children: Vec<QuadTree>,
-    cells: Vec<CellId>,
-    nr_items: usize,
+    pub children: Vec<QuadTree>,
+    pub cells: Vec<CellId>,
+    pub nr_items: usize,
 }
 
 impl QuadTree {
@@ -23,6 +25,7 @@ impl QuadTree {
         let mut merge_limit: usize = 0;
         let nr_cells = grid.length.pow(2) as f64;
         let max_level = (nr_cells.ln() / 4.0_f64.ln()).ceil() as u16;
+        debug!("Calculated maximum level for quadtree: {}", &max_level);
         let mut mortoncodes: Vec<u64> = grid
             .into_iter()
             .map(|(cellid, _)| interleave(&(cellid.column as u64), &(cellid.row as u64)))
@@ -103,6 +106,13 @@ impl QuadTree {
                     nr_items: sum_items,
                 }
             } else {
+                if tiles.len() % 4 != 0 {
+                    error!(
+                        "number of children is not divisable by 4: {}, in level {}",
+                        tiles.len(),
+                        &level
+                    );
+                }
                 QuadTree {
                     x: tiles[0].x,
                     y: tiles[0].y,
@@ -123,7 +133,7 @@ impl QuadTree {
             Self::visit_leaves_helper(&quadtree.children[2]);
             Self::visit_leaves_helper(&quadtree.children[3]);
         } else {
-            println!("leaf {}, items: {}", quadtree.id(), quadtree.nr_items)
+            println!("leaf {}, items: {}", quadtree.id(), quadtree.nr_items);
         }
     }
 
@@ -131,8 +141,59 @@ impl QuadTree {
         Self::visit_leaves_helper(self);
     }
 
+    fn collect_leaves_recurse<'collect>(&'collect self, leaves: &mut Vec<&'collect QuadTree>) {
+        if !self.children.is_empty() {
+            for child in self.children.iter() {
+                child.collect_leaves_recurse(leaves);
+            }
+        } else {
+            leaves.push(self);
+        }
+    }
+
+    pub fn collect_leaves(&self) -> Vec<&Self> {
+        let mut leaves: Vec<&QuadTree> = Vec::new();
+        self.collect_leaves_recurse(&mut leaves);
+        leaves
+    }
+
+    // pub fn collect_features(&self, grid: &SquareGrid, feature_set: &FeatureSet) -> Vec<(String, Vec<&Feature>)> {
+    //     let mut features: Vec<(String, Vec<&Feature>)> = Vec::new();
+    //     self.collect_features_recurse(&mut features, grid,feature_set);
+    //     features
+    // }
+    //
+    // fn collect_features_recurse<'collect>(&'collect self, features: &mut Vec<(String, Vec<&'collect Feature>)>, grid: &SquareGrid, feature_set: &'collect Vec<crate::parser::Feature>) {
+    //     if !self.children.is_empty() {
+    //         for child in self.children.iter() {
+    //             child.collect_features_recurse(features, grid, feature_set);
+    //         }
+    //     } else {
+    //         let mut features_in_leaf: Vec<&Feature> = Vec::with_capacity(self.nr_items);
+    //         for cellid in &self.cells {
+    //             for fid in grid.cell(cellid) {
+    //                 features_in_leaf.push(&feature_set[*fid]);
+    //             }
+    //         }
+    //         features.push((self.id(), features_in_leaf));
+    //     }
+    // }
+
     pub fn id(&self) -> String {
         format!("{}/{}/{}", self.z, self.x, self.y)
+    }
+
+    pub fn bbox(&self, grid: &SquareGrid) -> crate::Bbox {
+        let minx = grid.origin[0] + (self.x * grid.cellsize as usize) as f64;
+        let miny = grid.origin[1] + (self.y * grid.cellsize as usize) as f64;
+        [
+            minx,
+            miny,
+            0.0,
+            minx + self.side_length as f64,
+            miny + self.side_length as f64,
+            0.0,
+        ]
     }
 }
 
@@ -260,7 +321,11 @@ impl SquareGrid {
         let dx = (extent[3] - extent[0]).abs() + buffer * 2.0;
         let dy = (extent[4] - extent[1]).abs() + buffer * 2.0;
         let gridsize = if dx > dy { dx } else { dy };
-        let length = (gridsize / cellsize as f64).ceil() as usize;
+        let mut length = (gridsize / cellsize as f64).ceil() as usize;
+        // We need a grid that is divisible by 4, so that we can build a quadtree easily
+        if length % 4 != 0 {
+            length += length % 4;
+        }
         // A row-vector (x-axis) to store the column-vectors (y-axis).
         let mut row: Vec<Vec<Vec<usize>>> = Vec::with_capacity(length);
         // For each column create a column vector that stores the cells and for each row in the
@@ -543,5 +608,30 @@ mod tests {
         }
         let qtree = QuadTree::from_grid(&grid, &feature_set, QuadTreeLimit::Objects(20));
         qtree.visit_leaves();
+    }
+
+    #[test]
+    fn test_quadtree_leaves() {
+        let mut feature_set: crate::FeatureSet = Vec::new();
+        let mut grid = SquareGrid::new(&[0.0, 0.0, 0.0, 4.0, 4.0, 1.0], 1, 0, None);
+        for x in 0..4_u64 {
+            for y in 0..4u64 {
+                for f in 0..5 {
+                    feature_set.push(crate::parser::Feature {
+                        centroid_quantized: [0, 0],
+                        nr_vertices: 0,
+                        path_jsonl: Default::default(),
+                        bbox_quantized: [0, 0, 0, 0, 0, 0],
+                    });
+                    let xc: f64 = format!("{}.{}", &x, &f).parse().unwrap();
+                    grid.insert(&[xc, y as f64], f as usize);
+                }
+            }
+        }
+        let qtree = QuadTree::from_grid(&grid, &feature_set, QuadTreeLimit::Objects(20));
+        let leaves: Vec<&QuadTree> = QuadTree::collect_leaves(&qtree);
+        for tile in leaves {
+            println!("{}", tile.id());
+        }
     }
 }
