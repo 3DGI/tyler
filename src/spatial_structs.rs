@@ -4,6 +4,121 @@ use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::prelude::*;
 
+/// Quadtree
+///
+/// We don't expect that the quadtree has more than 65535 levels (u16).
+#[derive(Clone, Debug)]
+struct QuadTree {
+    x: usize,
+    y: usize,
+    z: u16,
+    side_length: u64,
+    children: Vec<QuadTree>,
+    cells: Vec<CellId>,
+    nr_items: usize,
+}
+
+impl QuadTree {
+    pub fn from_grid(grid: &SquareGrid, limit: usize) -> Self {
+        let nr_cells = grid.length.pow(2) as f64;
+        let max_level = (nr_cells.ln() / 4.0_f64.ln()).ceil() as u16;
+        let mut mortoncodes: Vec<u64> = grid
+            .into_iter()
+            .map(|(cellid, _)| interleave(&(cellid.column as u64), &(cellid.row as u64)))
+            .collect();
+        mortoncodes.sort();
+        let tiles_morton: Vec<QuadTree> = mortoncodes
+            .iter()
+            .map(|mc| deinterleave(mc))
+            .map(|[x, y]| {
+                let cellid = CellId {
+                    row: y as usize,
+                    column: x as usize,
+                };
+                let items = grid.cell(&cellid).len();
+                QuadTree {
+                    x: x as usize,
+                    y: y as usize,
+                    z: max_level,
+                    side_length: grid.cellsize as u64,
+                    children: Vec::new(),
+                    cells: vec![cellid],
+                    nr_items: items,
+                }
+            })
+            .collect();
+        Self::merge_tiles(0, tiles_morton, limit)
+    }
+
+    fn merge_tiles(level: u16, tiles: Vec<QuadTree>, limit: usize) -> QuadTree {
+        let len_tiles = tiles.len();
+        if len_tiles > 4 {
+            let q0: usize = len_tiles / 4;
+            let q1: usize = q0 * 2;
+            let q2: usize = q0 * 3;
+            let next_level = level + 1;
+            Self::merge_tiles(
+                level,
+                vec![
+                    Self::merge_tiles(next_level, tiles[0..q0].to_vec(), limit),
+                    Self::merge_tiles(next_level, tiles[q0..q1].to_vec(), limit),
+                    Self::merge_tiles(next_level, tiles[q1..q2].to_vec(), limit),
+                    Self::merge_tiles(next_level, tiles[q2..].to_vec(), limit),
+                ],
+                limit,
+            )
+        } else {
+            let sum_items: usize = tiles.iter().map(|t| t.nr_items).sum();
+            let mut cells: Vec<CellId> = Vec::new();
+            for t in tiles.iter() {
+                for c in t.cells.iter() {
+                    cells.push(*c)
+                }
+            }
+            if sum_items <= limit {
+                QuadTree {
+                    x: tiles[0].x,
+                    y: tiles[0].y,
+                    z: level,
+                    side_length: tiles[0].side_length * 2,
+                    children: vec![],
+                    cells,
+                    nr_items: sum_items,
+                }
+            } else {
+                QuadTree {
+                    x: tiles[0].x,
+                    y: tiles[0].y,
+                    z: level,
+                    side_length: tiles[0].side_length * 2,
+                    children: tiles.clone(),
+                    cells: vec![],
+                    nr_items: sum_items,
+                }
+            }
+        }
+    }
+
+    fn visit_leaves_helper(quadtree: &QuadTree) {
+        if !quadtree.children.is_empty() {
+            Self::visit_leaves_helper(&quadtree.children[0]);
+            Self::visit_leaves_helper(&quadtree.children[1]);
+            Self::visit_leaves_helper(&quadtree.children[2]);
+            Self::visit_leaves_helper(&quadtree.children[3]);
+        } else {
+            println!("leaf {}, items: {}", quadtree.id(), quadtree.nr_items)
+        }
+    }
+
+    pub fn visit_leaves(&self) {
+        Self::visit_leaves_helper(self);
+    }
+
+    pub fn id(&self) -> String {
+        format!("{}/{}/{}", self.z, self.x, self.y)
+    }
+}
+
 /// 64-bit mask
 fn part1by1_64(number: &u64) -> u64 {
     let mut n = *number;
@@ -43,6 +158,7 @@ fn deinterleave(mortoncode: &u64) -> [u64; 2] {
         unpart1by1_64(&(*mortoncode >> 1)),
     ]
 }
+
 /// Represents a square grid with square cells.
 /// The grid stores the feature-indices in its cells.
 /// The `length` of the grid is the number of cells of one dimension, thus the total
@@ -308,7 +424,7 @@ type Cell = Vec<usize>;
 ///                       X
 /// ```
 ///
-#[derive(Debug, Ord, PartialOrd, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Ord, PartialOrd, PartialEq, Eq)]
 pub struct CellId {
     // A row is along the y-axis
     row: usize,
@@ -342,7 +458,7 @@ mod tests {
             cellid,
             CellId {
                 row: 1_usize,
-                column: 2_usize
+                column: 2_usize,
             }
         );
     }
@@ -382,5 +498,27 @@ mod tests {
         ];
 
         assert_eq!(cells_morton, expected)
+    }
+
+    #[test]
+    fn test_quadtree_construction() {
+        let mut feature_set: crate::FeatureSet = Vec::new();
+        let mut grid = SquareGrid::new(&[0.0, 0.0, 0.0, 4.0, 4.0, 1.0], 1, 0, None);
+        for x in 0..4_u64 {
+            for y in 0..4u64 {
+                for f in 0..5 {
+                    feature_set.push(crate::parser::Feature {
+                        centroid_quantized: [0, 0],
+                        nr_vertices: 0,
+                        path_jsonl: Default::default(),
+                        bbox_quantized: [0, 0, 0, 0, 0, 0],
+                    });
+                    let xc: f64 = format!("{}.{}", &x, &f).parse().unwrap();
+                    grid.insert(&[xc, y as f64], f as usize);
+                }
+            }
+        }
+        let qtree = QuadTree::from_grid(&grid, 20);
+        qtree.visit_leaves();
     }
 }

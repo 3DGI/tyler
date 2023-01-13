@@ -198,15 +198,23 @@ impl CityJSONFeatureVertices {
             centroid_quantized: [ctr_bbox[0], ctr_bbox[1]],
             nr_vertices: cf.vertex_count(),
             path_jsonl: path.as_ref().to_path_buf(),
-            bbox_quantized: [ctr_bbox[2], ctr_bbox[3], ctr_bbox[4], ctr_bbox[5], ctr_bbox[6], ctr_bbox[7]],
+            bbox_quantized: [
+                ctr_bbox[2],
+                ctr_bbox[3],
+                ctr_bbox[4],
+                ctr_bbox[5],
+                ctr_bbox[6],
+                ctr_bbox[7],
+            ],
         })
     }
 }
 
 /// Stores the information that is computed from a CityJSONFeature.
+#[derive(Debug)]
 pub struct Feature {
-    centroid_quantized: [i64; 2],
-    nr_vertices: u16,
+    pub(crate) centroid_quantized: [i64; 2],
+    pub(crate) nr_vertices: u16,
     pub path_jsonl: PathBuf,
     pub bbox_quantized: [i64; 6],
 }
