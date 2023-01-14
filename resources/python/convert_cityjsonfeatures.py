@@ -56,21 +56,26 @@ if __name__ == "__main__":
             fo.write(json.dumps(cm.j, separators=(',', ':')))
     elif output_format == "3dtiles":
         cm.reproject(4978)
-        # TODO: we are cheating here, because we know that the data has 3 LoD-s and we
-        #  also hardcoded the same into Tileset.from() in tyler. Same for the tile/file
-        #  names.
-        # lod_file_names = [("1.2", ""), ("1.3", "-0"), ("2.2", "-0-0")] # grid with multi-lod
-        # lod_file_names = [("2.2", "-0-0"),] # for grid with single lod
-        lod_file_names = [("2.2", ""),] # for quadtree
         cm = cm.get_subset_cotype(cotypes)
-        for lod, suffix in lod_file_names:
-            cm_copy = deepcopy(cm)
-            cm_copy.filter_lod(lod)
-            glb = cm_copy.export2glb(do_triangulate=False)
-            glb.seek(0)
-            output_file_tile = (output_file.parent / (output_file.stem + suffix)).with_suffix(".glb")
-            with output_file_tile.open("wb") as bo:
-                bo.write(glb.getvalue())
+        glb = cm.export2glb(do_triangulate=False)
+        glb.seek(0)
+        with output_file.open("wb") as bo:
+            bo.write(glb.getvalue())
+
+        # # TODO: we are cheating here, because we know that the data has 3 LoD-s and we
+        # #  also hardcoded the same into Tileset.from() in tyler. Same for the tile/file
+        # #  names.
+        # # lod_file_names = [("1.2", ""), ("1.3", "-0"), ("2.2", "-0-0")] # grid with multi-lod
+        # # lod_file_names = [("2.2", "-0-0"),] # for grid with single lod
+        # lod_file_names = [("2.2", ""),] # for quadtree
+        # for lod, suffix in lod_file_names:
+        #     cm_copy = deepcopy(cm)
+        #     cm_copy.filter_lod(lod)
+        #     glb = cm_copy.export2glb(do_triangulate=False)
+        #     glb.seek(0)
+        #     output_file_tile = (output_file.parent / (output_file.stem + suffix)).with_suffix(".glb")
+        #     with output_file_tile.open("wb") as bo:
+        #         bo.write(glb.getvalue())
     else:
         raise ValueError("unsupported format and we should have reached this branch anyway")
 
