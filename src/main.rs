@@ -112,6 +112,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .default_value("python3")
                 .value_parser(clap::value_parser!(String))
                 .help("Path to the python interpreter (>=3.8) to use for converting the CityJSONFeatures to the target format. The interpreter must have a recent [cjio](https://github.com/cityjson/cjio) installed.")
+        )
+        .arg(
+            Arg::new("gltfpack")
+                .long("gltfpack-bin")
+                .default_value("gltfpack")
+                .value_parser(clap::value_parser!(String))
+                .help("Path to the gltfpack executable (https://meshoptimizer.org/gltf/).")
         );
     let matches = cmd.get_matches();
 
@@ -147,6 +154,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .as_str();
     if !Path::new(&python_bin).is_file() {
         panic!("Python interpreter does not exist {}", python_bin);
+    }
+    let gltfpack_bin = matches
+        .get_one::<String>("gltfpack")
+        .expect("could not parse the gltfpack path from the arguments")
+        .as_str();
+    if !Path::new(&gltfpack_bin).is_file() {
+        panic!("gltfpack executable does not exist {}", gltfpack_bin);
     }
     let ql: usize = *matches
         .get_one::<usize>("qtree_limit")
@@ -370,10 +384,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let bbox = format!("{},{},{},{}", b[0], b[1], b[3], b[4]);
 
             debug!("converting {}", &tileid);
-            let res_exit_status = Exec::cmd(python_bin)
+            let res_exit_status = Exec::cmd(&python_bin)
                 .arg(&python_script)
-                .arg(output_format)
-                .arg(output_file)
+                .arg(&output_format)
+                .arg(&output_file)
                 .arg(&path_metadata)
                 .arg(&path_features_input_file)
                 .arg(bbox)
@@ -384,17 +398,53 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Ok(capturedata) = res_exit_status {
                 let stdout = capturedata.stdout_str();
                 if !capturedata.success() {
-                    error!("{} subprocess stdout: {}", &tileid, stdout);
+                    error!("{} conversion subprocess stdout: {}", &tileid, stdout);
                     error!(
-                        "{} subprocess stderr: {}",
+                        "{} conversion subprocess stderr: {}",
                         &tileid,
                         capturedata.stderr_str()
                     );
                 } else if !stdout.is_empty() && stdout != "\n" {
-                    debug!("{} subproces stdout {}", &tileid, capturedata.stdout_str());
+                    debug!(
+                        "{} conversion subproces stdout {}",
+                        &tileid,
+                        capturedata.stdout_str()
+                    );
                 }
             } else if let Err(popen_error) = res_exit_status {
                 error!("{}", popen_error);
+            }
+            // Run gltfpack on the produced glb
+            if output_format == "3dtiles" {
+                debug!("optimizing {:?}", &output_file);
+                let res_exit_status = Exec::cmd(&gltfpack_bin)
+                    .arg("-kn")
+                    .arg("-i")
+                    .arg(&output_file)
+                    .arg("-o")
+                    .arg(&output_file)
+                    .stdout(Redirection::Pipe)
+                    .stderr(Redirection::Merge)
+                    .capture();
+                if let Ok(capturedata) = res_exit_status {
+                    let stdout = capturedata.stdout_str();
+                    if !capturedata.success() {
+                        error!("{} gltfpack subprocess stdout: {}", &tileid, stdout);
+                        error!(
+                            "{} gltfpack subprocess stderr: {}",
+                            &tileid,
+                            capturedata.stderr_str()
+                        );
+                    } else if !stdout.is_empty() && stdout != "\n" {
+                        debug!(
+                            "{} gltfpack subproces stdout {}",
+                            &tileid,
+                            capturedata.stdout_str()
+                        );
+                    }
+                } else if let Err(popen_error) = res_exit_status {
+                    error!("{}", popen_error);
+                }
             }
         } else {
             debug!("tile {} is empty", &tile.id())
