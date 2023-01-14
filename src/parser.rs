@@ -75,7 +75,7 @@ impl CRS {
 /// from the zerovec crate, and I didn't investigate further.
 #[derive(Deserialize, Debug)]
 pub struct CityJSONFeatureVertices {
-    vertices: Vec<[i64; 3]>,
+    pub vertices: Vec<[i64; 3]>,
 }
 
 impl CityJSONMetadata {
@@ -194,10 +194,15 @@ impl CityJSONFeatureVertices {
     /// Extracts some information from the CityJSONFeature and returns a tuple with them.
     pub fn file_to_tuple<P: AsRef<Path>>(path: P) -> Result<Feature, Box<dyn std::error::Error>> {
         let cf: CityJSONFeatureVertices = Self::from_file(path.as_ref())?;
-        let ctr_bbox = cf.centroid_quantized_bbox();
-        Ok(Feature {
+        Ok(cf.to_feature(path.as_ref()))
+    }
+
+    /// Sets the 'path_jsonl' to default.
+    pub fn to_feature<P: AsRef<Path>>(&self, path: P) -> Feature {
+        let ctr_bbox = self.centroid_quantized_bbox();
+        Feature {
             centroid_quantized: [ctr_bbox[0], ctr_bbox[1]],
-            nr_vertices: cf.vertex_count(),
+            nr_vertices: self.vertex_count(),
             path_jsonl: path.as_ref().to_path_buf(),
             bbox_quantized: [
                 ctr_bbox[2],
@@ -207,12 +212,12 @@ impl CityJSONFeatureVertices {
                 ctr_bbox[6],
                 ctr_bbox[7],
             ],
-        })
+        }
     }
 }
 
 /// Stores the information that is computed from a CityJSONFeature.
-#[derive(Debug)]
+#[derive(Debug, Default, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Feature {
     pub(crate) centroid_quantized: [i64; 2],
     pub(crate) nr_vertices: u16,

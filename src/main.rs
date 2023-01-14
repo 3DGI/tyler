@@ -275,16 +275,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut grid = spatial_structs::SquareGrid::new(&extent_rw, cellsize, epsg, Some(10.0));
     debug!("{}", grid);
 
-    let feature_set_iter = WalkDir::new(&path_features)
+    let mut feature_set: FeatureSet = Vec::with_capacity(nr_features);
+    feature_set.resize(nr_features, parser::Feature::default());
+    let feature_set_paths_iter = WalkDir::new(&path_features)
         .into_iter()
         .filter_map(jsonl_path_closure)
-        .map(|feature_path| parser::CityJSONFeatureVertices::file_to_tuple(&feature_path))
-        .filter_map(|res| res.ok());
-    let mut feature_set: FeatureSet = Vec::with_capacity(nr_features);
-    for (fid, feature) in feature_set_iter.enumerate() {
-        let centroid = feature.centroid(&cm);
-        grid.insert(&centroid, fid);
-        feature_set.push(feature);
+        .enumerate();
+    // For each feature_path (parallel) -- but we would need to mutate a variable from a parallel loop, creating a data race condition, we'll fix this later
+    //  parse the feature
+    //  for each vertex of the feature
+    //      cellid <- locate vertex in grid
+    //      cell <- get mutable cell reference from cellid
+    //      increment vertex count in cell
+    //      add feature id to cell
+    info!("Counting vertices in grid cells");
+    for (i, feature_path) in feature_set_paths_iter {
+        let cf = parser::CityJSONFeatureVertices::from_file(&feature_path);
+        if let Ok(featurevertices) = cf {
+            feature_set.insert(i, featurevertices.to_feature(&feature_path));
+            for vtx_qc in featurevertices.vertices.iter() {
+                let vtx_rw = [
+                    (vtx_qc[0] as f64 * cm.transform.scale[0]) + cm.transform.translate[0],
+                    (vtx_qc[1] as f64 * cm.transform.scale[1]) + cm.transform.translate[1],
+                ];
+                let cellid = grid.locate_point(&vtx_rw);
+                let mut cell = grid.cell_mut(&cellid);
+                cell.nr_vertices += 1;
+                if !cell.feature_ids.contains(&i) {
+                    cell.feature_ids.push(i)
+                }
+            }
+        } else {
+            error!("Failed to parse the feature {:?}", &feature_path);
+        }
     }
 
     // Debug

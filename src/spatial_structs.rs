@@ -362,7 +362,7 @@ impl SquareGrid {
     }
 
     /// Returns the cell index (x, y) where the point is located.
-    fn locate_point(&self, point: &[f64; 2]) -> CellId {
+    pub fn locate_point(&self, point: &[f64; 2]) -> CellId {
         let dx = point[0] - self.origin[0];
         let dy = point[1] - self.origin[1];
         let col_i = (dx / self.cellsize as f64).floor() as usize;
@@ -398,12 +398,12 @@ impl SquareGrid {
             maxy = self.bbox[4]
         );
         file_grid
-            .write_all(format!("x-x\t{}\n", root_wkt).as_bytes())
+            .write_all(format!("x-x\t0\t{}\n", root_wkt).as_bytes())
             .expect("cannot write grid line");
         for (cellid, cell) in self {
             let wkt = self.cell_to_wkt(&cellid);
             file_grid
-                .write_all(format!("{}\t{}\n", &cellid, wkt).as_bytes())
+                .write_all(format!("{}\t{}\t{}\n", &cellid, cell.nr_vertices, wkt).as_bytes())
                 .expect("cannot write grid line");
             let mut cellbuffer = String::new();
             for fid in cell.feature_ids.iter() {
