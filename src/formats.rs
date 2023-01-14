@@ -138,14 +138,14 @@ pub mod cesium3dtiles {
                 let mut tile_content_bbox_qc: [i64; 6] = [0, 0, 0, 0, 0, 0];
                 for cellid in &quadtree.cells {
                     let cell = grid.cell(cellid);
-                    if !cell.is_empty() {
-                        tile_content_bbox_qc = feature_set[cell[0]].bbox_quantized;
+                    if !cell.feature_ids.is_empty() {
+                        tile_content_bbox_qc = feature_set[cell.feature_ids[0]].bbox_quantized;
                         break;
                     }
                 }
                 for cellid in &quadtree.cells {
                     let cell = grid.cell(cellid);
-                    for fi in cell {
+                    for fi in cell.feature_ids.iter() {
                         let bbox_qc = feature_set[*fi].bbox_quantized;
                         if bbox_qc[0] < tile_content_bbox_qc[0] {
                             tile_content_bbox_qc[0] = bbox_qc[0]
@@ -250,14 +250,14 @@ pub mod cesium3dtiles {
 
             let mut root_children: Vec<Tile> = Vec::with_capacity(grid.length * grid.length);
             for (cellid, cell) in grid {
-                if cell.is_empty() {
+                if cell.feature_ids.is_empty() {
                     // Empty cell, don't create tiles for it
                     debug!("cell {} is empty", cellid);
                     continue;
                 }
 
-                let mut content_bbox_qc = feature_set[cell[0]].bbox_quantized;
-                for fi in cell {
+                let mut content_bbox_qc = feature_set[cell.feature_ids[0]].bbox_quantized;
+                for fi in cell.feature_ids.iter() {
                     let bbox_qc = feature_set[*fi].bbox_quantized;
                     if bbox_qc[0] < content_bbox_qc[0] {
                         content_bbox_qc[0] = bbox_qc[0]

@@ -368,7 +368,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
             for cellid in tile.cells.iter() {
                 let cell = grid.cell(cellid);
-                for fid in cell.iter() {
+                for fid in cell.feature_ids.iter() {
                     let fp = feature_set[*fid]
                         .path_jsonl
                         .clone()

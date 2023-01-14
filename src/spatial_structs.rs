@@ -43,16 +43,12 @@ impl QuadTree {
                 match limit {
                     QuadTreeLimit::Objects(l) => {
                         // Use the number of features as a limit
-                        items = grid.cell(&cellid).len();
+                        items = grid.cell(&cellid).feature_ids.len();
                         merge_limit = l;
                     }
                     QuadTreeLimit::Vertices(l) => {
                         // Use the number of vertices as a limit
-                        items = grid
-                            .cell(&cellid)
-                            .iter()
-                            .map(|fid| feature_set[*fid].nr_vertices as usize)
-                            .sum();
+                        items = grid.cell(&cellid).nr_vertices;
                         merge_limit = l;
                     }
                 }
@@ -329,12 +325,18 @@ impl SquareGrid {
             length = new_len;
         }
         // A row-vector (x-axis) to store the column-vectors (y-axis).
-        let mut row: Vec<Vec<Vec<usize>>> = Vec::with_capacity(length);
+        let mut row: Vec<Vec<Cell>> = Vec::with_capacity(length);
         // For each column create a column vector that stores the cells and for each row in the
         // column create a cell to store the feature IDs.
         row.resize_with(length, || {
-            let mut column: Vec<Vec<usize>> = Vec::with_capacity(length);
-            column.resize(length, Vec::new());
+            let mut column: Vec<Cell> = Vec::with_capacity(length);
+            column.resize(
+                length,
+                Cell {
+                    feature_ids: Vec::new(),
+                    nr_vertices: 0,
+                },
+            );
             column
         });
         log::debug!("SquareGrid row length: {}", row.len());
@@ -374,7 +376,7 @@ impl SquareGrid {
     pub fn insert(&mut self, point: &[f64; 2], feature_id: usize) -> CellId {
         let cell_id = self.locate_point(point);
         let cell = self.cell_mut(&cell_id);
-        cell.push(feature_id);
+        cell.feature_ids.push(feature_id);
         cell_id
     }
 
@@ -404,7 +406,7 @@ impl SquareGrid {
                 .write_all(format!("{}\t{}\n", &cellid, wkt).as_bytes())
                 .expect("cannot write grid line");
             let mut cellbuffer = String::new();
-            for fid in cell {
+            for fid in cell.feature_ids.iter() {
                 let f = &feature_set[*fid];
                 let centroid = f.centroid(cm);
                 cellbuffer += format!(
@@ -447,7 +449,7 @@ impl SquareGrid {
     }
 
     pub fn cell_mut(&mut self, cell_id: &CellId) -> &mut Cell {
-        self.data[cell_id.column][cell_id.row].as_mut()
+        &mut self.data[cell_id.column][cell_id.row]
     }
 }
 
@@ -498,7 +500,11 @@ impl<'squaregrid> Iterator for SquareGridIterator<'squaregrid> {
     }
 }
 
-type Cell = Vec<usize>;
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq)]
+pub struct Cell {
+    pub feature_ids: Vec<usize>,
+    pub nr_vertices: usize,
+}
 
 /// Grid cell identifier.
 /// The identifier is (row, column).
