@@ -88,11 +88,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .help("The criteria to use when evaluating the quadtree-limit.")
         )
         .arg(
-                Arg::new("object_type")
+            Arg::new("object_type")
                 .long("object-type")
                 .action(ArgAction::Append)
                 .value_parser(clap::builder::EnumValueParser::<parser::CityObjectType>::new())
                 .help("The CityObject type to use for the 3D Tiles.")
+        )
+        .arg(
+            Arg::new("minz")
+                .long("limit-minz")
+                .value_parser(clap::value_parser!(i32))
+                .help("Limit the minimum and maximum z coordinates for the bounding box that is computed from the features. Useful if the features contain errors with extremely low z coordinates.")
+        )
+        .arg(
+            Arg::new("maxz")
+                .long("limit-maxz")
+                .value_parser(clap::value_parser!(i32))
+                .help("Limit the minimum and maximum z coordinates for the bounding box that is computed from the features. Useful if the features contain errors with extremely large z coordinates.")
         )
         .arg(
             Arg::new("python")
@@ -153,6 +165,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .get_many::<parser::CityObjectType>("object_type")
         .expect("could not parse the cityobject-type from the argument")
         .collect();
+    let arg_minz: Option<&i32> = matches.get_one::<i32>("minz");
+    let arg_maxz: Option<&i32> = matches.get_one::<i32>("maxz");
 
     let cm = parser::CityJSONMetadata::from_file(&path_metadata)?;
 
@@ -217,12 +231,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into_iter()
         .enumerate()
         .map(|(i, qc)| (*qc as f64 * cm.transform.scale[i]) + cm.transform.translate[i]);
-    let extent_rw: [f64; 6] = extent_rw_min
+    let mut extent_rw: [f64; 6] = extent_rw_min
         .chain(extent_rw_max)
         .collect::<Vec<f64>>()
         .try_into()
         .expect("should be able to create an [f64; 6] from the extent_rw vector");
-    debug!("extent real-world: {:?}", &extent_rw);
+    if let Some(minz) = arg_minz {
+        if extent_rw[2] < *minz as f64 {
+            debug!(
+                "Setting min. z for the grid extent from provided value {}, instead of the computed value {}",
+                minz, extent_rw[2]
+            );
+            extent_rw[2] = *minz as f64
+        }
+    }
+    if let Some(maxz) = arg_maxz {
+        if extent_rw[5] > *maxz as f64 {
+            debug!(
+                "Setting max. z for the grid extent from provided value {}, instead of the computed value {}",
+                maxz, extent_rw[5]
+            );
+            extent_rw[5] = *maxz as f64
+        }
+    }
+    debug!("Grid extent real-world coordinates: {:?}", &extent_rw);
 
     // Init the grid from the extent
     let epsg = cm.metadata.reference_system.to_epsg()?;
@@ -235,7 +267,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|feature_path| parser::CityJSONFeatureVertices::file_to_tuple(&feature_path))
         .filter_map(|res| res.ok());
     let mut feature_set: FeatureSet = Vec::with_capacity(nr_features);
-    for (fid, mut feature) in feature_set_iter.enumerate() {
+    for (fid, feature) in feature_set_iter.enumerate() {
         let centroid = feature.centroid(&cm);
         grid.insert(&centroid, fid);
         feature_set.push(feature);
@@ -243,7 +275,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Debug
     if do_export {
-        debug!("exporting grid to working directory");
+        debug!("Exporting the grid to the working directory");
         grid.export(&feature_set, &cm)?;
     }
 

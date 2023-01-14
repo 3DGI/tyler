@@ -189,10 +189,10 @@ impl QuadTree {
         [
             minx,
             miny,
-            0.0,
+            grid.bbox[2],
             minx + self.side_length as f64,
             miny + self.side_length as f64,
-            0.0,
+            grid.bbox[5],
         ]
     }
 }
@@ -371,7 +371,7 @@ impl SquareGrid {
 
     pub fn insert(&mut self, point: &[f64; 2], feature_id: usize) -> CellId {
         let cell_id = self.locate_point(point);
-        let mut cell = self.cell_mut(&cell_id);
+        let cell = self.cell_mut(&cell_id);
         cell.push(feature_id);
         cell_id
     }

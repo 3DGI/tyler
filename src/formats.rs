@@ -47,6 +47,8 @@ pub mod cesium3dtiles {
             grid: &crate::spatial_structs::SquareGrid,
             citymodel: &crate::parser::CityJSONMetadata,
             feature_set: &crate::FeatureSet,
+            minz: Option<&i32>,
+            maxz: Option<&i32>,
         ) -> Self {
             let crs_from = format!(
                 "EPSG:{}",
@@ -56,7 +58,15 @@ pub mod cesium3dtiles {
             let crs_to = "EPSG:4979";
             let transformer = Proj::new_known_crs(&crs_from, &crs_to, None).unwrap();
 
-            let root = Self::generate_tiles(quadtree, grid, &transformer, citymodel, feature_set);
+            let root = Self::generate_tiles(
+                quadtree,
+                grid,
+                &transformer,
+                citymodel,
+                feature_set,
+                minz,
+                maxz,
+            );
 
             // Using gltf tile content
             let mut extensions: Extensions = HashMap::new();
@@ -83,6 +93,8 @@ pub mod cesium3dtiles {
             transformer: &Proj,
             citymodel: &crate::parser::CityJSONMetadata,
             feature_set: &crate::FeatureSet,
+            minz: Option<&i32>,
+            maxz: Option<&i32>,
         ) -> Tile {
             if !quadtree.children.is_empty() {
                 if quadtree.children.len() != 4 {
@@ -108,6 +120,8 @@ pub mod cesium3dtiles {
                         transformer,
                         citymodel,
                         feature_set,
+                        minz,
+                        maxz,
                     ));
                 }
                 Tile {
@@ -164,11 +178,26 @@ pub mod cesium3dtiles {
                         (*qc as f64 * citymodel.transform.scale[i])
                             + citymodel.transform.translate[i]
                     });
-                let tile_content_bbox_rw: Bbox = tile_content_bbox_rw_min
+                let mut tile_content_bbox_rw: Bbox = tile_content_bbox_rw_min
                     .chain(tile_content_bbox_rw_max)
                     .collect::<Vec<f64>>()
                     .try_into()
                     .expect("should be able to create an [f64; 6] from the extent_rw vector");
+                // If the limit-minz/maxz arguments are set, also limit the z of the
+                // bounding volume. We could also just use the grid.bbox values to limit the z,
+                // however at this point we don't know if that was computed from the data or set by
+                // the argument. Setting the argument signals intent, so only then do we override
+                // the values.
+                if let Some(mz) = minz {
+                    if tile_content_bbox_rw[2] < *mz as f64 {
+                        tile_content_bbox_rw[2] = *mz as f64;
+                    }
+                }
+                if let Some(mz) = maxz {
+                    if tile_content_bbox_rw[5] > *mz as f64 {
+                        tile_content_bbox_rw[5] = *mz as f64;
+                    }
+                }
 
                 // Tile bounding volume
                 let mut tile_bbox = quadtree.bbox(grid);
