@@ -286,8 +286,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 3D Tiles
     info!("Generating 3D Tiles tileset");
     let tileset_path = path_output.join("tileset.json");
-    let tileset =
-        formats::cesium3dtiles::Tileset::from_quadtree(&quadtree, &grid, &cm, &feature_set);
+    let tileset = formats::cesium3dtiles::Tileset::from_quadtree(
+        &quadtree,
+        &grid,
+        &cm,
+        &feature_set,
+        arg_minz,
+        arg_maxz,
+    );
     tileset.to_file(tileset_path)?;
 
     let path_output_tiles = path_output.join("tiles");

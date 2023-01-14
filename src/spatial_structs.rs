@@ -324,7 +324,9 @@ impl SquareGrid {
         let mut length = (gridsize / cellsize as f64).ceil() as usize;
         // We need a grid that is divisible by 4, so that we can build a quadtree easily
         if length % 4 != 0 {
-            length += length % 4;
+            let new_len = length + 4 - (length % 4);
+            debug!("Computed grid length {} is not divisible by 4 so we won't be able to build a valid quadtree. Calculated new length {}", &length, &new_len);
+            length = new_len;
         }
         // A row-vector (x-axis) to store the column-vectors (y-axis).
         let mut row: Vec<Vec<Vec<usize>>> = Vec::with_capacity(length);
