@@ -105,13 +105,30 @@ pub mod cesium3dtiles {
                 // Set the bounding volume height from the content height
                 tile_bbox[2] = grid.bbox[2];
                 tile_bbox[5] = grid.bbox[5];
-                let bounding_volume =
+                let mut bounding_volume =
                     BoundingVolume::region_from_bbox(&tile_bbox, &transformer).unwrap();
+                match bounding_volume {
+                    BoundingVolume::Box(_) => {}
+                    BoundingVolume::Region(ref mut region) => {
+                        if region[5] < region[4] {
+                            // This happens with the 3D Basisvoorziening data
+                            debug!(
+                                "Parent tile {:?} (in input CRS) bounding volume region maxz {} is less than minz {}. Replacing maxz with minz + minz * 0.01.",
+                                &tile_bbox, region[5], region[4]
+                            );
+                            region[5] = region[4] + region[4] * 0.01;
+                        }
+                    }
+                    BoundingVolume::Sphere(_) => {}
+                }
 
                 // The geometric error of a tile is its 'size'.
                 // Since we have square tiles, we compute its size as the length of
                 // its side on the x-axis.
                 let dz = tile_bbox[5] - tile_bbox[2];
+                if dz < 0.0 {
+                    debug!("dz is negative in parent");
+                }
                 let mut tile_children: Vec<Tile> = Vec::new();
                 for child in quadtree.children.iter() {
                     tile_children.push(Self::generate_tiles(
@@ -204,16 +221,44 @@ pub mod cesium3dtiles {
                 // Set the bounding volume height from the content height
                 tile_bbox[2] = tile_content_bbox_rw[2];
                 tile_bbox[5] = tile_content_bbox_rw[5];
-                let bounding_volume =
+                let mut bounding_volume =
                     BoundingVolume::region_from_bbox(&tile_bbox, &transformer).unwrap();
+                match bounding_volume {
+                    BoundingVolume::Box(_) => {}
+                    BoundingVolume::Region(ref mut region) => {
+                        if region[5] < region[4] {
+                            // This happens with the 3D Basisvoorziening data
+                            debug!(
+                                "Child tile {:?} (in input CRS) bounding volume region maxz {} is less than minz {}. Replacing maxz with minz + minz * 0.01.",
+                                &tile_bbox, region[5], region[4]
+                            );
+                            region[5] = region[4] + region[4] * 0.01;
+                        }
+                    }
+                    BoundingVolume::Sphere(_) => {}
+                }
 
                 // The geometric error of a tile is its 'size'.
                 // Since we have square tiles, we compute its size as the length of
                 // its side on the x-axis.
                 let dz = tile_bbox[5] - tile_bbox[2];
+                if dz < 0.0 {
+                    debug!("dz is negative in child");
+                }
                 let content_bounding_voume =
                     BoundingVolume::region_from_bbox(&tile_content_bbox_rw, &transformer).unwrap();
-
+                match content_bounding_voume {
+                    BoundingVolume::Box(_) => {}
+                    BoundingVolume::Region(ref region) => {
+                        if region[5] < region[4] {
+                            debug!(
+                                "content bounding volume region maxz {} is less than minz {}",
+                                region[5], region[4]
+                            )
+                        }
+                    }
+                    BoundingVolume::Sphere(_) => {}
+                }
                 Tile {
                     bounding_volume,
                     geometric_error: 0.0,
