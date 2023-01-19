@@ -419,6 +419,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .arg(format!("{}", b[4]))
                 .arg(format!("{}", b[5]))
                 .arg(&cotypes_arg)
+                .arg("-n")
                 .stdout(Redirection::Pipe)
                 .stderr(Redirection::Merge)
                 .capture();
