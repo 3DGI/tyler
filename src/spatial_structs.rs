@@ -310,28 +310,47 @@ impl SquareGrid {
     /// The grid is returned as an origin coordinate and the number of cells.
     pub fn new(extent: &crate::Bbox, cellsize: u16, epsg: u16, buffer: Option<f64>) -> Self {
         // Add some buffer to the extent, to make sure all points will be within the grid.
-        // We are assuming quantized, metric coordinates with a scaling factor of 0.001, thus
-        // 10 units translates to 10mm.
         let buffer: f64 = buffer.unwrap_or(0.0);
-        // let buffer = 10_f64;
-        let dx = (extent[3] - extent[0]).abs() + buffer * 2.0;
-        let dy = (extent[4] - extent[1]).abs() + buffer * 2.0;
-        let gridsize = if dx > dy { dx } else { dy };
-        let mut length = (gridsize / cellsize as f64).ceil() as usize;
-        // We need a grid that is divisible by 4, so that we can build a quadtree easily
-        if length % 4 != 0 {
-            let new_len = length + 4 - (length % 4);
-            debug!("Computed grid length {} is not divisible by 4 so we won't be able to build a valid quadtree. Calculated new length {}", &length, &new_len);
-            length = new_len;
-        }
+        // Add the buffer to the computed extent
+        let extent_with_buffer = [
+            extent[0] - buffer,
+            extent[1] - buffer,
+            extent[2] - buffer,
+            extent[3] + buffer,
+            extent[4] + buffer,
+            extent[5] + buffer,
+        ];
+        let dx = extent_with_buffer[3] - extent_with_buffer[0];
+        let dy = extent_with_buffer[4] - extent_with_buffer[1];
+        // The grid dimension is the longest edge of the rectangle, so we get a square
+        let mut d = if dx > dy { dx } else { dy };
+        // We need a grid that is has 2^n cells in one dimension, so that we can build
+        // a 4^n cells quadtree.
+        let d_cells = 2_usize.pow((d / cellsize as f64).log2().ceil() as u32);
+        debug!("Computed grid cells dimension: {}", &d_cells);
+        let origin = [
+            extent_with_buffer[0],
+            extent_with_buffer[1],
+            extent_with_buffer[2],
+        ];
+        // Compute new dimension from the calculated length
+        d = d_cells as f64 * cellsize as f64;
+        let bbox = [
+            origin[0],
+            origin[1],
+            origin[2],
+            origin[0] + d,
+            origin[1] + d,
+            extent_with_buffer[5],
+        ];
         // A row-vector (x-axis) to store the column-vectors (y-axis).
-        let mut row: Vec<Vec<Cell>> = Vec::with_capacity(length);
+        let mut row: Vec<Vec<Cell>> = Vec::with_capacity(d_cells);
         // For each column create a column vector that stores the cells and for each row in the
         // column create a cell to store the feature IDs.
-        row.resize_with(length, || {
-            let mut column: Vec<Cell> = Vec::with_capacity(length);
+        row.resize_with(d_cells, || {
+            let mut column: Vec<Cell> = Vec::with_capacity(d_cells);
             column.resize(
-                length,
+                d_cells,
                 Cell {
                     feature_ids: Vec::new(),
                     nr_vertices: 0,
@@ -339,22 +358,10 @@ impl SquareGrid {
             );
             column
         });
-        log::debug!("SquareGrid row length: {}", row.len());
-        let origin = [extent[0] - buffer, extent[1] - buffer, extent[2] - buffer];
-        // compute new dimension from the calculated length
-        let d = length as f64 * cellsize as f64;
-        let bbox = [
-            origin[0],
-            origin[1],
-            origin[2],
-            origin[0] + d,
-            origin[1] + d,
-            extent[5] + buffer,
-        ];
         Self {
             origin,
             bbox,
-            length,
+            length: d_cells,
             cellsize,
             data: row,
             epsg,

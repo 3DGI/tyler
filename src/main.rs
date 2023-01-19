@@ -202,6 +202,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    info!("Computing extent from the features");
     // Do a first loop over the features to calculate their extent and their number.
     // Need a mutable iterator, because .next() consumes the next value and advances the iterator.
     let mut features_enum_iter = WalkDir::new(&path_features)
@@ -268,7 +269,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             extent_rw[5] = *maxz as f64
         }
     }
-    debug!("Grid extent real-world coordinates: {:?}", &extent_rw);
+    debug!(
+        "Computed grid extent from features in real-world coordinates: {:?}",
+        &extent_rw
+    );
 
     // Init the grid from the extent
     let epsg = cm.metadata.reference_system.to_epsg()?;
