@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
@@ -75,6 +76,8 @@ impl CRS {
 /// from the zerovec crate, and I didn't investigate further.
 #[derive(Deserialize, Debug)]
 pub struct CityJSONFeatureVertices {
+    #[serde(rename = "CityObjects")]
+    pub cityobjects: HashMap<String, CityObject>,
     pub vertices: Vec<[i64; 3]>,
 }
 
@@ -136,26 +139,99 @@ impl CityJSONFeatureVertices {
     /// Compute the 3D bounding box of the feature.
     /// Returns quantized coordinates.
     pub fn bbox(&self) -> [i64; 6] {
-        let [mut x_min, mut y_min, mut z_min] = self.vertices[0].clone();
-        let [mut x_max, mut y_max, mut z_max] = self.vertices[0].clone();
+        let [mut x_min, mut y_min, mut z_min] = self.vertices[0];
+        let [mut x_max, mut y_max, mut z_max] = self.vertices[0];
         for [x, y, z] in self.vertices.iter() {
             if *x < x_min {
-                x_min = x.clone()
+                x_min = *x
             } else if *x > x_max {
-                x_max = x.clone()
+                x_max = *x
             }
             if *y < y_min {
-                y_min = y.clone()
+                y_min = *y
             } else if *y > y_max {
-                y_max = y.clone()
+                y_max = *y
             }
             if *z < z_min {
-                z_min = z.clone()
+                z_min = *z
             } else if *z > z_max {
-                z_max = z.clone()
+                z_max = *z
             }
         }
         [x_min, y_min, z_min, x_max, y_max, z_max]
+    }
+
+    /// Compute the 3D bounding box of only the provided CityObject types in the feature.
+    /// Returns quantized coordinates.
+    pub fn bbox_of_types(&self, cotypes: &[&CityObjectType]) -> Option<[i64; 6]> {
+        let [mut x_min, mut y_min, mut z_min] = self.vertices[0];
+        let [mut x_max, mut y_max, mut z_max] = self.vertices[0];
+        let mut found_co_geometry = false;
+        for (_, co) in self.cityobjects.iter() {
+            if cotypes.contains(&&co.cotype) {
+                for geom in co.geometry.iter() {
+                    match geom {
+                        Geometry::MultiSurface { boundaries, .. } => {
+                            for srf in boundaries {
+                                for ring in srf {
+                                    for vtx in ring {
+                                        let [x, y, z] = &self.vertices[*vtx];
+                                        if *x < x_min {
+                                            x_min = *x
+                                        } else if *x > x_max {
+                                            x_max = *x
+                                        }
+                                        if *y < y_min {
+                                            y_min = *y
+                                        } else if *y > y_max {
+                                            y_max = *y
+                                        }
+                                        if *z < z_min {
+                                            z_min = *z
+                                        } else if *z > z_max {
+                                            z_max = *z
+                                        }
+                                    }
+                                }
+                            }
+                            found_co_geometry = true;
+                        }
+                        Geometry::Solid { boundaries, .. } => {
+                            for shell in boundaries {
+                                for srf in shell {
+                                    for ring in srf {
+                                        for vtx in ring {
+                                            let [x, y, z] = &self.vertices[*vtx];
+                                            if *x < x_min {
+                                                x_min = *x
+                                            } else if *x > x_max {
+                                                x_max = *x
+                                            }
+                                            if *y < y_min {
+                                                y_min = *y
+                                            } else if *y > y_max {
+                                                y_max = *y
+                                            }
+                                            if *z < z_min {
+                                                z_min = *z
+                                            } else if *z > z_max {
+                                                z_max = *z
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            found_co_geometry = true;
+                        }
+                    }
+                }
+            }
+        }
+        if found_co_geometry {
+            Some([x_min, y_min, z_min, x_max, y_max, z_max])
+        } else {
+            None
+        }
     }
 
     /// Compute the 2D quantized centroid and the 3D bounding box in one loop.
@@ -235,19 +311,69 @@ impl Feature {
     }
 }
 
-#[derive(Debug, clap::ValueEnum, Clone)]
+#[derive(Debug, Deserialize, clap::ValueEnum, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub enum CityObjectType {
+    Bridge,
+    BridgePart,
+    BridgeInstallation,
+    BridgeConstructiveElement,
+    BridgeRoom,
+    BridgeFurniture,
     Building,
     BuildingPart,
+    BuildingInstallation,
+    BuildingConstructiveElement,
+    BuildingFurniture,
+    BuildingStorey,
+    BuildingRoom,
+    BuildingUnit,
+    CityFurniture,
     LandUse,
+    OtherConstruction,
     PlantCover,
+    SolitaryVegetationObject,
+    TINRelief,
     WaterBody,
+    Road,
+    Railway,
+    Waterway,
+    TransportSquare,
+    // #[serde(rename = "+GenericCityObject")]
+    GenericCityObject,
 }
 
 impl fmt::Display for CityObjectType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self)
     }
+}
+
+// Indexed geometry
+type Vertex = usize;
+type Ring = Vec<Vertex>;
+type Surface = Vec<Ring>;
+type Shell = Vec<Surface>;
+type MultiSurface = Vec<Surface>;
+type Solid = Vec<Shell>;
+
+#[derive(Deserialize, Debug)]
+#[serde(tag = "type")]
+enum Geometry {
+    MultiSurface {
+        lod: String,
+        boundaries: MultiSurface,
+    },
+    Solid {
+        lod: String,
+        boundaries: Solid,
+    },
+}
+
+#[derive(Deserialize, Debug)]
+pub struct CityObject {
+    #[serde(rename = "type")]
+    pub cotype: CityObjectType,
+    geometry: Vec<Geometry>,
 }
 
 #[cfg(test)]
@@ -298,12 +424,7 @@ mod tests {
 
     #[test]
     fn test_cityjsonfeaturevertices() -> serde_json::Result<()> {
-        let cityjsonfeature_str = r#"{
-            "type": "CityJSONFeature",
-            "id": "id-1",
-            "CityObjects": {},
-            "vertices": [[1,1,1], [2,2,2], [3,3,3]]
-        }"#;
+        let cityjsonfeature_str = r#"{"type":"CityJSONFeature","CityObjects":{"b70a1e56f-debe-11e7-8ec4-89be260623ee":{"type":"Road","geometry":[{"type":"MultiSurface","lod":"1","boundaries":[[[0,1,2]],[[1,3,4]],[[1,0,3]],[[2,5,0]],[[2,6,5]],[[7,8,6]],[[9,10,11]],[[10,12,13]],[[14,15,16]],[[17,14,16]],[[18,19,20]],[[21,22,23]],[[24,25,26]],[[20,27,25]],[[20,19,27]],[[28,29,30]],[[9,23,10]],[[31,32,28]],[[31,33,32]],[[34,31,28]],[[35,34,28]],[[35,28,30]],[[36,22,37]],[[30,29,18]],[[36,38,39]],[[18,29,19]],[[40,26,41]],[[42,40,41]],[[24,20,25]],[[17,43,42]],[[40,42,43]],[[26,40,24]],[[43,17,16]],[[15,14,39]],[[39,38,15]],[[37,38,36]],[[21,37,22]],[[9,21,23]],[[11,10,44]],[[44,10,13]],[[13,12,7]],[[7,12,8]],[[2,7,6]],[[45,46,4]],[[46,1,4]],[[47,46,45]],[[48,47,45]]]}],"attributes":{"3df_id":"G0200.42b3d391aef50268e0530a0a28492340"}}},"vertices":[[23241731,-6740287,16980],[23243271,-6737886,17050],[23241947,-6737751,17030],[23243688,-6740239,16990],[23244961,-6739729,16990],[23241021,-6740116,16970],[23240334,-6739867,16960],[23240760,-6737152,17020],[23239680,-6739542,16950],[23207572,-6713437,17050],[23206398,-6715354,17010],[23211403,-6716175,17030],[23239066,-6739146,16950],[23224416,-6725473,17000],[23154567,-6713216,17160],[23200871,-6711570,17040],[23153430,-6710683,17210],[23152498,-6713168,17190],[23148683,-6700000,17400],[23145589,-6704251,17390],[23148683,-6706399,17330],[23205998,-6712657,17050],[23204080,-6714161,17010],[23205285,-6714668,17010],[23149399,-6707907,17300],[23146208,-6708310,17330],[23147259,-6710093,17300],[23145640,-6706320,17370],[23146890,-6619484,17810],[23145656,-6700000,17440],[23149034,-6662558,17710],[23140404,-6619323,17890],[23139266,-6623569,17820],[23139266,-6619957,17790],[23149466,-6614336,17770],[23149281,-6634334,17790],[23202811,-6713844,17010],[23204339,-6712080,17050],[23202621,-6711716,17040],[23201509,-6713726,17010],[23150482,-6709178,17270],[23148723,-6711555,17260],[23150508,-6712602,17220],[23151857,-6710125,17240],[23219449,-6721924,17010],[23246174,-6738901,16990],[23244554,-6737539,17080],[23245629,-6736755,17120],[23246913,-6738228,17040]],"id":"b70a1e56f-debe-11e7-8ec4-89be260623ee"}"#;
         let cf: CityJSONFeatureVertices = from_str(cityjsonfeature_str)?;
         for v in cf.vertices.iter() {
             println!("{:#?}", v.get(0));

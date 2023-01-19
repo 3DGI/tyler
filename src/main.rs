@@ -202,40 +202,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    info!("Computing extent from the features");
+    info!("Computing extent from the features of type {:?}", &cotypes);
     // Do a first loop over the features to calculate their extent and their number.
     // Need a mutable iterator, because .next() consumes the next value and advances the iterator.
     let mut features_enum_iter = WalkDir::new(&path_features)
         .into_iter()
         .filter_map(jsonl_path_closure)
         .enumerate();
-    // Init the extent with from the first feature.
-    let (mut nr_features, feature_path) = features_enum_iter
-        .next()
-        .expect(".jsonl file should be accessible");
-    let cf = parser::CityJSONFeatureVertices::from_file(&feature_path)?;
-    let mut extent_qc = cf.bbox();
+    // Init the extent with from the first feature of the requested types
+    let mut extent_qc: [i64; 6] = [0, 0, 0, 0, 0, 0];
+    let mut found_feature_type = false;
+    let mut nr_features = 0;
+    loop {
+        let (_, feature_path) = features_enum_iter
+            .next()
+            .expect(".jsonl file should be accessible");
+        let cf = parser::CityJSONFeatureVertices::from_file(&feature_path)?;
+        if let Some(mut eqc) = cf.bbox_of_types(&cotypes) {
+            extent_qc = eqc;
+            found_feature_type = true;
+            nr_features += 1;
+            break;
+        }
+    }
+    if !found_feature_type {
+        panic!("Did not find any CityJSONFeature of type {:?}", &cotypes);
+    }
     for (nf, fp) in features_enum_iter {
         let cf = parser::CityJSONFeatureVertices::from_file(&fp)?;
-        let [x_min, y_min, z_min, x_max, y_max, z_max] = cf.bbox();
-        if x_min < extent_qc[0] {
-            extent_qc[0] = x_min
-        } else if x_max > extent_qc[3] {
-            extent_qc[3] = x_max
+        if let Some([x_min, y_min, z_min, x_max, y_max, z_max]) = cf.bbox_of_types(&cotypes) {
+            if x_min < extent_qc[0] {
+                extent_qc[0] = x_min
+            } else if x_max > extent_qc[3] {
+                extent_qc[3] = x_max
+            }
+            if y_min < extent_qc[1] {
+                extent_qc[1] = y_min
+            } else if y_max > extent_qc[4] {
+                extent_qc[4] = y_max
+            }
+            if z_min < extent_qc[2] {
+                extent_qc[2] = z_min
+            } else if z_max > extent_qc[5] {
+                extent_qc[5] = z_max
+            }
+            nr_features += 1;
         }
-        if y_min < extent_qc[1] {
-            extent_qc[1] = y_min
-        } else if y_max > extent_qc[4] {
-            extent_qc[4] = y_max
-        }
-        if z_min < extent_qc[2] {
-            extent_qc[2] = z_min
-        } else if z_max > extent_qc[5] {
-            extent_qc[5] = z_max
-        }
-        nr_features = nf;
     }
-    info!("Found {} features", nr_features);
+    info!("Found {} features of type {:?}", nr_features, &cotypes);
     debug!("extent_qc: {:?}", &extent_qc);
     // Get the real-world coordinates for the extent
     let extent_rw_min = extent_qc[0..3]
@@ -293,20 +307,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     //      increment vertex count in cell
     //      add feature id to cell
     info!("Counting vertices in grid cells");
-    for (i, feature_path) in feature_set_paths_iter {
+    let mut fid: usize = 0;
+    for (_, feature_path) in feature_set_paths_iter {
         let cf = parser::CityJSONFeatureVertices::from_file(&feature_path);
         if let Ok(featurevertices) = cf {
-            feature_set.insert(i, featurevertices.to_feature(&feature_path));
-            for vtx_qc in featurevertices.vertices.iter() {
-                let vtx_rw = [
-                    (vtx_qc[0] as f64 * cm.transform.scale[0]) + cm.transform.translate[0],
-                    (vtx_qc[1] as f64 * cm.transform.scale[1]) + cm.transform.translate[1],
-                ];
-                let cellid = grid.locate_point(&vtx_rw);
-                let mut cell = grid.cell_mut(&cellid);
-                cell.nr_vertices += 1;
-                if !cell.feature_ids.contains(&i) {
-                    cell.feature_ids.push(i)
+            for (_, co) in featurevertices.cityobjects.iter() {
+                if cotypes.contains(&&co.cotype) {
+                    feature_set.insert(fid, featurevertices.to_feature(&feature_path));
+                    for vtx_qc in featurevertices.vertices.iter() {
+                        let vtx_rw = [
+                            (vtx_qc[0] as f64 * cm.transform.scale[0]) + cm.transform.translate[0],
+                            (vtx_qc[1] as f64 * cm.transform.scale[1]) + cm.transform.translate[1],
+                        ];
+                        let cellid = grid.locate_point(&vtx_rw);
+                        let mut cell = grid.cell_mut(&cellid);
+                        cell.nr_vertices += 1;
+                        if !cell.feature_ids.contains(&fid) {
+                            cell.feature_ids.push(fid)
+                        }
+                    }
+                    fid += 1;
                 }
             }
         } else {

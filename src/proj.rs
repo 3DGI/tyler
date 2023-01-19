@@ -168,44 +168,16 @@ impl Proj {
 /// Errors originating in PROJ which can occur during projection and conversion
 #[derive(Error, Debug)]
 pub enum ProjError {
-    /// A projection error
-    #[error("The projection failed with the following error: {0}")]
-    Projection(String),
     /// A conversion error
     #[error("The conversion failed with the following error: {0}")]
     Conversion(String),
     /// An error that occurs when a path string originating in PROJ can't be converted to a CString
     #[error("Couldn't create a raw pointer from the string")]
     Creation(#[from] std::ffi::NulError),
-    #[error("The projection area of use is unknown")]
-    UnknownAreaOfUse,
-    /// An error that occurs if a user-supplied path can't be converted into a string slice
-    #[error("Couldn't convert path to slice")]
-    Path,
     #[error("Couldn't convert bytes from PROJ to UTF-8")]
     Utf8Error(#[from] std::str::Utf8Error),
     #[error("Couldn't convert number to f64")]
     FloatConversion,
-    #[error("Network download functionality could not be enabled")]
-    Network,
-    #[error("Could not set remote grid download callbacks")]
-    RemoteCallbacks,
-    #[error("Couldn't build request")]
-    #[cfg(feature = "network")]
-    BuilderError(#[from] reqwest::Error),
-    #[error("Couldn't clone request")]
-    RequestCloneError,
-    #[error("Could not retrieve content length")]
-    ContentLength,
-    #[error("Couldn't retrieve header for key {0}")]
-    HeaderError(String),
-    #[cfg(feature = "network")]
-    #[error("Couldn't convert header value to str")]
-    HeaderConversion(#[from] reqwest::header::ToStrError),
-    #[error("A {0} error occurred for url {1} after {2} retries")]
-    DownloadError(String, String, u8),
-    #[error("The current definition could not be retrieved")]
-    Definition,
 }
 
 #[derive(Error, Debug)]

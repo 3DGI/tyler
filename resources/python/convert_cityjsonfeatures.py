@@ -51,12 +51,21 @@ if __name__ == "__main__":
     cotypes = argv[11].split(",")
 
     cm = merge(cityjson_path, path_features_input_file)
+    nr_co_after_merge = len(cm.j["CityObjects"])
+    types_after_merge = cm.get_info()
     if output_format == "cityjson":
         with output_file.open("w") as fo:
             fo.write(json.dumps(cm.j, separators=(',', ':')))
     elif output_format == "3dtiles":
         cm.reproject(4978)
         cm = cm.get_subset_cotype(cotypes)
+        nr_co_after_subset = len(cm.j["CityObjects"])
+        if nr_co_after_subset == 0:
+            if nr_co_after_merge > 0:
+                print(f"CityModel {output_file} does not contain any {cotypes} objects, but it did contain {nr_co_after_merge} objects of type {types_after_merge}.")
+            else:
+                print(
+                    f"CityModel {output_file} does not contain any {cotypes} objects and it did not contain any objects at all after merge either.")
         glb = cm.export2glb(do_triangulate=False)
         glb.seek(0)
         with output_file.open("wb") as bo:
