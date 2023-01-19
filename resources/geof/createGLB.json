@@ -1,0 +1,195 @@
+{
+  "globals": {
+    "GF_PROCESS_CRS": [
+      "",
+      "str",
+      "EPSG:4978"
+    ],
+    "co_types": [
+      "comma separated list of cityobject types",
+      "str",
+      ""
+    ],
+    "max_x": [
+      "",
+      "float",
+      194964.0
+    ],
+    "max_y": [
+      "",
+      "float",
+      466309.0
+    ],
+    "max_z": [
+      "",
+      "float",
+      30.0
+    ],
+    "min_x": [
+      "",
+      "float",
+      194447.0
+    ],
+    "min_y": [
+      "",
+      "float",
+      465847.0
+    ],
+    "min_z": [
+      "",
+      "float",
+      0.0
+    ],
+    "output_file": [
+      "output (glb) file",
+      "str",
+      "/mnt/Data/LocalData/Kadaster/db3dnl_features/gb2.glb"
+    ],
+    "output_format": [
+      "glb or city.json",
+      "str",
+      "glb"
+    ],
+    "path_features_input_file": [
+      "text file with on each line an input CityJSON feature path",
+      "str",
+      "/mnt/Data/LocalData/Kadaster/db3dnl_features/features.txt"
+    ],
+    "path_metadata": [
+      "CityJSON features metadata file",
+      "str",
+      "/mnt/Data/LocalData/Kadaster/db3dnl_features/metadata.city.json"
+    ],
+    "simplify_ratio": [
+      "",
+      "float",
+      0.949999988079071
+    ]
+  },
+  "nodes": {
+    "Box": {
+      "connections": {
+        "ping": [
+          [
+            "processFeatures",
+            "processFeatures.wait"
+          ]
+        ]
+      },
+      "marked_outputs": {
+        "box": false,
+        "ping": false
+      },
+      "parameters": {
+        "inCRS": "epsg:7415",
+        "max_x": "{{max_x}}",
+        "max_y": "{{max_y}}",
+        "max_z": "{{max_z}}",
+        "min_x": "{{min_x}}",
+        "min_y": "{{min_y}}",
+        "min_z": "{{min_z}}"
+      },
+      "position": [
+        230.0,
+        75.0
+      ],
+      "type": [
+        "Core",
+        "Box"
+      ]
+    },
+    "CJFeature_paths": {
+      "connections": {
+        "value": [
+          [
+            "processFeatures",
+            "processFeatures.globals"
+          ]
+        ]
+      },
+      "marked_outputs": {
+        "value": false
+      },
+      "parameters": {
+        "filepath": "{{path_features_input_file}}",
+        "split": true
+      },
+      "position": [
+        206.0,
+        216.0
+      ],
+      "type": [
+        "Core",
+        "TextReader"
+      ]
+    },
+    "GLTFWriter": {
+      "marked_inputs": {
+        "feature_type": false,
+        "normals": false,
+        "triangles": false
+      },
+      "parameters": {
+        "CRS": "EPSG:4978",
+        "binary": true,
+        "embed_buffers": true,
+        "embed_images": true,
+        "filepath": "{{output_file}}",
+        "pretty_print": false
+      },
+      "position": [
+        1022.0,
+        141.0
+      ],
+      "type": [
+        "CoreIO",
+        "GLTFWriter"
+      ]
+    },
+    "processFeatures": {
+      "connections": {
+        "CityJSONL2Mesh.feature_type": [
+          [
+            "GLTFWriter",
+            "feature_type"
+          ]
+        ],
+        "Mesh2TriangleCollection.normals": [
+          [
+            "GLTFWriter",
+            "normals"
+          ]
+        ],
+        "Mesh2TriangleCollection.triangles": [
+          [
+            "GLTFWriter",
+            "triangles"
+          ]
+        ]
+      },
+      "marked_inputs": {
+        "processFeatures.globals": false,
+        "processFeatures.wait": false
+      },
+      "marked_outputs": {
+        "CityJSONL2Mesh.feature_type": false,
+        "Mesh2TriangleCollection.normals": false,
+        "Mesh2TriangleCollection.triangles": false,
+        "processFeatures.timings": false
+      },
+      "parameters": {
+        "filepath": "process_feature.json",
+        "require_input_globals": true,
+        "require_input_wait": true
+      },
+      "position": [
+        416.0,
+        146.0
+      ],
+      "type": [
+        "Core",
+        "NestedFlowchart"
+      ]
+    }
+  }
+}

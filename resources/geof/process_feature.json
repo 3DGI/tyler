@@ -1,0 +1,240 @@
+{
+  "globals": {
+    "GF_PROCESS_OFFSET_OVERRIDE": [
+      "",
+      "bool",
+      true
+    ],
+    "max_x": [
+      "",
+      "float",
+      194964.0
+    ],
+    "max_y": [
+      "",
+      "float",
+      466309.0
+    ],
+    "max_z": [
+      "",
+      "float",
+      30.0
+    ],
+    "min_x": [
+      "",
+      "float",
+      194447.0
+    ],
+    "min_y": [
+      "",
+      "float",
+      465847.0
+    ],
+    "min_z": [
+      "",
+      "float",
+      0.0
+    ],
+    "path_metadata": [
+      "CityJSON features metadata file",
+      "str",
+      "/mnt/Data/LocalData/Kadaster/db3dnl_features/metadata.city.json"
+    ],
+    "simplify_ratio": [
+      "",
+      "float",
+      0.949999988079071
+    ]
+  },
+  "nodes": {
+    "BoundingBox": {
+      "connections": {
+        "box": [
+          [
+            "MeshClipper",
+            "bbox"
+          ]
+        ]
+      },
+      "marked_outputs": {
+        "box": false,
+        "ping": false
+      },
+      "parameters": {
+        "inCRS": "EPSG:7415",
+        "max_x": "{{max_x}}",
+        "max_y": "{{max_y}}",
+        "max_z": "{{max_z}}",
+        "min_x": "{{min_x}}",
+        "min_y": "{{min_y}}",
+        "min_z": "{{min_z}}"
+      },
+      "position": [
+        569.0,
+        40.0
+      ],
+      "type": [
+        "Core",
+        "Box"
+      ]
+    },
+    "CJFeatureReader": {
+      "connections": {
+        "value": [
+          [
+            "CityJSONL2Mesh",
+            "jsonl_features_str"
+          ]
+        ]
+      },
+      "marked_outputs": {
+        "value": false
+      },
+      "parameters": {
+        "filepath": "{{value}}",
+        "split": false
+      },
+      "position": [
+        267.0,
+        148.0
+      ],
+      "type": [
+        "Core",
+        "TextReader"
+      ]
+    },
+    "CJMetadata": {
+      "connections": {
+        "value": [
+          [
+            "CityJSONL2Mesh",
+            "jsonl_metadata_str"
+          ]
+        ]
+      },
+      "marked_outputs": {
+        "value": false
+      },
+      "parameters": {
+        "filepath": "{{path_metadata}}",
+        "split": false
+      },
+      "position": [
+        292.0,
+        215.0
+      ],
+      "type": [
+        "Core",
+        "TextReader"
+      ]
+    },
+    "CityJSONL2Mesh": {
+      "connections": {
+        "meshes": [
+          [
+            "MeshClipper",
+            "mesh"
+          ]
+        ]
+      },
+      "marked_inputs": {
+        "jsonl_features_str": false,
+        "jsonl_metadata_str": false
+      },
+      "marked_outputs": {
+        "attributes": false,
+        "feature_type": true,
+        "meshes": false
+      },
+      "parameters": {
+        "3bag_buildings_mode": false,
+        "lod_filter": {
+          "Building": "1.2",
+          "LandUse": "1",
+          "PlantCover": "1",
+          "Road": "1",
+          "WaterBody": "1"
+        },
+        "optimal_lod": false,
+        "optimal_lod_value": "2.2"
+      },
+      "position": [
+        458.0,
+        153.0
+      ],
+      "type": [
+        "CoreIO",
+        "CityJSONL2Mesh"
+      ]
+    },
+    "Mesh2TriangleCollection": {
+      "marked_inputs": {
+        "cgal_surface_mesh": false
+      },
+      "marked_outputs": {
+        "normals": true,
+        "triangles": true
+      },
+      "position": [
+        868.0,
+        239.0
+      ],
+      "type": [
+        "building-reconstruction",
+        "Mesh2TriangleCollection"
+      ]
+    },
+    "MeshClipper": {
+      "connections": {
+        "cgal_surface_mesh": [
+          [
+            "MeshSimplify",
+            "cgal_surface_mesh"
+          ]
+        ]
+      },
+      "marked_inputs": {
+        "bbox": false,
+        "mesh": false
+      },
+      "marked_outputs": {
+        "cgal_surface_mesh": false
+      },
+      "position": [
+        819.0,
+        122.0
+      ],
+      "type": [
+        "building-reconstruction",
+        "MeshClipper"
+      ]
+    },
+    "MeshSimplify": {
+      "connections": {
+        "cgal_surface_mesh": [
+          [
+            "Mesh2TriangleCollection",
+            "cgal_surface_mesh"
+          ]
+        ]
+      },
+      "marked_inputs": {
+        "cgal_surface_mesh": false
+      },
+      "marked_outputs": {
+        "cgal_surface_mesh": false
+      },
+      "parameters": {
+        "stop_ratio": "{{simplify_ratio}}"
+      },
+      "position": [
+        841.0,
+        186.0
+      ],
+      "type": [
+        "building-reconstruction",
+        "MeshSimplify"
+      ]
+    }
+  }
+}
