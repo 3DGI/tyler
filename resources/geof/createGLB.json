@@ -5,8 +5,23 @@
       "str",
       "EPSG:4978"
     ],
-    "co_types": [
-      "comma separated list of cityobject types",
+    "GF_PROCESS_OFFSET_X": [
+      "offset in X coordinate",
+      "float",
+      3897912.25
+    ],
+    "GF_PROCESS_OFFSET_Y": [
+      "offset in Y coordinate",
+      "float",
+      407242.90625
+    ],
+    "GF_PROCESS_OFFSET_Z": [
+      "offset in Z coordinate",
+      "float",
+      5015132.5
+    ],
+    "cotypes": [
+      "comma separated list of cityobject types. Leave empty for no filter.",
       "str",
       ""
     ],
@@ -61,9 +76,9 @@
       "/mnt/Data/LocalData/Kadaster/db3dnl_features/metadata.city.json"
     ],
     "simplify_ratio": [
-      "",
+      "0-1 lower for more simplification",
       "float",
-      0.949999988079071
+      0.05000000074505806
     ]
   },
   "nodes": {
@@ -90,8 +105,8 @@
         "min_z": "{{min_z}}"
       },
       "position": [
-        230.0,
-        75.0
+        226.0,
+        172.0
       ],
       "type": [
         "Core",
@@ -115,15 +130,15 @@
         "split": true
       },
       "position": [
-        206.0,
-        216.0
+        208.0,
+        106.0
       ],
       "type": [
         "Core",
         "TextReader"
       ]
     },
-    "GLTFWriter": {
+    "GLTFWriter-8w1e14": {
       "marked_inputs": {
         "feature_type": false,
         "normals": false,
@@ -138,8 +153,8 @@
         "pretty_print": false
       },
       "position": [
-        1022.0,
-        141.0
+        1015.0,
+        144.0
       ],
       "type": [
         "CoreIO",
@@ -150,19 +165,19 @@
       "connections": {
         "CityJSONL2Mesh.feature_type": [
           [
-            "GLTFWriter",
+            "GLTFWriter-8w1e14",
             "feature_type"
           ]
         ],
         "Mesh2TriangleCollection.normals": [
           [
-            "GLTFWriter",
+            "GLTFWriter-8w1e14",
             "normals"
           ]
         ],
         "Mesh2TriangleCollection.triangles": [
           [
-            "GLTFWriter",
+            "GLTFWriter-8w1e14",
             "triangles"
           ]
         ]
