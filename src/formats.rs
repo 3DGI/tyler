@@ -259,6 +259,45 @@ pub mod cesium3dtiles {
                     }
                     BoundingVolume::Sphere(_) => {}
                 }
+
+                // FIXME: this is a hack to replace the tile bounding volume with the content bounding volume if the content is larger than the tile
+                match bounding_volume {
+                    BoundingVolume::Box(_) => {}
+                    BoundingVolume::Region(ref mut region) => match content_bounding_voume {
+                        BoundingVolume::Box(_) => {}
+                        BoundingVolume::Region(ref content_region) => {
+                            let mut did_update: bool = false;
+                            if content_region[0] < region[0] {
+                                region[0] = content_region[0];
+                                did_update = true;
+                            }
+                            if content_region[1] < region[1] {
+                                region[1] = content_region[1];
+                                did_update = true;
+                            }
+                            if content_region[4] < region[4] {
+                                region[4] = content_region[4];
+                                did_update = true;
+                            }
+                            if content_region[2] > region[2] {
+                                region[2] = content_region[2];
+                                did_update = true;
+                            }
+                            if content_region[3] > region[3] {
+                                region[3] = content_region[3];
+                                did_update = true;
+                            }
+                            if content_region[5] > region[5] {
+                                region[5] = content_region[5];
+                                did_update = true;
+                            }
+                            debug!("Updated child tile {:?} (in input CRS) bounding region from content region, because the content was larger", &tile_bbox);
+                        }
+                        BoundingVolume::Sphere(_) => {}
+                    },
+                    BoundingVolume::Sphere(_) => {}
+                }
+
                 Tile {
                     bounding_volume,
                     geometric_error: 0.0,

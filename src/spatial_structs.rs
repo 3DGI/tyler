@@ -214,7 +214,7 @@ fn part1by1_64(number: &u64) -> u64 {
 /// Computing Morton-code from 64bit integers.
 ///
 /// Reference: https://github.com/trevorprater/pymorton
-fn interleave(x: &u64, y: &u64) -> u64 {
+pub fn interleave(x: &u64, y: &u64) -> u64 {
     part1by1_64(x) | (part1by1_64(y) << 1)
 }
 
@@ -232,7 +232,7 @@ fn unpart1by1_64(mortoncode: &u64) -> u64 {
 /// Computing `[x, y]` from a Morton-code.
 ///
 /// Reference: https://github.com/trevorprater/pymorton
-fn deinterleave(mortoncode: &u64) -> [u64; 2] {
+pub fn deinterleave(mortoncode: &u64) -> [u64; 2] {
     [
         unpart1by1_64(mortoncode),
         unpart1by1_64(&(*mortoncode >> 1)),
@@ -523,9 +523,9 @@ pub struct Cell {
 #[derive(Copy, Clone, Debug, Ord, PartialOrd, PartialEq, Eq)]
 pub struct CellId {
     // A row is along the y-axis
-    row: usize,
+    pub row: usize,
     // A column is along the x-axis
-    column: usize,
+    pub column: usize,
 }
 
 impl Display for CellId {
