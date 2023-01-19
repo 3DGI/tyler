@@ -1,4 +1,5 @@
 import json
+# import argparse
 from sys import argv
 from pathlib import Path
 from copy import deepcopy
@@ -31,6 +32,18 @@ def merge(cityjson_path, path_features_input_file: Path):
     path_features_input_file.unlink()
     return cm
 
+
+# parser=argparse.ArgumentParser()
+# parser.add_argument("--output_format", help="Format to convert to")
+# parser.add_argument("--output_file", help="Where to save the output")
+# parser.add_argument("--path_metadata", help="The main .city.json file with the transformation properties")
+# parser.add_argument("--path_feature_input_file", help="File with the list of feature paths")
+# parser.add_argument("--min_x", help="Bounding box minimum x coordinate")
+# parser.add_argument("--min_y", help="Bounding box minimum y coordinate")
+# parser.add_argument("--min_z", help="Bounding box minimum z coordinate")
+# parser.add_argument("--max_x", help="Bounding box maximum x coordinate")
+# parser.add_argument("--max_y", help="Bounding box maximum y coordinate")
+# parser.add_argument("--max_z", help="Bounding box maximum z coordinate")
 
 if __name__ == "__main__":
     # format to convert to

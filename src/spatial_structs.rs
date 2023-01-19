@@ -527,7 +527,7 @@ pub struct Cell {
 ///                       X
 /// ```
 ///
-#[derive(Copy, Clone, Debug, Ord, PartialOrd, PartialEq, Eq)]
+#[derive(Copy, Clone, Hash, Debug, Ord, PartialOrd, PartialEq, Eq)]
 pub struct CellId {
     // A row is along the y-axis
     pub row: usize,

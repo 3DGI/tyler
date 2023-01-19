@@ -3,6 +3,7 @@ mod parser;
 mod proj;
 mod spatial_structs;
 
+use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
@@ -293,8 +294,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut grid = spatial_structs::SquareGrid::new(&extent_rw, cellsize, epsg, Some(10.0));
     debug!("{}", grid);
 
-    let mut feature_set: FeatureSet = Vec::with_capacity(nr_features);
-    feature_set.resize(nr_features, parser::Feature::default());
+    let mut feature_set: FeatureSet = Vec::with_capacity(nr_features + 1);
+    feature_set.resize(nr_features + 1, parser::Feature::default());
     let feature_set_paths_iter = WalkDir::new(&path_features)
         .into_iter()
         .filter_map(jsonl_path_closure)
@@ -311,23 +312,58 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (_, feature_path) in feature_set_paths_iter {
         let cf = parser::CityJSONFeatureVertices::from_file(&feature_path);
         if let Ok(featurevertices) = cf {
+            // We make a (cellid, vertex count) map and assign the feature to the cell that
+            // contains the most of the feature's vertices.
+            // But maybe a HashMap is not the most performant solution here? A Vec of tuples?
+            let mut cell_vtx_cnt: HashMap<spatial_structs::CellId, usize> = HashMap::new();
             for (_, co) in featurevertices.cityobjects.iter() {
                 if cotypes.contains(&&co.cotype) {
-                    feature_set.insert(fid, featurevertices.to_feature(&feature_path));
+                    // Just counting vertices here
                     for vtx_qc in featurevertices.vertices.iter() {
                         let vtx_rw = [
                             (vtx_qc[0] as f64 * cm.transform.scale[0]) + cm.transform.translate[0],
                             (vtx_qc[1] as f64 * cm.transform.scale[1]) + cm.transform.translate[1],
                         ];
                         let cellid = grid.locate_point(&vtx_rw);
+                        *cell_vtx_cnt.entry(cellid).or_insert(1) += 1;
+                    }
+                }
+            }
+            if !cell_vtx_cnt.is_empty() {
+                // We found at least one CityObject of the required type
+                feature_set[fid] = featurevertices.to_feature(&feature_path);
+                // TODO: what other cityobject types need to have 1-1 cell assignment?
+                if cotypes.contains(&&parser::CityObjectType::Building)
+                    || cotypes.contains(&&parser::CityObjectType::BuildingPart)
+                {
+                    // In case we have a 1-1 feature-to-cell assignment, we only retain the vertex
+                    // count in the cell that gets the feature.
+                    // The cell that receives the feature is the one with the highest vertex count
+                    // of the feature.
+                    // However, with this method it is not possible to combine cityobject types that
+                    // require different cell-assignment methods into the same tileset.
+                    // E.g. terrain features need to be duplicated across cells, buildings need to
+                    // unique. The tileset for them must be generated separately.
+                    let (cellid, nr_vertices) = cell_vtx_cnt
+                        .iter()
+                        .max_by(|a, b| a.1.cmp(&b.1))
+                        .map(|(k, v)| (k, v))
+                        .unwrap();
+                    let mut cell = grid.cell_mut(&cellid);
+                    cell.nr_vertices += nr_vertices;
+                    if !cell.feature_ids.contains(&fid) {
+                        cell.feature_ids.push(fid)
+                    }
+                } else {
+                    for (cellid, nr_vertices) in cell_vtx_cnt.iter() {
                         let mut cell = grid.cell_mut(&cellid);
-                        cell.nr_vertices += 1;
+                        cell.nr_vertices += nr_vertices;
                         if !cell.feature_ids.contains(&fid) {
                             cell.feature_ids.push(fid)
                         }
                     }
-                    fid += 1;
                 }
+                fid += 1;
             }
         } else {
             error!("Failed to parse the feature {:?}", &feature_path);
@@ -443,7 +479,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .arg(format!("{}", b[4]))
                 .arg(format!("{}", b[5]))
                 .arg(&cotypes_arg)
-                .arg("-n")
                 .stdout(Redirection::Pipe)
                 .stderr(Redirection::Merge)
                 .capture();
