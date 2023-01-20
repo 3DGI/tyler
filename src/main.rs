@@ -214,6 +214,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut extent_qc: [i64; 6] = [0, 0, 0, 0, 0, 0];
     let mut found_feature_type = false;
     let mut nr_features = 0;
+    debug!("Searching for the first feature of the requested type...");
     loop {
         let (_, feature_path) = features_enum_iter
             .next()
@@ -229,6 +230,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !found_feature_type {
         panic!("Did not find any CityJSONFeature of type {:?}", &cotypes);
     }
+    debug!("First feature found. Iterating over all features to compute the extent.");
     for (nf, fp) in features_enum_iter {
         let cf = parser::CityJSONFeatureVertices::from_file(&fp)?;
         if let Some([x_min, y_min, z_min, x_max, y_max, z_max]) = cf.bbox_of_types(&cotypes) {
@@ -423,7 +425,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     cellids = grid.into_iter().map(|(cellid, _cell)| cellid).collect();
 
     let leaves: Vec<&spatial_structs::QuadTree> = quadtree.collect_leaves();
-    info!("Exporting {} tiles", leaves.len());
+    info!("Exporting and optimizing {} tiles", leaves.len());
     leaves.into_par_iter().for_each(|tile| {
         if tile.nr_items > 0 {
             let tileid = tile.id();
@@ -465,7 +467,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let b = tile.bbox(&grid);
 
-            debug!("converting {}", &tileid);
             let res_exit_status = Exec::cmd(&python_bin)
                 .arg(&python_script)
                 .arg(&output_format)
@@ -503,7 +504,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             // Run gltfpack on the produced glb
             if output_format == "3dtiles" {
-                debug!("optimizing {:?}", &output_file);
                 let res_exit_status = Exec::cmd(&gltfpack_bin)
                     .arg("-kn")
                     .arg("-i")
