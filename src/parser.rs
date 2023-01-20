@@ -338,7 +338,7 @@ pub enum CityObjectType {
     Railway,
     Waterway,
     TransportSquare,
-    // #[serde(rename = "+GenericCityObject")]
+    #[serde(rename = "+GenericCityObject")]
     GenericCityObject,
 }
 
