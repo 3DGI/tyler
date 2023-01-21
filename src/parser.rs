@@ -311,7 +311,7 @@ impl Feature {
     }
 }
 
-#[derive(Debug, Deserialize, clap::ValueEnum, Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Debug, Deserialize, clap::ValueEnum, Clone, Copy, Ord, PartialOrd, Eq, PartialEq)]
 pub enum CityObjectType {
     Bridge,
     BridgePart,

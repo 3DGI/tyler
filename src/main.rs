@@ -214,6 +214,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut extent_qc: [i64; 6] = [0, 0, 0, 0, 0, 0];
     let mut found_feature_type = false;
     let mut nr_features = 0;
+    let mut cotypes_ignored: Vec<parser::CityObjectType> = Vec::new();
     debug!("Searching for the first feature of the requested type...");
     loop {
         let (_, feature_path) = features_enum_iter
@@ -225,6 +226,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             found_feature_type = true;
             nr_features += 1;
             break;
+        } else {
+            for (coid, co) in cf.cityobjects.iter() {
+                if !cotypes_ignored.contains(&co.cotype) {
+                    cotypes_ignored.push(co.cotype);
+                }
+            }
         }
     }
     if !found_feature_type {
@@ -250,9 +257,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 extent_qc[5] = z_max
             }
             nr_features += 1;
+        } else {
+            for (coid, co) in cf.cityobjects.iter() {
+                if !cotypes_ignored.contains(&co.cotype) {
+                    cotypes_ignored.push(co.cotype);
+                }
+            }
         }
     }
     info!("Found {} features of type {:?}", nr_features, &cotypes);
+    info!("Ignored feature types: {:?}", &cotypes_ignored);
     debug!("extent_qc: {:?}", &extent_qc);
     // Get the real-world coordinates for the extent
     let extent_rw_min = extent_qc[0..3]
