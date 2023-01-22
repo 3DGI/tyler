@@ -49,6 +49,11 @@
       "",
       "float",
       0.949999988079071
+    ],
+    "skip_clip": [
+      "",
+      "bool",
+      false
     ]
   },
   "nodes": {
@@ -97,6 +102,7 @@
       },
       "parameters": {
         "filepath": "{{value}}",
+        "limit": 0,
         "split": false
       },
       "position": [
@@ -122,6 +128,7 @@
       },
       "parameters": {
         "filepath": "{{path_metadata}}",
+        "limit": 0,
         "split": false
       },
       "position": [
@@ -155,11 +162,11 @@
         "3bag_buildings_mode": false,
         "cotypes": "{{cotypes}}",
         "lod_filter": {
-          "Building": "1.2",
-          "LandUse": "1",
-          "PlantCover": "1",
-          "Road": "1",
-          "WaterBody": "1"
+          "Building": "1.0",
+          "LandUse": "1.2",
+          "PlantCover": "1.2",
+          "Road": "1.2",
+          "WaterBody": "1.2"
         },
         "optimal_lod": false,
         "optimal_lod_value": "2.2"
@@ -205,6 +212,9 @@
       },
       "marked_outputs": {
         "cgal_surface_mesh": false
+      },
+      "parameters": {
+        "skip_clip": "{{skip_clip}}"
       },
       "position": [
         819.0,

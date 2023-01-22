@@ -3,22 +3,22 @@
     "GF_PROCESS_CRS": [
       "",
       "str",
-      "EPSG:4978"
+      "EPSG:7415"
     ],
     "GF_PROCESS_OFFSET_X": [
       "offset in X coordinate",
       "float",
-      3897912.25
+      3916129.75
     ],
     "GF_PROCESS_OFFSET_Y": [
       "offset in Y coordinate",
       "float",
-      407242.90625
+      294954.625
     ],
     "GF_PROCESS_OFFSET_Z": [
       "offset in Z coordinate",
       "float",
-      5015132.5
+      5008821.0
     ],
     "cotypes": [
       "comma separated list of cityobject types. Leave empty for no filter.",
@@ -28,37 +28,37 @@
     "max_x": [
       "",
       "float",
-      194964.0
+      81965.5625
     ],
     "max_y": [
       "",
       "float",
-      466309.0
+      456979.90625
     ],
     "max_z": [
       "",
       "float",
-      30.0
+      310.0
     ],
     "min_x": [
       "",
       "float",
-      194447.0
+      80965.5625
     ],
     "min_y": [
       "",
       "float",
-      465847.0
+      455979.90625
     ],
     "min_z": [
       "",
       "float",
-      0.0
+      -15.0
     ],
     "output_file": [
       "output (glb) file",
       "str",
-      "/mnt/Data/LocalData/Kadaster/db3dnl_features/gb2.glb"
+      "/dev/shm/3dtiles/tiles/4/2/0.glb"
     ],
     "output_format": [
       "glb or city.json",
@@ -68,17 +68,22 @@
     "path_features_input_file": [
       "text file with on each line an input CityJSON feature path",
       "str",
-      "/mnt/Data/LocalData/Kadaster/db3dnl_features/features.txt"
+      "/dev/shm/3dtiles/inputs/4/2/0.input"
     ],
     "path_metadata": [
       "CityJSON features metadata file",
       "str",
-      "/mnt/Data/LocalData/Kadaster/db3dnl_features/metadata.city.json"
+      "/mnt/Data/LocalData/Kadaster/3dbasisvoorziening_dh/features/metadata.city.json"
     ],
     "simplify_ratio": [
       "0-1 lower for more simplification",
       "float",
       0.05000000074505806
+    ],
+    "skip_clip": [
+      "",
+      "bool",
+      false
     ]
   },
   "nodes": {
@@ -127,6 +132,7 @@
       },
       "parameters": {
         "filepath": "{{path_features_input_file}}",
+        "limit": 0,
         "split": true
       },
       "position": [
@@ -138,7 +144,7 @@
         "TextReader"
       ]
     },
-    "GLTFWriter-8w1e14": {
+    "GLTFWriter": {
       "marked_inputs": {
         "feature_type": false,
         "normals": false,
@@ -150,11 +156,36 @@
         "embed_buffers": true,
         "embed_images": true,
         "filepath": "{{output_file}}",
-        "pretty_print": false
+        "pretty_print": false,
+        "relative_to_center": false
       },
       "position": [
-        1015.0,
-        144.0
+        1010.0,
+        97.0
+      ],
+      "type": [
+        "CoreIO",
+        "GLTFWriter"
+      ]
+    },
+    "GLTFWriter-gltf": {
+      "marked_inputs": {
+        "feature_type": false,
+        "normals": false,
+        "triangles": false
+      },
+      "parameters": {
+        "CRS": "EPSG:4978",
+        "binary": false,
+        "embed_buffers": false,
+        "embed_images": false,
+        "filepath": "{{output_file}}.gltf",
+        "pretty_print": true,
+        "relative_to_center": false
+      },
+      "position": [
+        1010.0,
+        210.0
       ],
       "type": [
         "CoreIO",
@@ -165,19 +196,19 @@
       "connections": {
         "CityJSONL2Mesh.feature_type": [
           [
-            "GLTFWriter-8w1e14",
+            "GLTFWriter",
             "feature_type"
           ]
         ],
         "Mesh2TriangleCollection.normals": [
           [
-            "GLTFWriter-8w1e14",
+            "GLTFWriter",
             "normals"
           ]
         ],
         "Mesh2TriangleCollection.triangles": [
           [
-            "GLTFWriter-8w1e14",
+            "GLTFWriter",
             "triangles"
           ]
         ]
