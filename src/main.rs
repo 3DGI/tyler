@@ -519,6 +519,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Run gltfpack on the produced glb
             if output_format == "3dtiles" {
                 let res_exit_status = Exec::cmd(&gltfpack_bin)
+                    .arg("-cc")
                     .arg("-kn")
                     .arg("-i")
                     .arg(&output_file)
