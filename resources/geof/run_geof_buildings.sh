@@ -1,6 +1,6 @@
 #!/bin/bash
 
-/usr/local/bin/geof /home/ravi/git/tyler/resources/geof/createGLB.json \
+/usr/local/bin/geof /usr/src/tyler/resources/geof/createGLB.json \
 --output_file=$3 \
 --path_metadata=$4 \
 --path_features_input_file=$5 \

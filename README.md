@@ -13,6 +13,8 @@ As output, *tyler* can create:
 - 3D Tiles
 - CityJSON tiles
 
+## Installation
+
 ## Usage
 
 *tyler* is a command line application.
@@ -42,6 +44,24 @@ For instance turn on the debug messages.
 
 ```shell
 RUST_LOG=debug tyler ...
+```
+
+### With Docker
+
+```shell
+docker run --rm -v /data:/data -e RUST_LOG=debug balazsdukai/tyler:latest \
+  tyler \
+  --metadata <metadata file path> \
+  --features <features dir path> \
+  --output <output dir path> \
+  --format 3dtiles \
+  --python-bin /usr/src/tyler/resources/geof/run_geof_buildings.sh \
+  --cellsize 100 \
+  --quadtree-criteria vertices \
+  --quadtree-limit 5000 \
+  --object-type building \
+  --object-type building-part \
+  --gltfpack-bin /usr/local/bin/gltfpack
 ```
 
 ### Python
