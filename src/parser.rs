@@ -551,17 +551,17 @@ impl CityJSONFeatureVertices {
     pub fn to_feature<P: AsRef<Path>>(&self, path: P) -> Feature {
         let ctr_bbox = self.centroid_quantized_bbox();
         Feature {
-            centroid_quantized: [ctr_bbox[0], ctr_bbox[1]],
+            centroid_qc: [ctr_bbox[0], ctr_bbox[1]],
             nr_vertices: self.vertex_count(),
             path_jsonl: path.as_ref().to_path_buf(),
-            bbox_quantized: [
+            bbox_qc: crate::spatial_structs::BboxQc([
                 ctr_bbox[2],
                 ctr_bbox[3],
                 ctr_bbox[4],
                 ctr_bbox[5],
                 ctr_bbox[6],
                 ctr_bbox[7],
-            ],
+            ]),
         }
     }
 }
@@ -569,15 +569,15 @@ impl CityJSONFeatureVertices {
 /// Stores the information that is computed from a CityJSONFeature.
 #[derive(Debug, Default, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Feature {
-    pub(crate) centroid_quantized: [i64; 2],
+    pub(crate) centroid_qc: [i64; 2],
     pub(crate) nr_vertices: u16,
     pub path_jsonl: PathBuf,
-    pub bbox_quantized: [i64; 6],
+    pub bbox_qc: crate::spatial_structs::BboxQc,
 }
 
 impl Feature {
     pub fn centroid(&self, transform: &Transform) -> [f64; 2] {
-        let [ctr_x, ctr_y] = self.centroid_quantized;
+        let [ctr_x, ctr_y] = self.centroid_qc;
         [
             (ctr_x as f64 * transform.scale[0]) + transform.translate[0],
             (ctr_y as f64 * transform.scale[1]) + transform.translate[1],

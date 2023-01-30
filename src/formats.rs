@@ -45,15 +45,15 @@ pub mod cesium3dtiles {
         pub fn from_quadtree(
             quadtree: &crate::spatial_structs::QuadTree,
             world: &crate::parser::World,
-            minz: Option<&i32>,
-            maxz: Option<&i32>,
+            arg_minz: Option<&i32>,
+            arg_maxz: Option<&i32>,
         ) -> Self {
             let crs_from = format!("EPSG:{}", world.crs.to_epsg().unwrap());
             // Because we have a boundingVolume.box. For a boundingVolume.region we need 4979.
             let crs_to = "EPSG:4979";
             let transformer = Proj::new_known_crs(&crs_from, &crs_to, None).unwrap();
 
-            let root = Self::generate_tiles(quadtree, world, &transformer, minz, maxz);
+            let root = Self::generate_tiles(quadtree, world, &transformer, arg_minz, arg_maxz);
 
             // Using gltf tile content
             let mut extensions: Extensions = HashMap::new();
@@ -78,8 +78,8 @@ pub mod cesium3dtiles {
             quadtree: &crate::spatial_structs::QuadTree,
             world: &crate::parser::World,
             transformer: &Proj,
-            minz: Option<&i32>,
-            maxz: Option<&i32>,
+            arg_minz: Option<&i32>,
+            arg_maxz: Option<&i32>,
         ) -> Tile {
             if !quadtree.children.is_empty() {
                 if quadtree.children.len() != 4 {
@@ -116,7 +116,13 @@ pub mod cesium3dtiles {
                 }
                 let mut tile_children: Vec<Tile> = Vec::new();
                 for child in quadtree.children.iter() {
-                    tile_children.push(Self::generate_tiles(child, world, transformer, minz, maxz));
+                    tile_children.push(Self::generate_tiles(
+                        child,
+                        world,
+                        transformer,
+                        arg_minz,
+                        arg_maxz,
+                    ));
                 }
                 Tile {
                     bounding_volume,
@@ -129,67 +135,27 @@ pub mod cesium3dtiles {
                 }
             } else {
                 // Compute the tile content bounding box <-- the bbox of all the cells in a tile
-                let mut tile_content_bbox_qc: [i64; 6] = [0, 0, 0, 0, 0, 0];
+                let mut tile_content_bbox_qc = crate::spatial_structs::BboxQc([0, 0, 0, 0, 0, 0]);
                 for cellid in &quadtree.cells {
                     let cell = world.grid.cell(cellid);
                     if !cell.feature_ids.is_empty() {
-                        tile_content_bbox_qc = world.features[cell.feature_ids[0]].bbox_quantized;
+                        tile_content_bbox_qc = world.features[cell.feature_ids[0]].bbox_qc.clone();
                         break;
                     }
                 }
                 for cellid in &quadtree.cells {
                     let cell = world.grid.cell(cellid);
                     for fi in cell.feature_ids.iter() {
-                        let bbox_qc = world.features[*fi].bbox_quantized;
-                        if bbox_qc[0] < tile_content_bbox_qc[0] {
-                            tile_content_bbox_qc[0] = bbox_qc[0]
-                        } else if bbox_qc[3] > tile_content_bbox_qc[3] {
-                            tile_content_bbox_qc[3] = bbox_qc[3]
-                        }
-                        if bbox_qc[1] < tile_content_bbox_qc[1] {
-                            tile_content_bbox_qc[1] = bbox_qc[1]
-                        } else if bbox_qc[4] > tile_content_bbox_qc[4] {
-                            tile_content_bbox_qc[4] = bbox_qc[4]
-                        }
-                        if bbox_qc[2] < tile_content_bbox_qc[2] {
-                            tile_content_bbox_qc[2] = bbox_qc[2]
-                        } else if bbox_qc[5] > tile_content_bbox_qc[5] {
-                            tile_content_bbox_qc[5] = bbox_qc[5]
-                        }
+                        tile_content_bbox_qc.update_with(&world.features[*fi].bbox_qc);
                     }
                 }
-                let tile_content_bbox_rw_min = tile_content_bbox_qc[0..3]
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, qc)| {
-                        (*qc as f64 * world.transform.scale[i]) + world.transform.translate[i]
-                    });
-                let tile_content_bbox_rw_max = tile_content_bbox_qc[3..6]
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, qc)| {
-                        (*qc as f64 * world.transform.scale[i]) + world.transform.translate[i]
-                    });
-                let mut tile_content_bbox_rw: Bbox = tile_content_bbox_rw_min
-                    .chain(tile_content_bbox_rw_max)
-                    .collect::<Vec<f64>>()
-                    .try_into()
-                    .expect("should be able to create an [f64; 6] from the extent_rw vector");
                 // If the limit-minz/maxz arguments are set, also limit the z of the
                 // bounding volume. We could also just use the grid.bbox values to limit the z,
                 // however at this point we don't know if that was computed from the data or set by
                 // the argument. Setting the argument signals intent, so only then do we override
                 // the values.
-                if let Some(mz) = minz {
-                    if tile_content_bbox_rw[2] < *mz as f64 {
-                        tile_content_bbox_rw[2] = *mz as f64;
-                    }
-                }
-                if let Some(mz) = maxz {
-                    if tile_content_bbox_rw[5] > *mz as f64 {
-                        tile_content_bbox_rw[5] = *mz as f64;
-                    }
-                }
+                let tile_content_bbox_rw =
+                    tile_content_bbox_qc.to_bbox(&world.transform, arg_minz, arg_maxz);
 
                 // Tile bounding volume
                 let mut tile_bbox = quadtree.bbox(&world.grid);
@@ -315,46 +281,11 @@ pub mod cesium3dtiles {
                     continue;
                 }
 
-                let mut content_bbox_qc = feature_set[cell.feature_ids[0]].bbox_quantized;
+                let mut content_bbox_qc = feature_set[cell.feature_ids[0]].bbox_qc.clone();
                 for fi in cell.feature_ids.iter() {
-                    let bbox_qc = feature_set[*fi].bbox_quantized;
-                    if bbox_qc[0] < content_bbox_qc[0] {
-                        content_bbox_qc[0] = bbox_qc[0]
-                    } else if bbox_qc[3] > content_bbox_qc[3] {
-                        content_bbox_qc[3] = bbox_qc[3]
-                    }
-                    if bbox_qc[1] < content_bbox_qc[1] {
-                        content_bbox_qc[1] = bbox_qc[1]
-                    } else if bbox_qc[4] > content_bbox_qc[4] {
-                        content_bbox_qc[4] = bbox_qc[4]
-                    }
-                    if bbox_qc[2] < content_bbox_qc[2] {
-                        content_bbox_qc[2] = bbox_qc[2]
-                    } else if bbox_qc[5] > content_bbox_qc[5] {
-                        content_bbox_qc[5] = bbox_qc[5]
-                    }
+                    content_bbox_qc.update_with(&feature_set[*fi].bbox_qc);
                 }
-                let content_bbox_rw_min =
-                    content_bbox_qc[0..3]
-                        .into_iter()
-                        .enumerate()
-                        .map(|(i, qc)| {
-                            (*qc as f64 * citymodel.transform.scale[i])
-                                + citymodel.transform.translate[i]
-                        });
-                let content_bbox_rw_max =
-                    content_bbox_qc[3..6]
-                        .into_iter()
-                        .enumerate()
-                        .map(|(i, qc)| {
-                            (*qc as f64 * citymodel.transform.scale[i])
-                                + citymodel.transform.translate[i]
-                        });
-                let content_bbox_rw: Bbox = content_bbox_rw_min
-                    .chain(content_bbox_rw_max)
-                    .collect::<Vec<f64>>()
-                    .try_into()
-                    .expect("should be able to create an [f64; 6] from the extent_rw vector");
+                let content_bbox_rw = content_bbox_qc.to_bbox(&citymodel.transform, None, None);
                 let content_bounding_voume =
                     BoundingVolume::region_from_bbox(&content_bbox_rw, &transformer).unwrap();
 

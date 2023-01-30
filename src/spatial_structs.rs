@@ -615,10 +615,10 @@ mod tests {
             for y in 0..4u64 {
                 for f in 0..5 {
                     feature_set.push(crate::parser::Feature {
-                        centroid_quantized: [0, 0],
+                        centroid_qc: [0, 0],
                         nr_vertices: 0,
                         path_jsonl: Default::default(),
-                        bbox_quantized: [0, 0, 0, 0, 0, 0],
+                        bbox_qc: BboxQc([0, 0, 0, 0, 0, 0]),
                     });
                     let xc: f64 = format!("{}.{}", &x, &f).parse().unwrap();
                     grid.insert(&[xc, y as f64], f as usize);
@@ -637,10 +637,10 @@ mod tests {
             for y in 0..4u64 {
                 for f in 0..5 {
                     feature_set.push(crate::parser::Feature {
-                        centroid_quantized: [0, 0],
+                        centroid_qc: [0, 0],
                         nr_vertices: 0,
                         path_jsonl: Default::default(),
-                        bbox_quantized: [0, 0, 0, 0, 0, 0],
+                        bbox_qc: BboxQc([0, 0, 0, 0, 0, 0]),
                     });
                     let xc: f64 = format!("{}.{}", &x, &f).parse().unwrap();
                     grid.insert(&[xc, y as f64], f as usize);
@@ -663,7 +663,7 @@ pub type Bbox = [f64; 6];
 /// 3D bounding box with quantized coordinates.
 ///
 /// [min x, min y, min z, max x, max y, max z]
-#[derive(Debug)]
+#[derive(Debug, Default, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct BboxQc(pub [i64; 6]); // This `pub [i64; 6]` makes the BboxQc constructor public
 
 impl BboxQc {
@@ -711,5 +711,24 @@ impl BboxQc {
             }
         }
         extent_rw
+    }
+
+    // Update with another bounding box, if the other is larger.
+    pub fn update_with(&mut self, bbox_qc: &Self) {
+        if bbox_qc.0[0] < self.0[0] {
+            self.0[0] = bbox_qc.0[0]
+        } else if bbox_qc.0[3] > self.0[3] {
+            self.0[3] = bbox_qc.0[3]
+        }
+        if bbox_qc.0[1] < self.0[1] {
+            self.0[1] = bbox_qc.0[1]
+        } else if bbox_qc.0[4] > self.0[4] {
+            self.0[4] = bbox_qc.0[4]
+        }
+        if bbox_qc.0[2] < self.0[2] {
+            self.0[2] = bbox_qc.0[2]
+        } else if bbox_qc.0[5] > self.0[5] {
+            self.0[5] = bbox_qc.0[5]
+        }
     }
 }
