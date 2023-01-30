@@ -44,31 +44,16 @@ pub mod cesium3dtiles {
 
         pub fn from_quadtree(
             quadtree: &crate::spatial_structs::QuadTree,
-            grid: &crate::spatial_structs::SquareGrid,
-            transform: &crate::parser::Transform,
-            crs: &crate::parser::CRS,
-            feature_set: &crate::FeatureSet,
+            world: &crate::parser::World,
             minz: Option<&i32>,
             maxz: Option<&i32>,
         ) -> Self {
-            let crs_from = format!(
-                "EPSG:{}",
-                crs.to_epsg().unwrap()
-            );
+            let crs_from = format!("EPSG:{}", world.crs.to_epsg().unwrap());
             // Because we have a boundingVolume.box. For a boundingVolume.region we need 4979.
             let crs_to = "EPSG:4979";
             let transformer = Proj::new_known_crs(&crs_from, &crs_to, None).unwrap();
 
-            let root = Self::generate_tiles(
-                quadtree,
-                grid,
-                &transformer,
-                transform,
-                crs,
-                feature_set,
-                minz,
-                maxz,
-            );
+            let root = Self::generate_tiles(quadtree, world, &transformer, minz, maxz);
 
             // Using gltf tile content
             let mut extensions: Extensions = HashMap::new();
@@ -91,11 +76,8 @@ pub mod cesium3dtiles {
 
         fn generate_tiles(
             quadtree: &crate::spatial_structs::QuadTree,
-            grid: &crate::spatial_structs::SquareGrid,
+            world: &crate::parser::World,
             transformer: &Proj,
-            transform: &crate::parser::Transform,
-            crs: &crate::parser::CRS,
-            feature_set: &crate::FeatureSet,
             minz: Option<&i32>,
             maxz: Option<&i32>,
         ) -> Tile {
@@ -104,10 +86,10 @@ pub mod cesium3dtiles {
                     error!("Quadtree does not have 4 children {:?}", &quadtree);
                 }
                 // Tile bounding volume
-                let mut tile_bbox = quadtree.bbox(grid);
+                let mut tile_bbox = quadtree.bbox(&world.grid);
                 // Set the bounding volume height from the content height
-                tile_bbox[2] = grid.bbox[2];
-                tile_bbox[5] = grid.bbox[5];
+                tile_bbox[2] = world.grid.bbox[2];
+                tile_bbox[5] = world.grid.bbox[5];
                 let mut bounding_volume =
                     BoundingVolume::region_from_bbox(&tile_bbox, &transformer).unwrap();
                 match bounding_volume {
@@ -134,16 +116,7 @@ pub mod cesium3dtiles {
                 }
                 let mut tile_children: Vec<Tile> = Vec::new();
                 for child in quadtree.children.iter() {
-                    tile_children.push(Self::generate_tiles(
-                        child,
-                        grid,
-                        transformer,
-                        transform,
-                        crs,
-                        feature_set,
-                        minz,
-                        maxz,
-                    ));
+                    tile_children.push(Self::generate_tiles(child, world, transformer, minz, maxz));
                 }
                 Tile {
                     bounding_volume,
@@ -158,16 +131,16 @@ pub mod cesium3dtiles {
                 // Compute the tile content bounding box <-- the bbox of all the cells in a tile
                 let mut tile_content_bbox_qc: [i64; 6] = [0, 0, 0, 0, 0, 0];
                 for cellid in &quadtree.cells {
-                    let cell = grid.cell(cellid);
+                    let cell = world.grid.cell(cellid);
                     if !cell.feature_ids.is_empty() {
-                        tile_content_bbox_qc = feature_set[cell.feature_ids[0]].bbox_quantized;
+                        tile_content_bbox_qc = world.features[cell.feature_ids[0]].bbox_quantized;
                         break;
                     }
                 }
                 for cellid in &quadtree.cells {
-                    let cell = grid.cell(cellid);
+                    let cell = world.grid.cell(cellid);
                     for fi in cell.feature_ids.iter() {
-                        let bbox_qc = feature_set[*fi].bbox_quantized;
+                        let bbox_qc = world.features[*fi].bbox_quantized;
                         if bbox_qc[0] < tile_content_bbox_qc[0] {
                             tile_content_bbox_qc[0] = bbox_qc[0]
                         } else if bbox_qc[3] > tile_content_bbox_qc[3] {
@@ -189,15 +162,13 @@ pub mod cesium3dtiles {
                     .into_iter()
                     .enumerate()
                     .map(|(i, qc)| {
-                        (*qc as f64 * transform.scale[i])
-                            + transform.translate[i]
+                        (*qc as f64 * world.transform.scale[i]) + world.transform.translate[i]
                     });
                 let tile_content_bbox_rw_max = tile_content_bbox_qc[3..6]
                     .into_iter()
                     .enumerate()
                     .map(|(i, qc)| {
-                        (*qc as f64 * transform.scale[i])
-                            + transform.translate[i]
+                        (*qc as f64 * world.transform.scale[i]) + world.transform.translate[i]
                     });
                 let mut tile_content_bbox_rw: Bbox = tile_content_bbox_rw_min
                     .chain(tile_content_bbox_rw_max)
@@ -221,7 +192,7 @@ pub mod cesium3dtiles {
                 }
 
                 // Tile bounding volume
-                let mut tile_bbox = quadtree.bbox(grid);
+                let mut tile_bbox = quadtree.bbox(&world.grid);
                 // Set the bounding volume height from the content height
                 tile_bbox[2] = tile_content_bbox_rw[2];
                 tile_bbox[5] = tile_content_bbox_rw[5];

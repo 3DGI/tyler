@@ -21,7 +21,11 @@ pub struct QuadTree {
 }
 
 impl QuadTree {
-    pub fn from_grid(grid: &SquareGrid, feature_set: &FeatureSet, limit: QuadTreeLimit) -> Self {
+    pub fn from_world(world: &crate::parser::World, limit: QuadTreeLimit) -> Self {
+        Self::from_grid(&world.grid, &world.features, limit)
+    }
+
+    fn from_grid(grid: &SquareGrid, feature_set: &FeatureSet, limit: QuadTreeLimit) -> Self {
         let mut merge_limit: usize = 0;
         let nr_cells = grid.length.pow(2) as f64;
         let max_level = (nr_cells.ln() / 4.0_f64.ln()).ceil() as u16;

@@ -192,6 +192,7 @@ impl World {
         }
     }
 
+    // Loop through the features and assign the features to the grid cells.
     pub fn index_with_grid(&mut self) {
         let feature_set_paths_iter = WalkDir::new(&self.path_features_root)
             .into_iter()
@@ -271,6 +272,11 @@ impl World {
                 error!("Failed to parse the feature {:?}", &feature_path);
             }
         }
+    }
+
+    // Export the grid of the World into the working directory.
+    pub fn export_grid(&self) -> std::io::Result<()> {
+        self.grid.export(&self.features, &self.transform)
     }
 }
 

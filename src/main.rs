@@ -21,6 +21,7 @@ static FORMATS: [&str; 2] = ["3dtiles", "cityjson"];
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
 
+    // --- Begin argument parsing
     let cmd = Command::new("tyler")
         .about("Create tiles from 3D city objects encoded as CityJSONFeatures.")
         .version(crate_version!())
@@ -178,7 +179,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
     let arg_minz: Option<&i32> = matches.get_one::<i32>("minz");
     let arg_maxz: Option<&i32> = matches.get_one::<i32>("maxz");
+    // --- end of argument parsing
 
+    // Populate the World with features
     let mut world = parser::World::new(
         path_metadata,
         path_features,
@@ -187,32 +190,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         arg_minz,
         arg_maxz,
     )?;
-
     world.index_with_grid();
 
     // Debug
     if do_export {
         debug!("Exporting the grid to the working directory");
-        world.grid.export(&world.features, &world.transform)?;
+        world.export_grid()?;
     }
 
     // Build quadtree
     info!("Building quadtree");
-    let quadtree =
-        spatial_structs::QuadTree::from_grid(&world.grid, &world.features, quadtree_limit);
+    let quadtree = spatial_structs::QuadTree::from_world(&world, quadtree_limit);
 
     // 3D Tiles
     info!("Generating 3D Tiles tileset");
     let tileset_path = path_output.join("tileset.json");
-    let tileset = formats::cesium3dtiles::Tileset::from_quadtree(
-        &quadtree,
-        &world.grid,
-        &world.transform,
-        &world.crs,
-        &world.features,
-        arg_minz,
-        arg_maxz,
-    );
+    let tileset =
+        formats::cesium3dtiles::Tileset::from_quadtree(&quadtree, &world, arg_minz, arg_maxz);
     tileset.to_file(tileset_path)?;
 
     let path_output_tiles = path_output.join("tiles");
