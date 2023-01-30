@@ -17,88 +17,71 @@ use walkdir::WalkDir;
 ///
 /// # Members
 ///
+/// `path_features_root` - The path to the root directory containing all features.
+///
+/// `path_metadata` - The path to the JSON file that stores the
+/// [CityJSON object](https://www.cityjson.org/specs/1.1.3/#cityjson-object)
+/// (also called CityJSON metadata in *tyler*).
+///
 /// `cityobject_types` - The World only contains features of these types.
 pub struct World {
-    pub features: FeatureSet,
-    pub crs: CRS,
-    pub transform: Transform,
-    pub grid: crate::spatial_structs::SquareGrid,
-    pub path_features: PathBuf,
-    pub path_metadata: PathBuf,
     pub cityobject_types: Vec<CityObjectType>,
+    pub crs: CRS,
+    pub features: FeatureSet,
+    pub grid: crate::spatial_structs::SquareGrid,
+    pub path_features_root: PathBuf,
+    pub path_metadata: PathBuf,
+    pub transform: Transform,
 }
 
 impl World {
     pub fn new<P: AsRef<Path>>(
         path_metadata: P,
-        path_features: P,
+        path_features_root: P,
         cellsize: u16,
         cityobject_types: Vec<CityObjectType>,
         arg_minz: Option<&i32>,
         arg_maxz: Option<&i32>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        let path_features_root = path_features_root.as_ref().to_path_buf();
+        let path_metadata = path_metadata.as_ref().to_path_buf();
         let cm = CityJSONMetadata::from_file(&path_metadata)?;
+        let crs = cm.metadata.reference_system;
+        let transform = cm.transform;
 
+        // Compute the extent of the features and the number of features.
+        // We don't store the computed extent explicitly, because the grid contains that info.
         let (extent_qc, nr_features, cityobject_types_ignored) =
-            Self::extent_qc(&path_features, &cityobject_types);
-        let mut feature_set: FeatureSet = Vec::with_capacity(nr_features + 1);
-        feature_set.resize(nr_features + 1, Feature::default());
+            Self::extent_qc(&path_features_root, &cityobject_types);
         info!(
             "Found {} features of type {:?}",
             nr_features, &cityobject_types
         );
         info!("Ignored feature types: {:?}", &cityobject_types_ignored);
         debug!("extent_qc: {:?}", &extent_qc);
-        // Get the real-world coordinates for the extent
-        let extent_rw_min = extent_qc[0..3]
-            .into_iter()
-            .enumerate()
-            .map(|(i, qc)| (*qc as f64 * cm.transform.scale[i]) + cm.transform.translate[i]);
-        let extent_rw_max = extent_qc[3..6]
-            .into_iter()
-            .enumerate()
-            .map(|(i, qc)| (*qc as f64 * cm.transform.scale[i]) + cm.transform.translate[i]);
-        let mut extent_rw: [f64; 6] = extent_rw_min
-            .chain(extent_rw_max)
-            .collect::<Vec<f64>>()
-            .try_into()
-            .expect("should be able to create an [f64; 6] from the extent_rw vector");
-        if let Some(minz) = arg_minz {
-            if extent_rw[2] < *minz as f64 {
-                debug!(
-                "Setting min. z for the grid extent from provided value {}, instead of the computed value {}",
-                minz, extent_rw[2]
-            );
-                extent_rw[2] = *minz as f64
-            }
-        }
-        if let Some(maxz) = arg_maxz {
-            if extent_rw[5] > *maxz as f64 {
-                debug!(
-                "Setting max. z for the grid extent from provided value {}, instead of the computed value {}",
-                maxz, extent_rw[5]
-            );
-                extent_rw[5] = *maxz as f64
-            }
-        }
+        let extent_rw = extent_qc.to_bbox(&transform, arg_minz, arg_maxz);
         debug!(
-            "Computed grid extent from features in real-world coordinates: {:?}",
+            "Computed extent from features in real-world coordinates: {:?}",
             &extent_rw
         );
 
-        let epsg = cm.metadata.reference_system.to_epsg()?;
-        let mut grid =
-            crate::spatial_structs::SquareGrid::new(&extent_rw, cellsize, epsg, Some(10.0));
+        // Allocate the grid, but at this point it is still empty
+        let epsg = crs.to_epsg()?;
+        let grid = crate::spatial_structs::SquareGrid::new(&extent_rw, cellsize, epsg, Some(10.0));
         debug!("{}", grid);
 
+        // Allocate the features container, but at this point it is still empty
+        let mut features: FeatureSet = Vec::with_capacity(nr_features + 1);
+        features.resize(nr_features + 1, Feature::default());
+
         Ok(Self {
-            features: feature_set,
-            crs: cm.metadata.reference_system,
-            transform: cm.transform,
+            features,
+            crs,
+            transform,
             grid,
             cityobject_types,
-            path_features: path_features.as_ref().to_path_buf(),
-            path_metadata: path_metadata.as_ref().to_path_buf(),
+            path_features_root,
+            path_metadata,
         })
     }
 
@@ -107,7 +90,7 @@ impl World {
     fn extent_qc<P: AsRef<Path>>(
         path_features: P,
         cityobject_types: &[CityObjectType],
-    ) -> ([i64; 6], usize, Vec<CityObjectType>) {
+    ) -> (crate::spatial_structs::BboxQc, usize, Vec<CityObjectType>) {
         info!(
             "Computing extent from the features of type {:?}",
             cityobject_types
@@ -184,7 +167,11 @@ impl World {
                 error!("Failed to parse {:?}", &feature_path);
             }
         }
-        (extent_qc, nr_features, cotypes_ignored)
+        (
+            crate::spatial_structs::BboxQc(extent_qc),
+            nr_features,
+            cotypes_ignored,
+        )
     }
 
     /// Return the file path if the 'DirEntry' is a .jsonl file (eg. .city.jsonl).
@@ -206,7 +193,7 @@ impl World {
     }
 
     pub fn index_with_grid(&mut self) {
-        let feature_set_paths_iter = WalkDir::new(&self.path_features)
+        let feature_set_paths_iter = WalkDir::new(&self.path_features_root)
             .into_iter()
             .filter_map(Self::jsonl_path)
             .enumerate();

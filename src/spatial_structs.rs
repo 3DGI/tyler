@@ -652,5 +652,60 @@ mod tests {
 }
 
 /// 3D bounding box.
+///
 /// [min x, min y, min z, max x, max y, max z]
 pub type Bbox = [f64; 6];
+
+/// 3D bounding box with quantized coordinates.
+///
+/// [min x, min y, min z, max x, max y, max z]
+#[derive(Debug)]
+pub struct BboxQc(pub [i64; 6]); // This `pub [i64; 6]` makes the BboxQc constructor public
+
+impl BboxQc {
+    /// Compute the real-world coordinates from the quantized coordinates and the
+    /// transformation properties.
+    ///
+    /// Optionally, the z-coordinate limits can be overriden by the `arg_minz` and
+    /// `arg_maxz` arguments.
+    pub fn to_bbox(
+        &self,
+        transform: &crate::parser::Transform,
+        arg_minz: Option<&i32>,
+        arg_maxz: Option<&i32>,
+    ) -> Bbox {
+        // Get the real-world coordinates for the extent
+        let extent_rw_min = self.0[0..3]
+            .into_iter()
+            .enumerate()
+            .map(|(i, qc)| (*qc as f64 * transform.scale[i]) + transform.translate[i]);
+        let extent_rw_max = self.0[3..6]
+            .into_iter()
+            .enumerate()
+            .map(|(i, qc)| (*qc as f64 * transform.scale[i]) + transform.translate[i]);
+        let mut extent_rw: [f64; 6] = extent_rw_min
+            .chain(extent_rw_max)
+            .collect::<Vec<f64>>()
+            .try_into()
+            .expect("should be able to create an [f64; 6] from the extent_rw vector");
+        if let Some(minz) = arg_minz {
+            if extent_rw[2] < *minz as f64 {
+                debug!(
+                "Setting min. z for the grid extent from provided value {}, instead of the computed value {}",
+                minz, extent_rw[2]
+            );
+                extent_rw[2] = *minz as f64
+            }
+        }
+        if let Some(maxz) = arg_maxz {
+            if extent_rw[5] > *maxz as f64 {
+                debug!(
+                "Setting max. z for the grid extent from provided value {}, instead of the computed value {}",
+                maxz, extent_rw[5]
+            );
+                extent_rw[5] = *maxz as f64
+            }
+        }
+        extent_rw
+    }
+}
