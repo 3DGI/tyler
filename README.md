@@ -83,7 +83,9 @@ Output files:
 - `<output argument>`/tiles/*.glb
 
 
-## Algorithm
+## Design document
+
+
 
 ### Assumptions
 

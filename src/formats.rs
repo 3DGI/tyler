@@ -9,7 +9,7 @@ pub mod cesium3dtiles {
     use std::fs::File;
     use std::path::Path;
 
-    use crate::Bbox;
+    use crate::spatial_structs::Bbox;
     use log::{debug, error};
     use serde::Serialize;
 
@@ -45,14 +45,15 @@ pub mod cesium3dtiles {
         pub fn from_quadtree(
             quadtree: &crate::spatial_structs::QuadTree,
             grid: &crate::spatial_structs::SquareGrid,
-            citymodel: &crate::parser::CityJSONMetadata,
+            transform: &crate::parser::Transform,
+            crs: &crate::parser::CRS,
             feature_set: &crate::FeatureSet,
             minz: Option<&i32>,
             maxz: Option<&i32>,
         ) -> Self {
             let crs_from = format!(
                 "EPSG:{}",
-                citymodel.metadata.reference_system.to_epsg().unwrap()
+                crs.to_epsg().unwrap()
             );
             // Because we have a boundingVolume.box. For a boundingVolume.region we need 4979.
             let crs_to = "EPSG:4979";
@@ -62,7 +63,8 @@ pub mod cesium3dtiles {
                 quadtree,
                 grid,
                 &transformer,
-                citymodel,
+                transform,
+                crs,
                 feature_set,
                 minz,
                 maxz,
@@ -91,7 +93,8 @@ pub mod cesium3dtiles {
             quadtree: &crate::spatial_structs::QuadTree,
             grid: &crate::spatial_structs::SquareGrid,
             transformer: &Proj,
-            citymodel: &crate::parser::CityJSONMetadata,
+            transform: &crate::parser::Transform,
+            crs: &crate::parser::CRS,
             feature_set: &crate::FeatureSet,
             minz: Option<&i32>,
             maxz: Option<&i32>,
@@ -135,7 +138,8 @@ pub mod cesium3dtiles {
                         child,
                         grid,
                         transformer,
-                        citymodel,
+                        transform,
+                        crs,
                         feature_set,
                         minz,
                         maxz,
@@ -185,15 +189,15 @@ pub mod cesium3dtiles {
                     .into_iter()
                     .enumerate()
                     .map(|(i, qc)| {
-                        (*qc as f64 * citymodel.transform.scale[i])
-                            + citymodel.transform.translate[i]
+                        (*qc as f64 * transform.scale[i])
+                            + transform.translate[i]
                     });
                 let tile_content_bbox_rw_max = tile_content_bbox_qc[3..6]
                     .into_iter()
                     .enumerate()
                     .map(|(i, qc)| {
-                        (*qc as f64 * citymodel.transform.scale[i])
-                            + citymodel.transform.translate[i]
+                        (*qc as f64 * transform.scale[i])
+                            + transform.translate[i]
                     });
                 let mut tile_content_bbox_rw: Bbox = tile_content_bbox_rw_min
                     .chain(tile_content_bbox_rw_max)
@@ -589,8 +593,8 @@ pub mod cesium3dtiles {
     /// half-length.
     /// The last three elements (indices 9, 10, and 11) define the z-axis direction and
     /// half-length.
-    impl From<&crate::Bbox> for BoundingVolume {
-        fn from(bbox: &crate::Bbox) -> Self {
+    impl From<&crate::spatial_structs::Bbox> for BoundingVolume {
+        fn from(bbox: &crate::spatial_structs::Bbox) -> Self {
             let dx = bbox[3] - bbox[0];
             let dy = bbox[4] - bbox[1];
             let dz = bbox[5] - bbox[2];
@@ -649,7 +653,7 @@ pub mod cesium3dtiles {
         /// correct `[minX, minY, minZ, maxX, maxY, maxZ]` bbox after the transformation.
         ///
         fn box_from_bbox(
-            bbox: &crate::Bbox,
+            bbox: &crate::spatial_structs::Bbox,
             transformer: &Proj,
         ) -> Result<Self, Box<dyn std::error::Error>> {
             let min_coord = transformer.convert((bbox[0], bbox[1], bbox[2]))?;
@@ -669,7 +673,7 @@ pub mod cesium3dtiles {
         }
 
         fn region_from_bbox(
-            bbox: &crate::Bbox,
+            bbox: &crate::spatial_structs::Bbox,
             transformer: &Proj,
         ) -> Result<Self, Box<dyn std::error::Error>> {
             let (west, south, minh) = transformer.convert((bbox[0], bbox[1], bbox[2]))?;
@@ -732,7 +736,8 @@ pub mod cesium3dtiles {
 
         #[test]
         fn test_boundingvolume_from_bbox() {
-            let bbox: crate::Bbox = [84995.279, 446316.813, -5.333, 85644.748, 446996.132, 52.881];
+            let bbox: crate::spatial_structs::Bbox =
+                [84995.279, 446316.813, -5.333, 85644.748, 446996.132, 52.881];
             let bounding_volume = BoundingVolume::from(&bbox);
             println!("{:?}", bounding_volume);
         }

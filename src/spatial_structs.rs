@@ -1,6 +1,6 @@
 //! Spatial data structures for indexing the features.
 use crate::parser::Feature;
-use crate::FeatureSet;
+use crate::parser::FeatureSet;
 use log::{debug, error};
 use std::fmt::{Display, Formatter};
 use std::fs::File;
@@ -179,7 +179,7 @@ impl QuadTree {
         format!("{}/{}/{}", self.z, self.x, self.y)
     }
 
-    pub fn bbox(&self, grid: &SquareGrid) -> crate::Bbox {
+    pub fn bbox(&self, grid: &SquareGrid) -> Bbox {
         let minx = grid.origin[0] + (self.x * grid.cellsize as usize) as f64;
         let miny = grid.origin[1] + (self.y * grid.cellsize as usize) as f64;
         [
@@ -286,7 +286,7 @@ pub fn deinterleave(mortoncode: &u64) -> [u64; 2] {
 #[derive(Debug)]
 pub struct SquareGrid {
     origin: [f64; 3],
-    pub bbox: crate::Bbox,
+    pub bbox: Bbox,
     pub length: usize,
     cellsize: u16,
     pub data: Vec<Vec<Cell>>,
@@ -308,7 +308,7 @@ impl SquareGrid {
     /// The grid and the cells are square.
     /// The grid origin is the `extent` origin.
     /// The grid is returned as an origin coordinate and the number of cells.
-    pub fn new(extent: &crate::Bbox, cellsize: u16, epsg: u16, buffer: Option<f64>) -> Self {
+    pub fn new(extent: &Bbox, cellsize: u16, epsg: u16, buffer: Option<f64>) -> Self {
         // Add some buffer to the extent, to make sure all points will be within the grid.
         let buffer: f64 = buffer.unwrap_or(0.0);
         // Add the buffer to the computed extent
@@ -391,8 +391,8 @@ impl SquareGrid {
     /// Two files are created, `grid.tsv` and `features.tsv`.
     pub fn export(
         &self,
-        feature_set: &crate::FeatureSet,
-        cm: &crate::parser::CityJSONMetadata,
+        feature_set: &FeatureSet,
+        transform: &crate::parser::Transform,
     ) -> std::io::Result<()> {
         let mut file_grid = File::create("grid.tsv")?;
         let mut file_features = File::create("features.tsv")?;
@@ -415,7 +415,7 @@ impl SquareGrid {
             let mut cellbuffer = String::new();
             for fid in cell.feature_ids.iter() {
                 let f = &feature_set[*fid];
-                let centroid = f.centroid(cm);
+                let centroid = f.centroid(transform);
                 cellbuffer += format!(
                     "{}\t{}\tPOINT({} {})\n",
                     fid, &cellid, centroid[0], centroid[1]
@@ -441,7 +441,7 @@ impl SquareGrid {
         )
     }
 
-    pub fn cell_bbox(&self, cellid: &CellId) -> crate::Bbox {
+    pub fn cell_bbox(&self, cellid: &CellId) -> Bbox {
         let minx = self.origin[0] + (cellid.column * self.cellsize as usize) as f64;
         let miny = self.origin[1] + (cellid.row * self.cellsize as usize) as f64;
         let minz = self.bbox[2];
@@ -650,3 +650,7 @@ mod tests {
         }
     }
 }
+
+/// 3D bounding box.
+/// [min x, min y, min z, max x, max y, max z]
+pub type Bbox = [f64; 6];

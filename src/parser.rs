@@ -1,10 +1,291 @@
+//! CityJSON parser.
+//! The module is responsible for parsing CityJSON data and populating the World.
+//!
+
 use std::collections::HashMap;
 use std::fmt;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 
+use log::{debug, error, info};
 use serde::Deserialize;
 use serde_json::from_str;
+use walkdir::WalkDir;
+
+/// Represents the "world" that contains some features and needs to be partitioned into
+/// tiles.
+///
+/// # Members
+///
+/// `cityobject_types` - The World only contains features of these types.
+pub struct World {
+    pub features: FeatureSet,
+    pub crs: CRS,
+    pub transform: Transform,
+    pub grid: crate::spatial_structs::SquareGrid,
+    pub path_features: PathBuf,
+    pub path_metadata: PathBuf,
+    pub cityobject_types: Vec<CityObjectType>,
+}
+
+impl World {
+    pub fn new<P: AsRef<Path>>(
+        path_metadata: P,
+        path_features: P,
+        cellsize: u16,
+        cityobject_types: Vec<CityObjectType>,
+        arg_minz: Option<&i32>,
+        arg_maxz: Option<&i32>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let cm = CityJSONMetadata::from_file(&path_metadata)?;
+
+        let (extent_qc, nr_features, cityobject_types_ignored) =
+            Self::extent_qc(&path_features, &cityobject_types);
+        let mut feature_set: FeatureSet = Vec::with_capacity(nr_features + 1);
+        feature_set.resize(nr_features + 1, Feature::default());
+        info!(
+            "Found {} features of type {:?}",
+            nr_features, &cityobject_types
+        );
+        info!("Ignored feature types: {:?}", &cityobject_types_ignored);
+        debug!("extent_qc: {:?}", &extent_qc);
+        // Get the real-world coordinates for the extent
+        let extent_rw_min = extent_qc[0..3]
+            .into_iter()
+            .enumerate()
+            .map(|(i, qc)| (*qc as f64 * cm.transform.scale[i]) + cm.transform.translate[i]);
+        let extent_rw_max = extent_qc[3..6]
+            .into_iter()
+            .enumerate()
+            .map(|(i, qc)| (*qc as f64 * cm.transform.scale[i]) + cm.transform.translate[i]);
+        let mut extent_rw: [f64; 6] = extent_rw_min
+            .chain(extent_rw_max)
+            .collect::<Vec<f64>>()
+            .try_into()
+            .expect("should be able to create an [f64; 6] from the extent_rw vector");
+        if let Some(minz) = arg_minz {
+            if extent_rw[2] < *minz as f64 {
+                debug!(
+                "Setting min. z for the grid extent from provided value {}, instead of the computed value {}",
+                minz, extent_rw[2]
+            );
+                extent_rw[2] = *minz as f64
+            }
+        }
+        if let Some(maxz) = arg_maxz {
+            if extent_rw[5] > *maxz as f64 {
+                debug!(
+                "Setting max. z for the grid extent from provided value {}, instead of the computed value {}",
+                maxz, extent_rw[5]
+            );
+                extent_rw[5] = *maxz as f64
+            }
+        }
+        debug!(
+            "Computed grid extent from features in real-world coordinates: {:?}",
+            &extent_rw
+        );
+
+        let epsg = cm.metadata.reference_system.to_epsg()?;
+        let mut grid =
+            crate::spatial_structs::SquareGrid::new(&extent_rw, cellsize, epsg, Some(10.0));
+        debug!("{}", grid);
+
+        Ok(Self {
+            features: feature_set,
+            crs: cm.metadata.reference_system,
+            transform: cm.transform,
+            grid,
+            cityobject_types,
+            path_features: path_features.as_ref().to_path_buf(),
+            path_metadata: path_metadata.as_ref().to_path_buf(),
+        })
+    }
+
+    /// Compute the extent (in quantized coordinates), the number of features and the
+    /// CityObject types that are present in the data but not selected.
+    fn extent_qc<P: AsRef<Path>>(
+        path_features: P,
+        cityobject_types: &[CityObjectType],
+    ) -> ([i64; 6], usize, Vec<CityObjectType>) {
+        info!(
+            "Computing extent from the features of type {:?}",
+            cityobject_types
+        );
+        // Do a first loop over the features to calculate their extent and their number.
+        // Need a mutable iterator, because .next() consumes the next value and advances the iterator.
+        let mut features_enum_iter = WalkDir::new(&path_features)
+            .into_iter()
+            .filter_map(Self::jsonl_path)
+            .enumerate();
+        // Init the extent with from the first feature of the requested types
+        let mut extent_qc: [i64; 6] = [0, 0, 0, 0, 0, 0];
+        let mut found_feature_type = false;
+        let mut nr_features = 0;
+        let mut cotypes_ignored: Vec<CityObjectType> = Vec::new();
+        debug!("Searching for the first feature of the requested type...");
+        loop {
+            let (_, feature_path) = features_enum_iter
+                .next()
+                .expect(".jsonl file should be accessible");
+            if let Ok(cf) = CityJSONFeatureVertices::from_file(&feature_path) {
+                if let Some(mut eqc) = cf.bbox_of_types(cityobject_types) {
+                    extent_qc = eqc;
+                    found_feature_type = true;
+                    nr_features += 1;
+                    break;
+                } else {
+                    for (coid, co) in cf.cityobjects.iter() {
+                        if !cotypes_ignored.contains(&co.cotype) {
+                            cotypes_ignored.push(co.cotype);
+                        }
+                    }
+                }
+            } else {
+                error!("Failed to parse {:?}", &feature_path)
+            }
+        }
+        if !found_feature_type {
+            panic!(
+                "Did not find any CityJSONFeature of type {:?}",
+                &cityobject_types
+            );
+        }
+        debug!("First feature found. Iterating over all features to compute the extent.");
+        for (nf, feature_path) in features_enum_iter {
+            if let Ok(cf) = CityJSONFeatureVertices::from_file(&feature_path) {
+                if let Some([x_min, y_min, z_min, x_max, y_max, z_max]) =
+                    cf.bbox_of_types(&cityobject_types)
+                {
+                    if x_min < extent_qc[0] {
+                        extent_qc[0] = x_min
+                    } else if x_max > extent_qc[3] {
+                        extent_qc[3] = x_max
+                    }
+                    if y_min < extent_qc[1] {
+                        extent_qc[1] = y_min
+                    } else if y_max > extent_qc[4] {
+                        extent_qc[4] = y_max
+                    }
+                    if z_min < extent_qc[2] {
+                        extent_qc[2] = z_min
+                    } else if z_max > extent_qc[5] {
+                        extent_qc[5] = z_max
+                    }
+                    nr_features += 1;
+                } else {
+                    for (coid, co) in cf.cityobjects.iter() {
+                        if !cotypes_ignored.contains(&co.cotype) {
+                            cotypes_ignored.push(co.cotype);
+                        }
+                    }
+                }
+            } else {
+                error!("Failed to parse {:?}", &feature_path);
+            }
+        }
+        (extent_qc, nr_features, cotypes_ignored)
+    }
+
+    /// Return the file path if the 'DirEntry' is a .jsonl file (eg. .city.jsonl).
+    pub fn jsonl_path(walkdir_res: Result<walkdir::DirEntry, walkdir::Error>) -> Option<PathBuf> {
+        if let Ok(entry) = walkdir_res {
+            if let Some(ext) = entry.path().extension() {
+                if ext == "jsonl" {
+                    Some(entry.path().to_path_buf())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            // TODO: notify the user if some path cannot be accessed (eg. permission), https://docs.rs/walkdir/latest/walkdir/struct.Error.html
+            None
+        }
+    }
+
+    pub fn index_with_grid(&mut self) {
+        let feature_set_paths_iter = WalkDir::new(&self.path_features)
+            .into_iter()
+            .filter_map(Self::jsonl_path)
+            .enumerate();
+        // For each feature_path (parallel) -- but we would need to mutate a variable from a parallel loop, creating a data race condition, we'll fix this later
+        //  parse the feature
+        //  for each vertex of the feature
+        //      cellid <- locate vertex in grid
+        //      cell <- get mutable cell reference from cellid
+        //      increment vertex count in cell
+        //      add feature id to cell
+        info!("Counting vertices in grid cells");
+        let mut fid: usize = 0;
+        for (_, feature_path) in feature_set_paths_iter {
+            let cf = CityJSONFeatureVertices::from_file(&feature_path);
+            if let Ok(featurevertices) = cf {
+                // We make a (cellid, vertex count) map and assign the feature to the cell that
+                // contains the most of the feature's vertices.
+                // But maybe a HashMap is not the most performant solution here? A Vec of tuples?
+                let mut cell_vtx_cnt: HashMap<crate::spatial_structs::CellId, usize> =
+                    HashMap::new();
+                for (_, co) in featurevertices.cityobjects.iter() {
+                    if self.cityobject_types.contains(&co.cotype) {
+                        // Just counting vertices here
+                        for vtx_qc in featurevertices.vertices.iter() {
+                            let vtx_rw = [
+                                (vtx_qc[0] as f64 * self.transform.scale[0])
+                                    + self.transform.translate[0],
+                                (vtx_qc[1] as f64 * self.transform.scale[1])
+                                    + self.transform.translate[1],
+                            ];
+                            let cellid = self.grid.locate_point(&vtx_rw);
+                            *cell_vtx_cnt.entry(cellid).or_insert(1) += 1;
+                        }
+                    }
+                }
+                if !cell_vtx_cnt.is_empty() {
+                    // We found at least one CityObject of the required type
+                    self.features[fid] = featurevertices.to_feature(&feature_path);
+                    // TODO: what other cityobject types need to have 1-1 cell assignment?
+                    if self.cityobject_types.contains(&CityObjectType::Building)
+                        || self
+                            .cityobject_types
+                            .contains(&CityObjectType::BuildingPart)
+                    {
+                        // In case we have a 1-1 feature-to-cell assignment, we only retain the vertex
+                        // count in the cell that gets the feature.
+                        // The cell that receives the feature is the one with the highest vertex count
+                        // of the feature.
+                        // However, with this method it is not possible to combine cityobject types that
+                        // require different cell-assignment methods into the same tileset.
+                        // E.g. terrain features need to be duplicated across cells, buildings need to
+                        // unique. The tileset for them must be generated separately.
+                        let (cellid, nr_vertices) = cell_vtx_cnt
+                            .iter()
+                            .max_by(|a, b| a.1.cmp(&b.1))
+                            .map(|(k, v)| (k, v))
+                            .unwrap();
+                        let mut cell = self.grid.cell_mut(&cellid);
+                        cell.nr_vertices += nr_vertices;
+                        if !cell.feature_ids.contains(&fid) {
+                            cell.feature_ids.push(fid)
+                        }
+                    } else {
+                        for (cellid, nr_vertices) in cell_vtx_cnt.iter() {
+                            let mut cell = self.grid.cell_mut(&cellid);
+                            cell.nr_vertices += nr_vertices;
+                            if !cell.feature_ids.contains(&fid) {
+                                cell.feature_ids.push(fid)
+                            }
+                        }
+                    }
+                    fid += 1;
+                }
+            } else {
+                error!("Failed to parse the feature {:?}", &feature_path);
+            }
+        }
+    }
+}
 
 /// A partial [CityJSON object](https://www.cityjson.org/specs/1.1.3/#cityjson-object).
 /// It is partial, because we only store the metadata that is necessary for parsing the
@@ -163,12 +444,12 @@ impl CityJSONFeatureVertices {
 
     /// Compute the 3D bounding box of only the provided CityObject types in the feature.
     /// Returns quantized coordinates.
-    pub fn bbox_of_types(&self, cotypes: &[&CityObjectType]) -> Option<[i64; 6]> {
+    pub fn bbox_of_types(&self, cityobject_types: &[CityObjectType]) -> Option<[i64; 6]> {
         let [mut x_min, mut y_min, mut z_min] = self.vertices[0];
         let [mut x_max, mut y_max, mut z_max] = self.vertices[0];
         let mut found_co_geometry = false;
         for (_, co) in self.cityobjects.iter() {
-            if cotypes.contains(&&co.cotype) {
+            if cityobject_types.contains(&co.cotype) {
                 for geom in co.geometry.iter() {
                     match geom {
                         Geometry::MultiSurface { boundaries, .. } => {
@@ -302,11 +583,11 @@ pub struct Feature {
 }
 
 impl Feature {
-    pub fn centroid(&self, cm: &CityJSONMetadata) -> [f64; 2] {
+    pub fn centroid(&self, transform: &Transform) -> [f64; 2] {
         let [ctr_x, ctr_y] = self.centroid_quantized;
         [
-            (ctr_x as f64 * cm.transform.scale[0]) + cm.transform.translate[0],
-            (ctr_y as f64 * cm.transform.scale[1]) + cm.transform.translate[1],
+            (ctr_x as f64 * transform.scale[0]) + transform.translate[0],
+            (ctr_y as f64 * transform.scale[1]) + transform.translate[1],
         ]
     }
 }
@@ -451,3 +732,5 @@ mod tests {
         Ok(())
     }
 }
+
+pub type FeatureSet = Vec<Feature>;
