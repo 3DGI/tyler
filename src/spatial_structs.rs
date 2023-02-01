@@ -21,11 +21,11 @@ pub struct QuadTree {
 }
 
 impl QuadTree {
-    pub fn from_world(world: &crate::parser::World, limit: QuadTreeLimit) -> Self {
+    pub fn from_world(world: &crate::parser::World, limit: QuadTreeCapacity) -> Self {
         Self::from_grid(&world.grid, &world.features, limit)
     }
 
-    fn from_grid(grid: &SquareGrid, feature_set: &FeatureSet, limit: QuadTreeLimit) -> Self {
+    fn from_grid(grid: &SquareGrid, feature_set: &FeatureSet, limit: QuadTreeCapacity) -> Self {
         let mut merge_limit: usize = 0;
         let nr_cells = grid.length.pow(2) as f64;
         let max_level = (nr_cells.ln() / 4.0_f64.ln()).ceil() as u16;
@@ -45,12 +45,12 @@ impl QuadTree {
                 };
                 let items: usize;
                 match limit {
-                    QuadTreeLimit::Objects(l) => {
+                    QuadTreeCapacity::Objects(l) => {
                         // Use the number of features as a limit
                         items = grid.cell(&cellid).feature_ids.len();
                         merge_limit = l;
                     }
-                    QuadTreeLimit::Vertices(l) => {
+                    QuadTreeCapacity::Vertices(l) => {
                         // Use the number of vertices as a limit
                         items = grid.cell(&cellid).nr_vertices;
                         merge_limit = l;
@@ -197,10 +197,23 @@ impl QuadTree {
     }
 }
 
+/// We have these double enum, QuadTreeCapacity and QuadTreeCapacityType, because of
+/// how the CLI arguments are parsed. In the quadtree, we need QuadTreeCapacity, because
+/// it can hold both the leaf capacity and the capacity type. But clap can only parse
+/// into unit variants (I think), so we take the the capacity and capacity type as
+/// separate arguments.
 #[derive(Debug)]
-pub enum QuadTreeLimit {
+pub enum QuadTreeCapacity {
     Objects(usize),
     Vertices(usize),
+}
+
+/// The type of items to count for the quadtree leaf capacity.
+#[derive(Debug, Default, Clone, clap::ValueEnum)]
+pub enum QuadTreeCapacityType {
+    Objects,
+    #[default]
+    Vertices,
 }
 
 /// 64-bit mask
@@ -625,7 +638,7 @@ mod tests {
                 }
             }
         }
-        let qtree = QuadTree::from_grid(&grid, &feature_set, QuadTreeLimit::Objects(20));
+        let qtree = QuadTree::from_grid(&grid, &feature_set, QuadTreeCapacity::Objects(20));
         qtree.visit_leaves();
     }
 
@@ -647,7 +660,7 @@ mod tests {
                 }
             }
         }
-        let qtree = QuadTree::from_grid(&grid, &feature_set, QuadTreeLimit::Objects(20));
+        let qtree = QuadTree::from_grid(&grid, &feature_set, QuadTreeCapacity::Objects(20));
         let leaves: Vec<&QuadTree> = QuadTree::collect_leaves(&qtree);
         for tile in leaves {
             println!("{}", tile.id());
@@ -675,8 +688,8 @@ impl BboxQc {
     pub fn to_bbox(
         &self,
         transform: &crate::parser::Transform,
-        arg_minz: Option<&i32>,
-        arg_maxz: Option<&i32>,
+        arg_minz: Option<i32>,
+        arg_maxz: Option<i32>,
     ) -> Bbox {
         // Get the real-world coordinates for the extent
         let extent_rw_min = self.0[0..3]
@@ -693,21 +706,21 @@ impl BboxQc {
             .try_into()
             .expect("should be able to create an [f64; 6] from the extent_rw vector");
         if let Some(minz) = arg_minz {
-            if extent_rw[2] < *minz as f64 {
+            if extent_rw[2] < minz as f64 {
                 debug!(
                 "Setting min. z for the grid extent from provided value {}, instead of the computed value {}",
                 minz, extent_rw[2]
             );
-                extent_rw[2] = *minz as f64
+                extent_rw[2] = minz as f64
             }
         }
         if let Some(maxz) = arg_maxz {
-            if extent_rw[5] > *maxz as f64 {
+            if extent_rw[5] > maxz as f64 {
                 debug!(
                 "Setting max. z for the grid extent from provided value {}, instead of the computed value {}",
                 maxz, extent_rw[5]
             );
-                extent_rw[5] = *maxz as f64
+                extent_rw[5] = maxz as f64
             }
         }
         extent_rw

@@ -45,8 +45,8 @@ pub mod cesium3dtiles {
         pub fn from_quadtree(
             quadtree: &crate::spatial_structs::QuadTree,
             world: &crate::parser::World,
-            arg_minz: Option<&i32>,
-            arg_maxz: Option<&i32>,
+            arg_minz: Option<i32>,
+            arg_maxz: Option<i32>,
         ) -> Self {
             let crs_from = format!("EPSG:{}", world.crs.to_epsg().unwrap());
             // Because we have a boundingVolume.box. For a boundingVolume.region we need 4979.
@@ -78,8 +78,8 @@ pub mod cesium3dtiles {
             quadtree: &crate::spatial_structs::QuadTree,
             world: &crate::parser::World,
             transformer: &Proj,
-            arg_minz: Option<&i32>,
-            arg_maxz: Option<&i32>,
+            arg_minz: Option<i32>,
+            arg_maxz: Option<i32>,
         ) -> Tile {
             if !quadtree.children.is_empty() {
                 if quadtree.children.len() != 4 {

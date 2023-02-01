@@ -25,7 +25,7 @@ use walkdir::WalkDir;
 ///
 /// `cityobject_types` - The World only contains features of these types.
 pub struct World {
-    pub cityobject_types: Vec<CityObjectType>,
+    pub cityobject_types: Option<Vec<CityObjectType>>,
     pub crs: CRS,
     pub features: FeatureSet,
     pub grid: crate::spatial_structs::SquareGrid,
@@ -39,9 +39,9 @@ impl World {
         path_metadata: P,
         path_features_root: P,
         cellsize: u16,
-        cityobject_types: Vec<CityObjectType>,
-        arg_minz: Option<&i32>,
-        arg_maxz: Option<&i32>,
+        cityobject_types: Option<Vec<CityObjectType>>,
+        arg_minz: Option<i32>,
+        arg_maxz: Option<i32>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let path_features_root = path_features_root.as_ref().to_path_buf();
         let path_metadata = path_metadata.as_ref().to_path_buf();
@@ -52,7 +52,7 @@ impl World {
         // Compute the extent of the features and the number of features.
         // We don't store the computed extent explicitly, because the grid contains that info.
         let (extent_qc, nr_features, cityobject_types_ignored) =
-            Self::extent_qc(&path_features_root, &cityobject_types);
+            Self::extent_qc(&path_features_root, cityobject_types.as_ref());
         info!(
             "Found {} features of type {:?}",
             nr_features, &cityobject_types
@@ -89,7 +89,7 @@ impl World {
     /// CityObject types that are present in the data but not selected.
     fn extent_qc<P: AsRef<Path>>(
         path_features: P,
-        cityobject_types: &[CityObjectType],
+        cityobject_types: Option<&Vec<CityObjectType>>,
     ) -> (crate::spatial_structs::BboxQc, usize, Vec<CityObjectType>) {
         info!(
             "Computing extent from the features of type {:?}",
@@ -138,7 +138,7 @@ impl World {
         for (nf, feature_path) in features_enum_iter {
             if let Ok(cf) = CityJSONFeatureVertices::from_file(&feature_path) {
                 if let Some([x_min, y_min, z_min, x_max, y_max, z_max]) =
-                    cf.bbox_of_types(&cityobject_types)
+                    cf.bbox_of_types(cityobject_types)
                 {
                     if x_min < extent_qc[0] {
                         extent_qc[0] = x_min
@@ -216,17 +216,23 @@ impl World {
                 let mut cell_vtx_cnt: HashMap<crate::spatial_structs::CellId, usize> =
                     HashMap::new();
                 for (_, co) in featurevertices.cityobjects.iter() {
-                    if self.cityobject_types.contains(&co.cotype) {
-                        // Just counting vertices here
-                        for vtx_qc in featurevertices.vertices.iter() {
-                            let vtx_rw = [
-                                (vtx_qc[0] as f64 * self.transform.scale[0])
-                                    + self.transform.translate[0],
-                                (vtx_qc[1] as f64 * self.transform.scale[1])
-                                    + self.transform.translate[1],
-                            ];
-                            let cellid = self.grid.locate_point(&vtx_rw);
-                            *cell_vtx_cnt.entry(cellid).or_insert(1) += 1;
+                    // If the object_type argument was not passed, that means that we need all
+                    // CityObject types. If it was passed, then we filter with its values.
+                    if self.cityobject_types.is_none() {
+                        if let Some(ref cotypes) = self.cityobject_types {
+                            if cotypes.contains(&co.cotype) {
+                                // Just counting vertices here
+                                for vtx_qc in featurevertices.vertices.iter() {
+                                    let vtx_rw = [
+                                        (vtx_qc[0] as f64 * self.transform.scale[0])
+                                            + self.transform.translate[0],
+                                        (vtx_qc[1] as f64 * self.transform.scale[1])
+                                            + self.transform.translate[1],
+                                    ];
+                                    let cellid = self.grid.locate_point(&vtx_rw);
+                                    *cell_vtx_cnt.entry(cellid).or_insert(1) += 1;
+                                }
+                            }
                         }
                     }
                 }
@@ -234,39 +240,39 @@ impl World {
                     // We found at least one CityObject of the required type
                     self.features[fid] = featurevertices.to_feature(&feature_path);
                     // TODO: what other cityobject types need to have 1-1 cell assignment?
-                    if self.cityobject_types.contains(&CityObjectType::Building)
-                        || self
-                            .cityobject_types
-                            .contains(&CityObjectType::BuildingPart)
-                    {
-                        // In case we have a 1-1 feature-to-cell assignment, we only retain the vertex
-                        // count in the cell that gets the feature.
-                        // The cell that receives the feature is the one with the highest vertex count
-                        // of the feature.
-                        // However, with this method it is not possible to combine cityobject types that
-                        // require different cell-assignment methods into the same tileset.
-                        // E.g. terrain features need to be duplicated across cells, buildings need to
-                        // unique. The tileset for them must be generated separately.
-                        let (cellid, nr_vertices) = cell_vtx_cnt
-                            .iter()
-                            .max_by(|a, b| a.1.cmp(&b.1))
-                            .map(|(k, v)| (k, v))
-                            .unwrap();
-                        let mut cell = self.grid.cell_mut(&cellid);
-                        cell.nr_vertices += nr_vertices;
-                        if !cell.feature_ids.contains(&fid) {
-                            cell.feature_ids.push(fid)
-                        }
-                    } else {
-                        for (cellid, nr_vertices) in cell_vtx_cnt.iter() {
+                    if let Some(ref cotypes) = self.cityobject_types {
+                        if cotypes.contains(&CityObjectType::Building)
+                            || cotypes.contains(&CityObjectType::BuildingPart)
+                        {
+                            // In case we have a 1-1 feature-to-cell assignment, we only retain the vertex
+                            // count in the cell that gets the feature.
+                            // The cell that receives the feature is the one with the highest vertex count
+                            // of the feature.
+                            // However, with this method it is not possible to combine cityobject types that
+                            // require different cell-assignment methods into the same tileset.
+                            // E.g. terrain features need to be duplicated across cells, buildings need to
+                            // unique. The tileset for them must be generated separately.
+                            let (cellid, nr_vertices) = cell_vtx_cnt
+                                .iter()
+                                .max_by(|a, b| a.1.cmp(&b.1))
+                                .map(|(k, v)| (k, v))
+                                .unwrap();
                             let mut cell = self.grid.cell_mut(&cellid);
                             cell.nr_vertices += nr_vertices;
                             if !cell.feature_ids.contains(&fid) {
                                 cell.feature_ids.push(fid)
                             }
+                        } else {
+                            for (cellid, nr_vertices) in cell_vtx_cnt.iter() {
+                                let mut cell = self.grid.cell_mut(&cellid);
+                                cell.nr_vertices += nr_vertices;
+                                if !cell.feature_ids.contains(&fid) {
+                                    cell.feature_ids.push(fid)
+                                }
+                            }
                         }
+                        fid += 1;
                     }
-                    fid += 1;
                 }
             } else {
                 error!("Failed to parse the feature {:?}", &feature_path);
@@ -437,65 +443,74 @@ impl CityJSONFeatureVertices {
 
     /// Compute the 3D bounding box of only the provided CityObject types in the feature.
     /// Returns quantized coordinates.
-    pub fn bbox_of_types(&self, cityobject_types: &[CityObjectType]) -> Option<[i64; 6]> {
+    pub fn bbox_of_types(
+        &self,
+        cityobject_types: Option<&Vec<CityObjectType>>,
+    ) -> Option<[i64; 6]> {
         let [mut x_min, mut y_min, mut z_min] = self.vertices[0];
         let [mut x_max, mut y_max, mut z_max] = self.vertices[0];
         let mut found_co_geometry = false;
         for (_, co) in self.cityobjects.iter() {
-            if cityobject_types.contains(&co.cotype) {
-                for geom in co.geometry.iter() {
-                    match geom {
-                        Geometry::MultiSurface { boundaries, .. } => {
-                            for srf in boundaries {
-                                for ring in srf {
-                                    for vtx in ring {
-                                        let [x, y, z] = &self.vertices[*vtx];
-                                        if *x < x_min {
-                                            x_min = *x
-                                        } else if *x > x_max {
-                                            x_max = *x
-                                        }
-                                        if *y < y_min {
-                                            y_min = *y
-                                        } else if *y > y_max {
-                                            y_max = *y
-                                        }
-                                        if *z < z_min {
-                                            z_min = *z
-                                        } else if *z > z_max {
-                                            z_max = *z
-                                        }
-                                    }
-                                }
-                            }
-                            found_co_geometry = true;
-                        }
-                        Geometry::Solid { boundaries, .. } => {
-                            for shell in boundaries {
-                                for srf in shell {
-                                    for ring in srf {
-                                        for vtx in ring {
-                                            let [x, y, z] = &self.vertices[*vtx];
-                                            if *x < x_min {
-                                                x_min = *x
-                                            } else if *x > x_max {
-                                                x_max = *x
-                                            }
-                                            if *y < y_min {
-                                                y_min = *y
-                                            } else if *y > y_max {
-                                                y_max = *y
-                                            }
-                                            if *z < z_min {
-                                                z_min = *z
-                                            } else if *z > z_max {
-                                                z_max = *z
+            // If the object_type argument was not passed, that means that we need all
+            // CityObject types. If it was passed, then we filter with its values.
+            if cityobject_types.is_none() {
+                if let Some(cotypes) = cityobject_types {
+                    if cotypes.contains(&co.cotype) {
+                        for geom in co.geometry.iter() {
+                            match geom {
+                                Geometry::MultiSurface { boundaries, .. } => {
+                                    for srf in boundaries {
+                                        for ring in srf {
+                                            for vtx in ring {
+                                                let [x, y, z] = &self.vertices[*vtx];
+                                                if *x < x_min {
+                                                    x_min = *x
+                                                } else if *x > x_max {
+                                                    x_max = *x
+                                                }
+                                                if *y < y_min {
+                                                    y_min = *y
+                                                } else if *y > y_max {
+                                                    y_max = *y
+                                                }
+                                                if *z < z_min {
+                                                    z_min = *z
+                                                } else if *z > z_max {
+                                                    z_max = *z
+                                                }
                                             }
                                         }
                                     }
+                                    found_co_geometry = true;
+                                }
+                                Geometry::Solid { boundaries, .. } => {
+                                    for shell in boundaries {
+                                        for srf in shell {
+                                            for ring in srf {
+                                                for vtx in ring {
+                                                    let [x, y, z] = &self.vertices[*vtx];
+                                                    if *x < x_min {
+                                                        x_min = *x
+                                                    } else if *x > x_max {
+                                                        x_max = *x
+                                                    }
+                                                    if *y < y_min {
+                                                        y_min = *y
+                                                    } else if *y > y_max {
+                                                        y_max = *y
+                                                    }
+                                                    if *z < z_min {
+                                                        z_min = *z
+                                                    } else if *z > z_max {
+                                                        z_max = *z
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    found_co_geometry = true;
                                 }
                             }
-                            found_co_geometry = true;
                         }
                     }
                 }
@@ -586,6 +601,7 @@ impl Feature {
 }
 
 #[derive(Debug, Deserialize, clap::ValueEnum, Clone, Copy, Ord, PartialOrd, Eq, PartialEq)]
+#[clap(rename_all = "PascalCase")]
 pub enum CityObjectType {
     Bridge,
     BridgePart,
