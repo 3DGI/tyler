@@ -48,15 +48,15 @@ pub struct Cli {
     #[arg(long, default_value = "10000")]
     pub qtree_capacity: Option<usize>,
     /// Path to the gltfpack executable (https://meshoptimizer.org/gltf/).
-    #[arg(long, value_parser = existing_canonical_path)]
+    #[arg(long, value_parser = existing_path)]
     pub exe_gltfpack: Option<PathBuf>,
     /// Path to the geoflow executable for clipping and exporting the gltf files.
-    #[arg(long, value_parser = existing_canonical_path)]
+    #[arg(long, value_parser = existing_path)]
     pub exe_geof: Option<PathBuf>,
     /// Path to the python interpreter (>=3.8) to use for generating CityJSON tiles.
     /// The interpreter must have a recent cjio (https://github.com/cityjson/cjio)
     /// installed.
-    #[arg(long, value_parser = existing_canonical_path)]
+    #[arg(long, value_parser = existing_path)]
     pub exe_python: Option<PathBuf>,
 }
 
@@ -73,6 +73,19 @@ fn existing_canonical_path(s: &str) -> Result<PathBuf, String> {
         }
     } else {
         Err(format!("could not resolve the path {:?}", s))
+    }
+}
+
+/// We don't want to canonicalize paths to executables, especially a python exe from a
+/// virtualenv, because the symlink would get resolved and we would end up with a path
+/// to the python interpreter that was used for creating the virtualenv, and not the
+/// interpreter that links to the virtualenv.
+fn existing_path(s: &str) -> Result<PathBuf, String> {
+    let p = Path::new(s).to_path_buf();
+    if p.exists() {
+        Ok(p)
+    } else {
+        Err(format!("path {:?} does not exist", &p))
     }
 }
 

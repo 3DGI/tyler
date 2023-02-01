@@ -21,7 +21,7 @@ WORKDIR /usr/src/tyler
 COPY Cargo.toml Cargo.lock ./
 COPY resources ./resources
 COPY src ./src
-RUN --mount=type=cache,target=/usr/src/tyler/target/release/deps /root/.cargo/bin/cargo install --path .
+RUN --mount=type=cache,target=/usr/src/tyler/target /root/.cargo/bin/cargo install --path .
 
 COPY docker/strip-docker-image-export ./
 RUN rm -rf /export
@@ -42,12 +42,9 @@ FROM ubuntu:lunar-20221216
 
 ARG GF_PLUGIN_FOLDER="/usr/local/lib/geoflow-plugins"
 
-#COPY --from=builder /root/.cargo/bin/tyler /usr/local/bin/tyler
 COPY --from=builder /usr/src/tyler/resources/geof /usr/src/tyler/resources/geof
 COPY --from=builder /tmp/gltfpack /usr/local/bin/gltfpack
 COPY --from=builder /usr/local/share/proj /usr/local/share/proj
-#COPY --from=builder /usr/local/lib/libproj.so.25.9.1.0 /usr/local/lib/libproj.so.25.9.1.0
-#COPY --from=builder /usr/local/lib/libproj.so.25 /usr/local/lib/libproj.so.25
 COPY --from=builder $GF_PLUGIN_FOLDER $GF_PLUGIN_FOLDER
 COPY --from=builder /export/lib/ /lib/
 COPY --from=builder /export/lib64/ /lib64/

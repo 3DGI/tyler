@@ -11,11 +11,18 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use clap::{crate_version, Arg, ArgAction, Command, Parser};
-use log::{debug, error, info};
+use log::{debug, error, info, log_enabled, Level};
 use parser::FeatureSet;
 use rayon::prelude::*;
 use subprocess::{Exec, Redirection};
 use walkdir::WalkDir;
+
+#[derive(Debug, Default, Clone)]
+struct SubprocessConfig {
+    output_extension: String,
+    exe: PathBuf,
+    script: PathBuf,
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
@@ -28,23 +35,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // Since we have a default value, we can safely unwrap.
     let grid_cellsize = cli.grid_cellsize.unwrap();
-    let (output_extension, exe) = match cli.format.as_str() {
+    let subprocess_config = match cli.format.as_str() {
         "3dtiles" => {
             if let Some(exe) = cli.exe_geof {
-                ("glb", exe)
+                SubprocessConfig {
+                    output_extension: "glb".to_string(),
+                    exe,
+                    script: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                        .join("resources")
+                        .join("geof")
+                        .join("createGLB.json"),
+                }
             } else {
                 panic!("exe_geof must be set for generating 3D Tiles");
             }
         }
         "cityjson" => {
             if let Some(exe) = cli.exe_python {
-                ("city.json", exe)
+                SubprocessConfig {
+                    output_extension: "city.json".to_string(),
+                    exe,
+                    script: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                        .join("resources")
+                        .join("python")
+                        .join("convert_cityjsonfeatures.py"),
+                }
             } else {
                 panic!("exe_python must be set for generating CityJSON tiles")
             }
         }
-        _ => ("unknown", PathBuf::default()),
+        _ => SubprocessConfig::default(),
     };
+    debug!("{:?}", &subprocess_config);
     // Since we have a default value, it is safe to unwrap
     let quadtree_capacity = match &cli.qtree_capacity_type.unwrap() {
         spatial_structs::QuadTreeCapacityType::Objects => {
@@ -93,6 +115,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     tileset.to_file(tileset_path)?;
 
+    // Export by calling a subprocess to merge the .jsonl files and convert them to the
+    // target format
     let path_output_tiles = cli.output.join("tiles");
     if !path_output_tiles.is_dir() {
         fs::create_dir_all(&path_output_tiles)?;
@@ -103,14 +127,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         fs::create_dir_all(&path_features_input_dir)?;
         info!("Created output directory {:#?}", &path_features_input_dir);
     }
-
-    // Export by calling a subprocess to merge the .jsonl files and convert them to the
-    // target format
-    let python_script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("resources")
-        .join("python")
-        .join("convert_cityjsonfeatures.py");
-
     let cotypes_str: Vec<String> = match &world.cityobject_types {
         None => Vec::new(),
         Some(cotypes) => cotypes.iter().map(|co| co.to_string()).collect(),
@@ -120,7 +136,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let leaves: Vec<&spatial_structs::QuadTree> = quadtree.collect_leaves();
     info!("Exporting and optimizing {} tiles", leaves.len());
     if &cli.format == "3dtiles" && cli.exe_gltfpack.is_none() {
-        info!("exe_gltfpack is not set, skipping gltf optimization")
+        debug!("exe_gltfpack is not set, skipping gltf optimization")
     };
     leaves.into_par_iter().for_each(|tile| {
         if tile.nr_items > 0 {
@@ -128,7 +144,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let file_name = format!("{}", &tileid);
             let output_file = path_output_tiles
                 .join(&file_name)
-                .with_extension(output_extension);
+                .with_extension(&subprocess_config.output_extension);
             // We write the list of feature paths for a tile into a text file, instead of passing
             // super long paths-string to the subprocess, because with very long arguments we can
             // get an 'Argument list too long' error.
@@ -162,20 +178,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             let b = tile.bbox(&world.grid);
+            // We need to string-format all the arguments with an = separator, because that's what
+            // geof can accept.
+            // TODO: maybe replace the subprocess carte with std::process to remove the dependency
+            let mut cmd = Exec::cmd(&subprocess_config.exe)
+                .arg(&subprocess_config.script)
+                .arg(format!("--output_format={}", &cli.format))
+                .arg(format!("--output_file={}", &output_file.to_str().unwrap()))
+                .arg(format!(
+                    "--path_metadata={}",
+                    &world.path_metadata.to_str().unwrap()
+                ))
+                .arg(format!(
+                    "--path_features_input_file={}",
+                    &path_features_input_file.to_str().unwrap()
+                ))
+                .arg(format!("--min_x={}", b[0]))
+                .arg(format!("--min_y={}", b[1]))
+                .arg(format!("--min_z={}", b[2]))
+                .arg(format!("--max_x={}", b[3]))
+                .arg(format!("--max_y={}", b[4]))
+                .arg(format!("--max_z={}", b[5]))
+                .arg(format!("--cotypes={}", &cotypes_arg));
 
-            let res_exit_status = Exec::cmd(&exe)
-                .arg(&python_script)
-                .arg(&cli.format)
-                .arg(&output_file)
-                .arg(&world.path_metadata)
-                .arg(&path_features_input_file)
-                .arg(format!("{}", b[0]))
-                .arg(format!("{}", b[1]))
-                .arg(format!("{}", b[2]))
-                .arg(format!("{}", b[3]))
-                .arg(format!("{}", b[4]))
-                .arg(format!("{}", b[5]))
-                .arg(&cotypes_arg)
+            if &cli.format == "3dtiles" {
+                // geof specific args
+                if let Some(ref cotypes) = world.cityobject_types {
+                    if cotypes.contains(&parser::CityObjectType::Building)
+                        || cotypes.contains(&parser::CityObjectType::BuildingPart)
+                    {
+                        cmd = cmd.arg("--simplify_ratio=1.0").arg("--skip_clip=true");
+                    }
+                }
+                if log_enabled!(Level::Debug) {
+                    cmd = cmd.arg("--verbose");
+                }
+            }
+            debug!("{}", cmd.to_cmdline_lossy());
+            let res_exit_status = cmd
                 .stdout(Redirection::Pipe)
                 .stderr(Redirection::Merge)
                 .capture();

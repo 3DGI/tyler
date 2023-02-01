@@ -1,5 +1,5 @@
 import json
-# import argparse
+import argparse
 from sys import argv
 from pathlib import Path
 from copy import deepcopy
@@ -33,35 +33,37 @@ def merge(cityjson_path, path_features_input_file: Path):
     return cm
 
 
-# parser=argparse.ArgumentParser()
-# parser.add_argument("--output_format", help="Format to convert to")
-# parser.add_argument("--output_file", help="Where to save the output")
-# parser.add_argument("--path_metadata", help="The main .city.json file with the transformation properties")
-# parser.add_argument("--path_feature_input_file", help="File with the list of feature paths")
-# parser.add_argument("--min_x", help="Bounding box minimum x coordinate")
-# parser.add_argument("--min_y", help="Bounding box minimum y coordinate")
-# parser.add_argument("--min_z", help="Bounding box minimum z coordinate")
-# parser.add_argument("--max_x", help="Bounding box maximum x coordinate")
-# parser.add_argument("--max_y", help="Bounding box maximum y coordinate")
-# parser.add_argument("--max_z", help="Bounding box maximum z coordinate")
+parser=argparse.ArgumentParser()
+parser.add_argument("--output_format", help="Format to convert to")
+parser.add_argument("--output_file", help="Where to save the output")
+parser.add_argument("--path_metadata", help="The main .city.json file with the transformation properties")
+parser.add_argument("--path_features_input_file", help="File with the list of feature paths")
+parser.add_argument("--min_x", help="Bounding box minimum x coordinate")
+parser.add_argument("--min_y", help="Bounding box minimum y coordinate")
+parser.add_argument("--min_z", help="Bounding box minimum z coordinate")
+parser.add_argument("--max_x", help="Bounding box maximum x coordinate")
+parser.add_argument("--max_y", help="Bounding box maximum y coordinate")
+parser.add_argument("--max_z", help="Bounding box maximum z coordinate")
+parser.add_argument("--cotypes", help="Comma separated list of CityObject types to include in the tile")
 
 if __name__ == "__main__":
+    args = parser.parse_args()
     # format to convert to
     supported_formats = ["cityjson", "3dtiles"]
-    output_format = argv[1]
+    output_format = args.output_format
     if output_format not in supported_formats:
         raise ValueError(f"Output format {output_format} is not supported. Supported formats: {supported_formats}")
     # where to save the output
-    output_file = Path(argv[2])
+    output_file = Path(args.output_file)
     output_file.parent.mkdir(parents=True, exist_ok=True)
     # the main .city.json file with the transformation properties
-    cityjson_path = Path(argv[3]).resolve()
+    cityjson_path = Path(args.path_metadata).resolve()
     # a file with the list of feature paths
-    path_features_input_file = Path(argv[4]).resolve()
+    path_features_input_file = Path(args.path_features_input_file).resolve()
     # tile bbox (used in the terrain splitter)
-    bbox = argv[5:11]
+    bbox = [args.min_x, args.min_y, args.min_z, args.max_x, args.max_y, args.max_z]
     # CityObject types to use
-    cotypes = argv[11].split(",")
+    cotypes = args.cotypes.split(",")
 
     cm = merge(cityjson_path, path_features_input_file)
     nr_co_after_merge = len(cm.j["CityObjects"])
