@@ -60,8 +60,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Primitive types that implement Copy are efficiently copied into the function and
     // and it is cleaner to avoid the indirection. However, heap-allocated container
     // types are best passed by reference, because it is "expensive" to Clone them
-    // (they don't implement Copy). And since we are not transferring ownership, we
-    // don't want to move them.
+    // (they don't implement Copy). When we move a value, we explicitly transfer
+    // ownership of the value (eg cli.object_type).
     let mut world = parser::World::new(
         &cli.metadata,
         &cli.features,
@@ -104,7 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("Created output directory {:#?}", &path_features_input_dir);
     }
 
-    // Export by calling a python subprocess to merge the .jsonl files and convert them to the
+    // Export by calling a subprocess to merge the .jsonl files and convert them to the
     // target format
     let python_script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("resources")
@@ -116,14 +116,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(cotypes) => cotypes.iter().map(|co| co.to_string()).collect(),
     };
     let cotypes_arg = cotypes_str.join(",");
-
-    let mut cellids: Vec<spatial_structs::CellId> =
-        Vec::with_capacity(&world.grid.length * &world.grid.length);
-    cellids = world
-        .grid
-        .into_iter()
-        .map(|(cellid, _cell)| cellid)
-        .collect();
 
     let leaves: Vec<&spatial_structs::QuadTree> = quadtree.collect_leaves();
     info!("Exporting and optimizing {} tiles", leaves.len());
