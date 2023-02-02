@@ -4,18 +4,16 @@ mod parser;
 mod proj;
 mod spatial_structs;
 
-use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use clap::{crate_version, Arg, ArgAction, Command, Parser};
+use clap::Parser;
 use log::{debug, error, info, log_enabled, Level};
 use parser::FeatureSet;
 use rayon::prelude::*;
 use subprocess::{Exec, Redirection};
-use walkdir::WalkDir;
 
 #[derive(Debug, Default, Clone)]
 struct SubprocessConfig {
@@ -141,7 +139,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     leaves.into_par_iter().for_each(|tile| {
         if tile.nr_items > 0 {
             let tileid = tile.id();
-            let file_name = format!("{}", &tileid);
+            let file_name = tileid.clone();
             let output_file = path_output_tiles
                 .join(&file_name)
                 .with_extension(&subprocess_config.output_extension);

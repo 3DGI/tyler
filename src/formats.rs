@@ -9,7 +9,6 @@ pub mod cesium3dtiles {
     use std::fs::File;
     use std::path::Path;
 
-    use crate::spatial_structs::Bbox;
     use log::{debug, error};
     use serde::Serialize;
 
@@ -51,7 +50,7 @@ pub mod cesium3dtiles {
             let crs_from = format!("EPSG:{}", world.crs.to_epsg().unwrap());
             // Because we have a boundingVolume.box. For a boundingVolume.region we need 4979.
             let crs_to = "EPSG:4979";
-            let transformer = Proj::new_known_crs(&crs_from, &crs_to, None).unwrap();
+            let transformer = Proj::new_known_crs(&crs_from, crs_to, None).unwrap();
 
             let root = Self::generate_tiles(quadtree, world, &transformer, arg_minz, arg_maxz);
 
@@ -91,7 +90,7 @@ pub mod cesium3dtiles {
                 tile_bbox[2] = world.grid.bbox[2];
                 tile_bbox[5] = world.grid.bbox[5];
                 let mut bounding_volume =
-                    BoundingVolume::region_from_bbox(&tile_bbox, &transformer).unwrap();
+                    BoundingVolume::region_from_bbox(&tile_bbox, transformer).unwrap();
                 match bounding_volume {
                     BoundingVolume::Box(_) => {}
                     BoundingVolume::Region(ref mut region) => {
@@ -163,7 +162,7 @@ pub mod cesium3dtiles {
                 tile_bbox[2] = tile_content_bbox_rw[2];
                 tile_bbox[5] = tile_content_bbox_rw[5];
                 let mut bounding_volume =
-                    BoundingVolume::region_from_bbox(&tile_bbox, &transformer).unwrap();
+                    BoundingVolume::region_from_bbox(&tile_bbox, transformer).unwrap();
                 match bounding_volume {
                     BoundingVolume::Box(_) => {}
                     BoundingVolume::Region(ref mut region) => {
@@ -187,7 +186,7 @@ pub mod cesium3dtiles {
                     debug!("dz is negative in child");
                 }
                 let content_bounding_voume =
-                    BoundingVolume::region_from_bbox(&tile_content_bbox_rw, &transformer).unwrap();
+                    BoundingVolume::region_from_bbox(&tile_content_bbox_rw, transformer).unwrap();
                 match content_bounding_voume {
                     BoundingVolume::Box(_) => {}
                     BoundingVolume::Region(ref region) => {
@@ -207,30 +206,23 @@ pub mod cesium3dtiles {
                     BoundingVolume::Region(ref mut region) => match content_bounding_voume {
                         BoundingVolume::Box(_) => {}
                         BoundingVolume::Region(ref content_region) => {
-                            let mut did_update: bool = false;
                             if content_region[0] < region[0] {
                                 region[0] = content_region[0];
-                                did_update = true;
                             }
                             if content_region[1] < region[1] {
                                 region[1] = content_region[1];
-                                did_update = true;
                             }
                             if content_region[4] < region[4] {
                                 region[4] = content_region[4];
-                                did_update = true;
                             }
                             if content_region[2] > region[2] {
                                 region[2] = content_region[2];
-                                did_update = true;
                             }
                             if content_region[3] > region[3] {
                                 region[3] = content_region[3];
-                                did_update = true;
                             }
                             if content_region[5] > region[5] {
                                 region[5] = content_region[5];
-                                did_update = true;
                             }
                             debug!("Updated child tile {:?} (in input CRS) bounding region from content region, because the content was larger", &tile_bbox);
                         }
@@ -265,13 +257,7 @@ pub mod cesium3dtiles {
             );
             // Because we have a boundingVolume.box. For a boundingVolume.region we need 4979.
             let crs_to = "EPSG:4979";
-            let transformer = Proj::new_known_crs(&crs_from, &crs_to, None).unwrap();
-
-            // y-up to z-up transform needed because we are using gltf assets, which is y-up
-            // https://github.com/CesiumGS/3d-tiles/tree/main/specification#y-up-to-z-up
-            let y_up_to_z_up = Transform([
-                1.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-            ]);
+            let transformer = Proj::new_known_crs(&crs_from, crs_to, None).unwrap();
 
             let mut root_children: Vec<Tile> = Vec::with_capacity(grid.length * grid.length);
             for (cellid, cell) in grid {
@@ -327,7 +313,7 @@ pub mod cesium3dtiles {
                     refine: Some(Refinement::Replace),
                     transform: None,
                     content: Some(Content {
-                        bounding_volume: Some(content_bounding_voume.clone()),
+                        bounding_volume: Some(content_bounding_voume),
                         uri: format!("tiles/{}-0.glb", cellid),
                     }),
                     children: Some(vec![tile_lod22]),
@@ -342,7 +328,7 @@ pub mod cesium3dtiles {
                     refine: Some(Refinement::Replace),
                     transform: None,
                     content: Some(Content {
-                        bounding_volume: Some(content_bounding_voume.clone()),
+                        bounding_volume: Some(content_bounding_voume),
                         uri: format!("tiles/{}.glb", cellid),
                     }),
                     children: Some(vec![tile_lod13]),
@@ -435,6 +421,7 @@ pub mod cesium3dtiles {
         },
     }
 
+    #[allow(dead_code)]
     #[derive(Serialize, Default, Debug, PartialEq, Eq, Hash)]
     enum ExtensionName {
         #[default]
@@ -468,6 +455,7 @@ pub mod cesium3dtiles {
     }
 
     /// [boundingVolume](https://github.com/CesiumGS/3d-tiles/tree/main/specification#bounding-volume).
+    #[allow(dead_code)]
     #[derive(Serialize, Debug, Copy, Clone)]
     #[serde(rename_all = "lowercase")]
     enum BoundingVolume {
@@ -554,6 +542,7 @@ pub mod cesium3dtiles {
         /// Therefore, we have to swap the values at the indices `0` and `3` in order to get a
         /// correct `[minX, minY, minZ, maxX, maxY, maxZ]` bbox after the transformation.
         ///
+        #[allow(dead_code)]
         fn box_from_bbox(
             bbox: &crate::spatial_structs::Bbox,
             transformer: &Proj,
@@ -592,6 +581,7 @@ pub mod cesium3dtiles {
     }
 
     /// [Tile.refine](https://github.com/CesiumGS/3d-tiles/tree/main/specification#tilerefine).
+    #[allow(dead_code)]
     #[derive(Serialize, Debug)]
     #[serde(rename_all = "UPPERCASE")]
     enum Refinement {

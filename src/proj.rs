@@ -12,10 +12,7 @@ use proj_sys::{
     proj_create_crs_to_crs, proj_destroy, proj_errno_string, proj_normalize_for_visualization,
     proj_trans, PJconsts, PJ_AREA, PJ_CONTEXT, PJ_COORD, PJ_DIRECTION_PJ_FWD, PJ_XYZT,
 };
-use std::{
-    fmt::{self, Debug},
-    str,
-};
+use std::{fmt::Debug, str};
 
 use proj_sys::{proj_errno, proj_errno_reset};
 
@@ -73,7 +70,7 @@ pub struct Area {
     pub west: f64,
 }
 
-fn area_set_bbox(parea: *mut proj_sys::PJ_AREA, new_area: Option<Area>) {
+fn area_set_bbox(parea: *mut PJ_AREA, new_area: Option<Area>) {
     // if a bounding box has been passed, modify the proj area object
     if let Some(narea) = new_area {
         unsafe {
@@ -107,6 +104,7 @@ impl<T: CoordinateType> Coord<T> for (T, T, T) {
     }
 }
 
+#[allow(dead_code)]
 pub struct Proj {
     c_proj: *mut PJconsts,
     ctx: *mut PJ_CONTEXT,
@@ -173,9 +171,9 @@ pub enum ProjError {
     Conversion(String),
     /// An error that occurs when a path string originating in PROJ can't be converted to a CString
     #[error("Couldn't create a raw pointer from the string")]
-    Creation(#[from] std::ffi::NulError),
+    Creation(#[from] NulError),
     #[error("Couldn't convert bytes from PROJ to UTF-8")]
-    Utf8Error(#[from] std::str::Utf8Error),
+    Utf8Error(#[from] str::Utf8Error),
     #[error("Couldn't convert number to f64")]
     FloatConversion,
 }
@@ -188,7 +186,7 @@ pub enum ProjCreateError {
     ProjError(String),
 }
 
-pub(crate) struct Errno(pub libc::c_int);
+pub(crate) struct Errno(pub c_int);
 
 impl Errno {
     /// Return the error message associated with the error number.
@@ -226,7 +224,7 @@ mod tests {
         let crs_from = "EPSG:7415";
         // Because we have a boundingVolume.box. For a boundingVolume.region we need 4979.
         let crs_to = "EPSG:4978";
-        let transformer = Proj::new_known_crs(&crs_from, &crs_to, None).unwrap();
+        let transformer = Proj::new_known_crs(crs_from, crs_to, None).unwrap();
         let result = transformer.convert((85285.279, 446606.813, 10.0)).unwrap();
         println!("{:?}", result);
         // assert_relative_eq!(result.x() as f64, 3923215.044, epsilon = 1e-2);

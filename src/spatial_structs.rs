@@ -1,5 +1,4 @@
 //! Spatial data structures for indexing the features.
-use crate::parser::Feature;
 use crate::parser::FeatureSet;
 use log::{debug, error};
 use std::fmt::{Display, Formatter};
@@ -22,10 +21,10 @@ pub struct QuadTree {
 
 impl QuadTree {
     pub fn from_world(world: &crate::parser::World, limit: QuadTreeCapacity) -> Self {
-        Self::from_grid(&world.grid, &world.features, limit)
+        Self::from_grid(&world.grid, limit)
     }
 
-    fn from_grid(grid: &SquareGrid, feature_set: &FeatureSet, limit: QuadTreeCapacity) -> Self {
+    fn from_grid(grid: &SquareGrid, limit: QuadTreeCapacity) -> Self {
         let mut merge_limit: usize = 0;
         let nr_cells = grid.length.pow(2) as f64;
         let max_level = (nr_cells.ln() / 4.0_f64.ln()).ceil() as u16;
@@ -37,7 +36,7 @@ impl QuadTree {
         mortoncodes.sort();
         let tiles_morton: Vec<QuadTree> = mortoncodes
             .iter()
-            .map(|mc| deinterleave(mc))
+            .map(deinterleave)
             .map(|[x, y]| {
                 let cellid = CellId {
                     row: y as usize,
@@ -126,21 +125,6 @@ impl QuadTree {
         }
     }
 
-    fn visit_leaves_helper(quadtree: &QuadTree) {
-        if !quadtree.children.is_empty() {
-            Self::visit_leaves_helper(&quadtree.children[0]);
-            Self::visit_leaves_helper(&quadtree.children[1]);
-            Self::visit_leaves_helper(&quadtree.children[2]);
-            Self::visit_leaves_helper(&quadtree.children[3]);
-        } else {
-            println!("leaf {}, items: {}", quadtree.id(), quadtree.nr_items);
-        }
-    }
-
-    pub fn visit_leaves(&self) {
-        Self::visit_leaves_helper(self);
-    }
-
     fn collect_leaves_recurse<'collect>(&'collect self, leaves: &mut Vec<&'collect QuadTree>) {
         if !self.children.is_empty() {
             for child in self.children.iter() {
@@ -156,28 +140,6 @@ impl QuadTree {
         self.collect_leaves_recurse(&mut leaves);
         leaves
     }
-
-    // pub fn collect_features(&self, grid: &SquareGrid, feature_set: &FeatureSet) -> Vec<(String, Vec<&Feature>)> {
-    //     let mut features: Vec<(String, Vec<&Feature>)> = Vec::new();
-    //     self.collect_features_recurse(&mut features, grid,feature_set);
-    //     features
-    // }
-    //
-    // fn collect_features_recurse<'collect>(&'collect self, features: &mut Vec<(String, Vec<&'collect Feature>)>, grid: &SquareGrid, feature_set: &'collect Vec<crate::parser::Feature>) {
-    //     if !self.children.is_empty() {
-    //         for child in self.children.iter() {
-    //             child.collect_features_recurse(features, grid, feature_set);
-    //         }
-    //     } else {
-    //         let mut features_in_leaf: Vec<&Feature> = Vec::with_capacity(self.nr_items);
-    //         for cellid in &self.cells {
-    //             for fid in grid.cell(cellid) {
-    //                 features_in_leaf.push(&feature_set[*fid]);
-    //             }
-    //         }
-    //         features.push((self.id(), features_in_leaf));
-    //     }
-    // }
 
     pub fn id(&self) -> String {
         format!("{}/{}/{}", self.z, self.x, self.y)
@@ -596,7 +558,7 @@ mod tests {
             .map(|cell| interleave(&cell.0, &cell.1))
             .collect();
         mortoncodes.sort();
-        let cells_morton: Vec<[u64; 2]> = mortoncodes.iter().map(|mc| deinterleave(mc)).collect();
+        let cells_morton: Vec<[u64; 2]> = mortoncodes.iter().map(deinterleave).collect();
 
         let expected: Vec<[u64; 2]> = vec![
             [0, 0],
@@ -622,7 +584,7 @@ mod tests {
 
     #[test]
     fn test_quadtree_construction() {
-        let mut feature_set: crate::FeatureSet = Vec::new();
+        let mut feature_set: FeatureSet = Vec::new();
         let mut grid = SquareGrid::new(&[0.0, 0.0, 0.0, 4.0, 4.0, 1.0], 1, 0, None);
         for x in 0..4_u64 {
             for y in 0..4u64 {
@@ -638,13 +600,12 @@ mod tests {
                 }
             }
         }
-        let qtree = QuadTree::from_grid(&grid, &feature_set, QuadTreeCapacity::Objects(20));
-        qtree.visit_leaves();
+        let _ = QuadTree::from_grid(&grid, QuadTreeCapacity::Objects(20));
     }
 
     #[test]
     fn test_quadtree_leaves() {
-        let mut feature_set: crate::FeatureSet = Vec::new();
+        let mut feature_set: FeatureSet = Vec::new();
         let mut grid = SquareGrid::new(&[0.0, 0.0, 0.0, 4.0, 4.0, 1.0], 1, 0, None);
         for x in 0..4_u64 {
             for y in 0..4u64 {
@@ -660,7 +621,7 @@ mod tests {
                 }
             }
         }
-        let qtree = QuadTree::from_grid(&grid, &feature_set, QuadTreeCapacity::Objects(20));
+        let qtree = QuadTree::from_grid(&grid, QuadTreeCapacity::Objects(20));
         let leaves: Vec<&QuadTree> = QuadTree::collect_leaves(&qtree);
         for tile in leaves {
             println!("{}", tile.id());
@@ -693,11 +654,11 @@ impl BboxQc {
     ) -> Bbox {
         // Get the real-world coordinates for the extent
         let extent_rw_min = self.0[0..3]
-            .into_iter()
+            .iter()
             .enumerate()
             .map(|(i, qc)| (*qc as f64 * transform.scale[i]) + transform.translate[i]);
         let extent_rw_max = self.0[3..6]
-            .into_iter()
+            .iter()
             .enumerate()
             .map(|(i, qc)| (*qc as f64 * transform.scale[i]) + transform.translate[i]);
         let mut extent_rw: [f64; 6] = extent_rw_min

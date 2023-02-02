@@ -26,7 +26,7 @@ use walkdir::WalkDir;
 /// `cityobject_types` - The World only contains features of these types.
 pub struct World {
     pub cityobject_types: Option<Vec<CityObjectType>>,
-    pub crs: CRS,
+    pub crs: Crs,
     pub features: FeatureSet,
     pub grid: crate::spatial_structs::SquareGrid,
     pub path_features_root: PathBuf,
@@ -109,13 +109,13 @@ impl World {
         loop {
             if let Some(feature_path) = features_enum_iter.next() {
                 if let Ok(cf) = CityJSONFeatureVertices::from_file(&feature_path) {
-                    if let Some(mut eqc) = cf.bbox_of_types(cityobject_types) {
+                    if let Some(eqc) = cf.bbox_of_types(cityobject_types) {
                         extent_qc = eqc;
                         found_feature_type = true;
                         nr_features += 1;
                         break;
                     } else {
-                        for (coid, co) in cf.cityobjects.iter() {
+                        for (_, co) in cf.cityobjects.iter() {
                             if !cotypes_ignored.contains(&co.cotype) {
                                 cotypes_ignored.push(co.cotype);
                             }
@@ -155,7 +155,7 @@ impl World {
                     }
                     nr_features += 1;
                 } else {
-                    for (coid, co) in cf.cityobjects.iter() {
+                    for (_, co) in cf.cityobjects.iter() {
                         if !cotypes_ignored.contains(&co.cotype) {
                             cotypes_ignored.push(co.cotype);
                         }
@@ -254,17 +254,17 @@ impl World {
                             // unique. The tileset for them must be generated separately.
                             let (cellid, nr_vertices) = cell_vtx_cnt
                                 .iter()
-                                .max_by(|a, b| a.1.cmp(&b.1))
+                                .max_by(|a, b| a.1.cmp(b.1))
                                 .map(|(k, v)| (k, v))
                                 .unwrap();
-                            let mut cell = self.grid.cell_mut(&cellid);
+                            let cell = self.grid.cell_mut(cellid);
                             cell.nr_vertices += nr_vertices;
                             if !cell.feature_ids.contains(&fid) {
                                 cell.feature_ids.push(fid)
                             }
                         } else {
                             for (cellid, nr_vertices) in cell_vtx_cnt.iter() {
-                                let mut cell = self.grid.cell_mut(&cellid);
+                                let cell = self.grid.cell_mut(cellid);
                                 cell.nr_vertices += nr_vertices;
                                 if !cell.feature_ids.contains(&fid) {
                                     cell.feature_ids.push(fid)
@@ -304,15 +304,15 @@ pub struct Transform {
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Metadata {
-    pub reference_system: CRS,
+    pub reference_system: Crs,
 }
 
 /// Coordinate Reference System as defined by the
 /// [referenceSystem](https://www.cityjson.org/specs/1.1.3/#referencesystem-crs) CityJSON object.
 #[derive(Deserialize, Debug)]
-pub struct CRS(String);
+pub struct Crs(String);
 
-impl CRS {
+impl Crs {
     /// Return the EPSG code from the CRS definition, if the CRS definition is indeed an EPSG.
     ///
     /// ## Examples
@@ -322,7 +322,7 @@ impl CRS {
     /// assert_eq!(7415_u16, epsg_code);
     /// ```
     pub fn to_epsg(&self) -> Result<u16, Box<dyn std::error::Error>> {
-        let parts: Vec<&str> = self.0.split("/").collect();
+        let parts: Vec<&str> = self.0.split('/').collect();
         if let Some(authority) = parts.get(parts.len() - 3) {
             if *authority != "EPSG" {
                 return Err(Box::try_from(format!(
@@ -387,12 +387,12 @@ impl CityJSONFeatureVertices {
     /// coordinates.
     /// It is more efficient to apply the transformation once, when the centroid is computed, than
     /// applying it to each vertex in the loop of computing the average coordinate.
-    fn centroid_quantized(&self) -> [i64; 2] {
+    fn centroid_qc(&self) -> [i64; 2] {
         let mut x_sum: i64 = 0;
         let mut y_sum: i64 = 0;
         for [x, y, _z] in self.vertices.iter() {
-            x_sum = x_sum + *x as i64;
-            y_sum = y_sum + *y as i64;
+            x_sum += *x;
+            y_sum += *y;
         }
         // Yes, we divide an integer with an integer and we discard the decimals, but that's ok,
         // because the quantized coordinates (integers) already include the decimals of the
@@ -400,16 +400,17 @@ impl CityJSONFeatureVertices {
         // coordinate with a factor `< 0` (eg. 0.001), we will get accurate-enough coordinates
         // for the centroid.
         [
-            (x_sum / self.vertices.len() as i64) as i64,
-            (y_sum / self.vertices.len() as i64) as i64,
+            (x_sum / self.vertices.len() as i64),
+            (y_sum / self.vertices.len() as i64),
         ]
     }
 
     /// Feature centroid (2D) computed as the average coordinate.
     /// The centroid coordinates are real-world coordinates (thus they are transformed back to
     /// real-world coordinates from the quantized coordinates).
+    #[allow(dead_code)]
     fn centroid(&self, transform: &Transform) -> [f64; 2] {
-        let [ctr_x, ctr_y] = self.centroid_quantized();
+        let [ctr_x, ctr_y] = self.centroid_qc();
         [
             (ctr_x as f64 * transform.scale[0]) + transform.translate[0],
             (ctr_y as f64 * transform.scale[1]) + transform.translate[1],
@@ -418,7 +419,8 @@ impl CityJSONFeatureVertices {
 
     /// Compute the 3D bounding box of the feature.
     /// Returns quantized coordinates.
-    pub fn bbox(&self) -> [i64; 6] {
+    #[allow(dead_code)]
+    pub fn bbox_qc(&self) -> crate::spatial_structs::BboxQc {
         let [mut x_min, mut y_min, mut z_min] = self.vertices[0];
         let [mut x_max, mut y_max, mut z_max] = self.vertices[0];
         for [x, y, z] in self.vertices.iter() {
@@ -438,7 +440,7 @@ impl CityJSONFeatureVertices {
                 z_max = *z
             }
         }
-        [x_min, y_min, z_min, x_max, y_max, z_max]
+        crate::spatial_structs::BboxQc([x_min, y_min, z_min, x_max, y_max, z_max])
     }
 
     /// Compute the 3D bounding box of only the provided CityObject types in the feature.
@@ -529,28 +531,28 @@ impl CityJSONFeatureVertices {
     ///
     /// Combines the [centroid_quantized] and [bbox] methods to compute the values in a single
     /// loop over the vertices.
-    fn centroid_quantized_bbox(&self) -> [i64; 8] {
+    fn centroid_bbox_qc(&self) -> [i64; 8] {
         let mut x_sum: i64 = 0;
         let mut y_sum: i64 = 0;
-        let [mut x_min, mut y_min, mut z_min] = self.vertices[0].clone();
-        let [mut x_max, mut y_max, mut z_max] = self.vertices[0].clone();
+        let [mut x_min, mut y_min, mut z_min] = self.vertices[0];
+        let [mut x_max, mut y_max, mut z_max] = self.vertices[0];
         for [x, y, z] in self.vertices.iter() {
-            x_sum = x_sum + x;
-            y_sum = y_sum + y;
+            x_sum += x;
+            y_sum += y;
             if *x < x_min {
-                x_min = x.clone()
+                x_min = *x
             } else if *x > x_max {
-                x_max = x.clone()
+                x_max = *x
             }
             if *y < y_min {
-                y_min = y.clone()
+                y_min = *y
             } else if *y > y_max {
-                y_max = y.clone()
+                y_max = *y
             }
             if *z < z_min {
-                z_min = z.clone()
+                z_min = *z
             } else if *z > z_max {
-                z_max = z.clone()
+                z_max = *z
             }
         }
         let x_ctr = x_sum / self.vertices.len() as i64;
@@ -558,15 +560,9 @@ impl CityJSONFeatureVertices {
         [x_ctr, y_ctr, x_min, y_min, z_min, x_max, y_max, z_max]
     }
 
-    /// Extracts some information from the CityJSONFeature and returns a tuple with them.
-    pub fn file_to_tuple<P: AsRef<Path>>(path: P) -> Result<Feature, Box<dyn std::error::Error>> {
-        let cf: CityJSONFeatureVertices = Self::from_file(path.as_ref())?;
-        Ok(cf.to_feature(path.as_ref()))
-    }
-
     /// Sets the 'path_jsonl' to default.
     pub fn to_feature<P: AsRef<Path>>(&self, path: P) -> Feature {
-        let ctr_bbox = self.centroid_quantized_bbox();
+        let ctr_bbox = self.centroid_bbox_qc();
         Feature {
             centroid_qc: [ctr_bbox[0], ctr_bbox[1]],
             nr_vertices: self.vertex_count(),
@@ -651,14 +647,8 @@ type Solid = Vec<Shell>;
 #[derive(Deserialize, Debug)]
 #[serde(tag = "type")]
 enum Geometry {
-    MultiSurface {
-        lod: String,
-        boundaries: MultiSurface,
-    },
-    Solid {
-        lod: String,
-        boundaries: Solid,
-    },
+    MultiSurface { boundaries: MultiSurface },
+    Solid { boundaries: Solid },
 }
 
 #[derive(Deserialize, Debug)]
@@ -679,15 +669,9 @@ mod tests {
             .join("data")
     }
 
-    fn test_output_dir() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests")
-            .join("output")
-    }
-
     #[test]
     fn test_crs_to_epsg() {
-        let crs = CRS("https://www.opengis.net/def/crs/EPSG/0/7415".to_string());
+        let crs = Crs("https://www.opengis.net/def/crs/EPSG/0/7415".to_string());
         let epsg_code = crs.to_epsg().unwrap();
         assert_eq!(7415_u16, epsg_code);
     }
@@ -719,7 +703,7 @@ mod tests {
         let cityjsonfeature_str = r#"{"type":"CityJSONFeature","CityObjects":{"b70a1e56f-debe-11e7-8ec4-89be260623ee":{"type":"Road","geometry":[{"type":"MultiSurface","lod":"1","boundaries":[[[0,1,2]],[[1,3,4]],[[1,0,3]],[[2,5,0]],[[2,6,5]],[[7,8,6]],[[9,10,11]],[[10,12,13]],[[14,15,16]],[[17,14,16]],[[18,19,20]],[[21,22,23]],[[24,25,26]],[[20,27,25]],[[20,19,27]],[[28,29,30]],[[9,23,10]],[[31,32,28]],[[31,33,32]],[[34,31,28]],[[35,34,28]],[[35,28,30]],[[36,22,37]],[[30,29,18]],[[36,38,39]],[[18,29,19]],[[40,26,41]],[[42,40,41]],[[24,20,25]],[[17,43,42]],[[40,42,43]],[[26,40,24]],[[43,17,16]],[[15,14,39]],[[39,38,15]],[[37,38,36]],[[21,37,22]],[[9,21,23]],[[11,10,44]],[[44,10,13]],[[13,12,7]],[[7,12,8]],[[2,7,6]],[[45,46,4]],[[46,1,4]],[[47,46,45]],[[48,47,45]]]}],"attributes":{"3df_id":"G0200.42b3d391aef50268e0530a0a28492340"}}},"vertices":[[23241731,-6740287,16980],[23243271,-6737886,17050],[23241947,-6737751,17030],[23243688,-6740239,16990],[23244961,-6739729,16990],[23241021,-6740116,16970],[23240334,-6739867,16960],[23240760,-6737152,17020],[23239680,-6739542,16950],[23207572,-6713437,17050],[23206398,-6715354,17010],[23211403,-6716175,17030],[23239066,-6739146,16950],[23224416,-6725473,17000],[23154567,-6713216,17160],[23200871,-6711570,17040],[23153430,-6710683,17210],[23152498,-6713168,17190],[23148683,-6700000,17400],[23145589,-6704251,17390],[23148683,-6706399,17330],[23205998,-6712657,17050],[23204080,-6714161,17010],[23205285,-6714668,17010],[23149399,-6707907,17300],[23146208,-6708310,17330],[23147259,-6710093,17300],[23145640,-6706320,17370],[23146890,-6619484,17810],[23145656,-6700000,17440],[23149034,-6662558,17710],[23140404,-6619323,17890],[23139266,-6623569,17820],[23139266,-6619957,17790],[23149466,-6614336,17770],[23149281,-6634334,17790],[23202811,-6713844,17010],[23204339,-6712080,17050],[23202621,-6711716,17040],[23201509,-6713726,17010],[23150482,-6709178,17270],[23148723,-6711555,17260],[23150508,-6712602,17220],[23151857,-6710125,17240],[23219449,-6721924,17010],[23246174,-6738901,16990],[23244554,-6737539,17080],[23245629,-6736755,17120],[23246913,-6738228,17040]],"id":"b70a1e56f-debe-11e7-8ec4-89be260623ee"}"#;
         let cf: CityJSONFeatureVertices = from_str(cityjsonfeature_str)?;
         for v in cf.vertices.iter() {
-            println!("{:#?}", v.get(0));
+            println!("{:#?}", v.first());
         }
         Ok(())
     }
@@ -728,7 +712,7 @@ mod tests {
     fn test_centroid() -> serde_json::Result<()> {
         let pb: PathBuf = test_data_dir().join("3dbag_feature_x71.city.jsonl");
         let cf: CityJSONFeatureVertices = CityJSONFeatureVertices::from_file(&pb).unwrap();
-        let ctr_quantized = cf.centroid_quantized();
+        let ctr_quantized = cf.centroid_qc();
         println!("quantized centroid: {:#?}", ctr_quantized);
 
         let pb: PathBuf = test_data_dir().join("3dbag_x00.city.json");
