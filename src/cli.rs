@@ -17,8 +17,8 @@ pub struct Cli {
     #[arg(short, long)]
     pub output: PathBuf,
     /// Output format.
-    #[arg(long, value_parser = FORMATS)]
-    pub format: String,
+    #[arg(long, value_enum)]
+    pub format: crate::Formats,
     /// The CityObject type to use for the 3D Tiles
     /// (https://www.cityjson.org/specs/1.1.3/#the-different-city-objects).
     #[arg(long, value_enum)]
@@ -59,10 +59,6 @@ pub struct Cli {
     #[arg(long, value_parser = existing_path)]
     pub exe_python: Option<PathBuf>,
 }
-
-// Would be more elegant to have an enum for this, but we cannot have enum variants
-// that begin with a number.
-static FORMATS: [&str; 2] = ["3dtiles", "cityjson"];
 
 fn existing_canonical_path(s: &str) -> Result<PathBuf, String> {
     if let Ok(c) = Path::new(s).canonicalize() {

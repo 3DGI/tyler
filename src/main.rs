@@ -11,7 +11,6 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use log::{debug, error, info, log_enabled, Level};
-use parser::FeatureSet;
 use rayon::prelude::*;
 use subprocess::{Exec, Redirection};
 
@@ -20,6 +19,22 @@ struct SubprocessConfig {
     output_extension: String,
     exe: PathBuf,
     script: PathBuf,
+}
+
+#[derive(Debug, Clone, clap::ValueEnum, Eq, PartialEq)]
+#[clap(rename_all = "lower")]
+pub enum Formats {
+    _3DTiles,
+    CityJSON,
+}
+
+impl ToString for Formats {
+    fn to_string(&self) -> String {
+        match self {
+            Formats::_3DTiles => "3DTiles".to_string(),
+            Formats::CityJSON => "CityJSON".to_string(),
+        }
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -33,8 +48,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // Since we have a default value, we can safely unwrap.
     let grid_cellsize = cli.grid_cellsize.unwrap();
-    let subprocess_config = match cli.format.as_str() {
-        "3dtiles" => {
+    let subprocess_config = match cli.format {
+        Formats::_3DTiles => {
             if let Some(exe) = cli.exe_geof {
                 SubprocessConfig {
                     output_extension: "glb".to_string(),
@@ -48,7 +63,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 panic!("exe_geof must be set for generating 3D Tiles");
             }
         }
-        "cityjson" => {
+        Formats::CityJSON => {
             if let Some(exe) = cli.exe_python {
                 SubprocessConfig {
                     output_extension: "city.json".to_string(),
@@ -62,7 +77,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 panic!("exe_python must be set for generating CityJSON tiles")
             }
         }
-        _ => SubprocessConfig::default(),
     };
     debug!("{:?}", &subprocess_config);
     // Since we have a default value, it is safe to unwrap
@@ -102,7 +116,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Building quadtree");
     let quadtree = spatial_structs::QuadTree::from_world(&world, quadtree_capacity);
 
-    if &cli.format == "3dtiles" {
+    if cli.format == Formats::_3DTiles {
         // 3D Tiles
         info!("Generating 3D Tiles tileset");
         let tileset_path = cli.output.join("tileset.json");
@@ -135,7 +149,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let leaves: Vec<&spatial_structs::QuadTree> = quadtree.collect_leaves();
     info!("Exporting and optimizing {} tiles", leaves.len());
-    if &cli.format == "3dtiles" && cli.exe_gltfpack.is_none() {
+    if cli.format == Formats::_3DTiles && cli.exe_gltfpack.is_none() {
         debug!("exe_gltfpack is not set, skipping gltf optimization")
     };
     leaves.into_par_iter().for_each(|tile| {
@@ -183,7 +197,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // TODO: maybe replace the subprocess carte with std::process to remove the dependency
             let mut cmd = Exec::cmd(&subprocess_config.exe)
                 .arg(&subprocess_config.script)
-                .arg(format!("--output_format={}", &cli.format))
+                .arg(format!(
+                    "--output_format={}",
+                    &cli.format.to_string().to_lowercase()
+                ))
                 .arg(format!("--output_file={}", &output_file.to_str().unwrap()))
                 .arg(format!(
                     "--path_metadata={}",
@@ -201,7 +218,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .arg(format!("--max_z={}", b[5]))
                 .arg(format!("--cotypes={}", &cotypes_arg));
 
-            if &cli.format == "3dtiles" {
+            if cli.format == Formats::_3DTiles {
                 // geof specific args
                 if let Some(ref cotypes) = world.cityobject_types {
                     if cotypes.contains(&parser::CityObjectType::Building)
@@ -239,7 +256,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 error!("{}", popen_error);
             }
             // Run gltfpack on the produced glb
-            if cli.format.as_str() == "3dtiles" {
+            if cli.format == Formats::_3DTiles {
                 if let Some(ref gltfpack) = cli.exe_gltfpack {
                     let res_exit_status = Exec::cmd(gltfpack)
                         .arg("-cc")

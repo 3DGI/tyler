@@ -246,10 +246,11 @@ pub mod cesium3dtiles {
             }
         }
 
+        #[allow(dead_code)]
         pub fn from_grid(
             grid: &crate::spatial_structs::SquareGrid,
             citymodel: &crate::parser::CityJSONMetadata,
-            feature_set: &crate::FeatureSet,
+            feature_set: &crate::parser::FeatureSet,
         ) -> Self {
             let crs_from = format!(
                 "EPSG:{}",
