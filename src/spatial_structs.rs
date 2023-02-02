@@ -172,7 +172,7 @@ pub enum QuadTreeCapacity {
 
 /// The type of items to count for the quadtree leaf capacity.
 #[derive(Debug, Default, Clone, clap::ValueEnum)]
-pub enum QuadTreeCapacityType {
+pub enum QuadTreeCriteria {
     Objects,
     #[default]
     Vertices,

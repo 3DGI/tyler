@@ -40,9 +40,9 @@ pub struct Cli {
     /// coordinates.
     #[arg(long)]
     pub grid_maxz: Option<i32>,
-    /// What to count for the quadtree leaf capacity.
+    /// The criteria to check for the quadtree leaf capacity.
     #[arg(long, value_enum, default_value = "vertices")]
-    pub qtree_capacity_type: Option<crate::spatial_structs::QuadTreeCapacityType>,
+    pub qtree_citeria: Option<crate::spatial_structs::QuadTreeCriteria>,
     /// The capacity of a leaf of the quadtree. If a quadrant has less than or equal
     /// the capacity, its subtiles are merged.
     #[arg(long, default_value = "10000")]
