@@ -102,16 +102,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Building quadtree");
     let quadtree = spatial_structs::QuadTree::from_world(&world, quadtree_capacity);
 
-    // 3D Tiles
-    info!("Generating 3D Tiles tileset");
-    let tileset_path = cli.output.join("tileset.json");
-    let tileset = formats::cesium3dtiles::Tileset::from_quadtree(
-        &quadtree,
-        &world,
-        cli.grid_minz,
-        cli.grid_maxz,
-    );
-    tileset.to_file(tileset_path)?;
+    if &cli.format == "3dtiles" {
+        // 3D Tiles
+        info!("Generating 3D Tiles tileset");
+        let tileset_path = cli.output.join("tileset.json");
+        let tileset = formats::cesium3dtiles::Tileset::from_quadtree(
+            &quadtree,
+            &world,
+            cli.grid_minz,
+            cli.grid_maxz,
+        );
+        tileset.to_file(tileset_path)?;
+    }
 
     // Export by calling a subprocess to merge the .jsonl files and convert them to the
     // target format
