@@ -39,9 +39,16 @@ RUN mkdir /export && \
     -f /root/.cargo/bin/tyler
 
 FROM ubuntu:lunar-20221216
+ARG VERSION
+LABEL org.opencontainers.image.authors="Balázs Dukai <balazs.dukai@3dgi.nl>"
+LABEL org.opencontainers.image.vendor="3DGI"
+LABEL org.opencontainers.image.title="tyler"
+LABEL org.opencontainers.image.description="Create tiles from 3D city objects encoded as CityJSONFeatures."
+LABEL org.opencontainers.image.version=$VERSION
 
 ARG GF_PLUGIN_FOLDER="/usr/local/lib/geoflow-plugins"
 
+RUN rm -rf /var/lib/apt/lists/*
 COPY --from=builder /usr/src/tyler/resources/geof /usr/src/tyler/resources/geof
 COPY --from=builder /tmp/gltfpack /usr/local/bin/gltfpack
 COPY --from=builder /usr/local/share/proj /usr/local/share/proj
@@ -53,4 +60,4 @@ COPY --from=builder /export/root/.cargo/bin/tyler /usr/local/bin/tyler
 
 # Update library links
 RUN ldconfig
-#CMD ["tyler"]
+CMD ["tyler"]

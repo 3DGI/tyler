@@ -80,7 +80,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     debug!("{:?}", &subprocess_config);
     // Since we have a default value, it is safe to unwrap
-    let quadtree_capacity = match &cli.qtree_citeria.unwrap() {
+    let quadtree_capacity = match &cli.qtree_criteria.unwrap() {
         spatial_structs::QuadTreeCriteria::Objects => {
             spatial_structs::QuadTreeCapacity::Objects(cli.qtree_capacity.unwrap())
         }
