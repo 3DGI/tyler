@@ -294,7 +294,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
     info!("Done");
-    debug!("Deleting {:?}", &path_features_input_dir);
-    fs::remove_dir_all(path_features_input_dir)?;
+    if !log_enabled!(Level::Debug) {
+        fs::remove_dir_all(path_features_input_dir)?;
+    }
     Ok(())
 }
