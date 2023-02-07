@@ -154,12 +154,14 @@
         "jsonl_metadata_str": false
       },
       "marked_outputs": {
-        "attributes": false,
+        "attributes": true,
         "feature_type": true,
-        "meshes": false
+        "meshes": false,
+        "roofparts": false
       },
       "parameters": {
         "3bag_buildings_mode": false,
+        "atribute_spec": "{{attribute_spec}}",
         "cotypes": "{{cotypes}}",
         "lod_filter": {
           "Building": "1.0",

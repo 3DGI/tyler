@@ -20,6 +20,11 @@
       "float",
       5008821.0
     ],
+    "attribute_spec": [
+      "Attribute names and types to output. Format: <attribute_name>:<attribute_type>,... eg: name1:string,name2:int,name3:float,name",
+      "str",
+      "3df_class:string,3df_id:string"
+    ],
     "cotypes": [
       "comma separated list of cityobject types. Leave empty for no filter.",
       "str",
@@ -218,6 +223,7 @@
         "processFeatures.wait": false
       },
       "marked_outputs": {
+        "CityJSONL2Mesh.attributes": false,
         "CityJSONL2Mesh.feature_type": false,
         "Mesh2TriangleCollection.normals": false,
         "Mesh2TriangleCollection.triangles": false,
