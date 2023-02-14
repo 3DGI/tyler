@@ -23,7 +23,7 @@
     "attribute_spec": [
       "Attribute names and types to output. Format: <attribute_name>:<attribute_type>,... eg: name1:string,name2:int,name3:float,name",
       "str",
-      "3df_class:string,3df_id:string"
+      "objectid:int,bagpandid:string,bouwjaar:int"
     ],
     "cotypes": [
       "comma separated list of cityobject types. Leave empty for no filter.",
@@ -162,7 +162,8 @@
         "embed_images": true,
         "filepath": "{{output_file}}",
         "pretty_print": false,
-        "relative_to_center": false
+        "relative_to_center": false,
+        "feature_id": "objectid"
       },
       "position": [
         1010.0,
@@ -203,6 +204,12 @@
           [
             "GLTFWriter",
             "feature_type"
+          ]
+        ],
+        "CityJSONL2Mesh.attributes": [
+          [
+            "GLTFWriter",
+            "attributes"
           ]
         ],
         "Mesh2TriangleCollection.normals": [
