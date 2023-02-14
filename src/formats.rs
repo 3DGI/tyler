@@ -51,8 +51,14 @@ pub mod cesium3dtiles {
             // Because we have a boundingVolume.box. For a boundingVolume.region we need 4979.
             let crs_to = "EPSG:4979";
             let transformer = Proj::new_known_crs(&crs_from, crs_to, None).unwrap();
+            // y-up to z-up transform needed because we are using gltf assets, which is y-up
+            // https://github.com/CesiumGS/3d-tiles/tree/main/specification#y-up-to-z-up
+            // let y_up_to_z_up = Transform([
+            //     1.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            // ]);
 
-            let root = Self::generate_tiles(quadtree, world, &transformer, arg_minz, arg_maxz);
+            let mut root = Self::generate_tiles(quadtree, world, &transformer, arg_minz, arg_maxz);
+            // root.transform = Some(y_up_to_z_up);
 
             // Using gltf tile content
             let mut extensions: Extensions = HashMap::new();
@@ -67,9 +73,9 @@ pub mod cesium3dtiles {
                 geometric_error: root.geometric_error * 1.5,
                 root,
                 properties: None,
-                extensions_used: Some(vec![ExtensionName::ContentGltf]),
-                extensions_required: Some(vec![ExtensionName::ContentGltf]),
-                extensions: Some(extensions),
+                extensions_used: None,
+                extensions_required: None,
+                extensions: None,
             }
         }
 
@@ -340,6 +346,7 @@ pub mod cesium3dtiles {
             debug!("root bbox: {:?}", &grid.bbox);
             debug!("root boundingVolume: {:?}", &root_volume);
             let root_geometric_error = grid.bbox[3] - grid.bbox[0];
+
             let root = Tile {
                 bounding_volume: root_volume,
                 geometric_error: root_geometric_error,
@@ -363,9 +370,9 @@ pub mod cesium3dtiles {
                 geometric_error: root_geometric_error * 1.5,
                 root,
                 properties: None,
-                extensions_used: Some(vec![ExtensionName::ContentGltf]),
-                extensions_required: Some(vec![ExtensionName::ContentGltf]),
-                extensions: Some(extensions),
+                extensions_used: None,
+                extensions_required: None,
+                extensions: None,
             }
         }
     }
