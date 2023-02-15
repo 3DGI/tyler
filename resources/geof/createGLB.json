@@ -163,7 +163,7 @@
         "filepath": "{{output_file}}",
         "pretty_print": false,
         "relative_to_center": false,
-        "feature_id": "objectid"
+        "feature_id": ""
       },
       "position": [
         1010.0,
@@ -187,7 +187,8 @@
         "embed_images": false,
         "filepath": "{{output_file}}.gltf",
         "pretty_print": true,
-        "relative_to_center": false
+        "relative_to_center": false,
+        "feature_id": ""
       },
       "position": [
         1010.0,
