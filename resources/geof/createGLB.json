@@ -30,6 +30,11 @@
       "str",
       ""
     ],
+    "metadata_class": [
+      "The name of the metadata class to create (for EXT_structural_metadata).",
+      "str",
+      "building"
+    ],
     "max_x": [
       "",
       "float",
@@ -163,7 +168,8 @@
         "filepath": "{{output_file}}",
         "pretty_print": false,
         "relative_to_center": false,
-        "feature_id": ""
+        "feature_id": "",
+        "metadata_class": "{{metadata_class}}"
       },
       "position": [
         1010.0,
@@ -188,7 +194,8 @@
         "filepath": "{{output_file}}.gltf",
         "pretty_print": true,
         "relative_to_center": false,
-        "feature_id": ""
+        "feature_id": "",
+        "metadata_class": "{{metadata_class}}"
       },
       "position": [
         1010.0,
