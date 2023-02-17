@@ -91,7 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let metadata_class: String = match cli.format {
         Formats::_3DTiles => {
             if cli.metadata_class.is_none() {
-                panic!("metadata_class must be set for writiing 3D Tiles")
+                panic!("metadata_class must be set for writing 3D Tiles")
             } else {
                 cli.metadata_class.unwrap()
             }
@@ -156,6 +156,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(cotypes) => cotypes.iter().map(|co| co.to_string()).collect(),
     };
     let cotypes_arg = cotypes_str.join(",");
+
+    let attribute_spec: String = match &cli.object_attribute {
+        None => "".to_string(),
+        Some(attributes) => attributes.join(","),
+    };
 
     let leaves: Vec<&spatial_structs::QuadTree> = quadtree.collect_leaves();
     info!("Exporting and optimizing {} tiles", leaves.len());
@@ -227,7 +232,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .arg(format!("--max_y={}", b[4]))
                 .arg(format!("--max_z={}", b[5]))
                 .arg(format!("--cotypes={}", &cotypes_arg))
-                .arg(format!("--metadata_class={}", &metadata_class));
+                .arg(format!("--metadata_class={}", &metadata_class))
+                .arg(format!("--attribute_spec={}", &attribute_spec));
 
             if cli.format == Formats::_3DTiles {
                 // geof specific args

@@ -21,8 +21,16 @@ pub struct Cli {
     pub format: crate::Formats,
     /// The CityObject type to use for the 3D Tiles
     /// (https://www.cityjson.org/specs/1.1.3/#the-different-city-objects).
+    /// You can specify it multiple times.
     #[arg(long, value_enum)]
     pub object_type: Option<Vec<crate::parser::CityObjectType>>,
+    /// The CityObject attribute name and value type to include as feature attribute when the
+    /// output is 3D Tiles. Format: <attribute_name>:<attribute_type> eg: 'name1:string'.
+    /// Possible value types are, 'bool', 'int', 'float', 'string'.
+    /// You can specify it multiple times.
+    #[arg(long)]
+    pub object_attribute: Option<Vec<String>>,
+    /// The CityObject attribute
     /// The metadata class to assign to the property table when the output is
     /// 3D Tiles (https://github.com/CesiumGS/glTF/tree/3d-tiles-next/extensions/2.0/Vendor/EXT_structural_metadata#class).
     #[arg(long)]
