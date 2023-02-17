@@ -126,6 +126,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Building quadtree");
     let quadtree = spatial_structs::QuadTree::from_world(&world, quadtree_capacity);
 
+    let mut nodes: Vec<&formats::cesium3dtiles::Tile> = Vec::new();
     if cli.format == Formats::_3DTiles {
         // 3D Tiles
         info!("Generating 3D Tiles tileset");
@@ -137,6 +138,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             cli.grid_maxz,
         );
         tileset.to_file(tileset_path)?;
+        nodes = tileset.flatten(Some(4));
     }
 
     // Export by calling a subprocess to merge the .jsonl files and convert them to the
@@ -162,6 +164,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(attributes) => attributes.join(","),
     };
 
+    // TODO: For passing the intermediate nodes from the tree, we should iterate over the
+    //  tileset tiles ('nodes' variable) instead of the quadtree leaves.
+    //  Then for each tile, get the corresponding quadtree node, using their ID-s.
+    //  While Quadtree.id() exists, Tile.id() needs to be impelemented, plus
+    //  Quadtree.node(ID) -> &Quadtree {} is needed too.
     let leaves: Vec<&spatial_structs::QuadTree> = quadtree.collect_leaves();
     info!("Exporting and optimizing {} tiles", leaves.len());
     if cli.format == Formats::_3DTiles && cli.exe_gltfpack.is_none() {

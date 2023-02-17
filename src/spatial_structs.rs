@@ -10,9 +10,9 @@ use std::io::prelude::*;
 /// We don't expect that the quadtree has more than 65535 levels (u16).
 #[derive(Clone, Debug)]
 pub struct QuadTree {
-    x: usize,
-    y: usize,
-    z: u16,
+    pub x: usize,
+    pub y: usize,
+    pub z: u16,
     side_length: u64,
     pub children: Vec<QuadTree>,
     pub cells: Vec<CellId>,

@@ -115,9 +115,9 @@ pub mod cesium3dtiles {
                 // The geometric error of a tile is its 'size'.
                 // Since we have square tiles, we compute its size as the length of
                 // its side on the x-axis.
-                let dz = tile_bbox[5] - tile_bbox[2];
-                if dz < 0.0 {
-                    debug!("dz is negative in parent");
+                let d = tile_bbox[3] - tile_bbox[0];
+                if d < 0.0 {
+                    debug!("d is negative in parent");
                 }
                 let mut tile_children: Vec<Tile> = Vec::new();
                 for child in quadtree.children.iter() {
@@ -129,9 +129,13 @@ pub mod cesium3dtiles {
                         arg_maxz,
                     ));
                 }
+
                 Tile {
+                    x: quadtree.x,
+                    y: quadtree.y,
+                    z: quadtree.z,
                     bounding_volume,
-                    geometric_error: dz,
+                    geometric_error: d,
                     viewer_request_volume: None,
                     refine: Some(Refinement::Replace),
                     transform: None,
@@ -187,9 +191,9 @@ pub mod cesium3dtiles {
                 // The geometric error of a tile is its 'size'.
                 // Since we have square tiles, we compute its size as the length of
                 // its side on the x-axis.
-                let dz = tile_bbox[5] - tile_bbox[2];
-                if dz < 0.0 {
-                    debug!("dz is negative in child");
+                let d = tile_bbox[3] - tile_bbox[0];
+                if d < 0.0 {
+                    debug!("d is negative in child");
                 }
                 let content_bounding_voume =
                     BoundingVolume::region_from_bbox(&tile_content_bbox_rw, transformer).unwrap();
@@ -238,6 +242,9 @@ pub mod cesium3dtiles {
                 }
 
                 Tile {
+                    x: quadtree.x,
+                    y: quadtree.y,
+                    z: quadtree.z,
                     bounding_volume,
                     geometric_error: 0.0,
                     viewer_request_volume: None,
@@ -300,6 +307,9 @@ pub mod cesium3dtiles {
                 // this is a leaf node, so the geometric_error is 0
                 // LoD2.2
                 let tile_lod22 = Tile {
+                    x: cellid.column,
+                    y: cellid.row,
+                    z: 3,
                     bounding_volume,
                     geometric_error: 0.0,
                     viewer_request_volume: None,
@@ -314,6 +324,9 @@ pub mod cesium3dtiles {
 
                 // LoD 1.3
                 let tile_lod13 = Tile {
+                    x: cellid.column,
+                    y: cellid.row,
+                    z: 2,
                     bounding_volume,
                     geometric_error: dz * 0.1,
                     viewer_request_volume: None,
@@ -328,6 +341,9 @@ pub mod cesium3dtiles {
 
                 // LoD 1.2
                 root_children.push(Tile {
+                    x: cellid.column,
+                    y: cellid.row,
+                    z: 1,
                     bounding_volume,
                     geometric_error: dz * 0.3,
                     // geometric_error: 10.0,
@@ -348,6 +364,9 @@ pub mod cesium3dtiles {
             let root_geometric_error = grid.bbox[3] - grid.bbox[0];
 
             let root = Tile {
+                x: 0,
+                y: 0,
+                z: 0,
                 bounding_volume: root_volume,
                 geometric_error: root_geometric_error,
                 viewer_request_volume: None,
@@ -374,6 +393,14 @@ pub mod cesium3dtiles {
                 extensions_required: None,
                 extensions: None,
             }
+        }
+
+        /// Flatten the tile hierarchy, visiting each tile in the quadtree.
+        /// If 'levels_up' is provided, the tiles will be flattened only
+        /// 'n levels upwards from the leaves', outputting only the flattened tiles
+        /// (instead of the whole tree).
+        pub fn flatten(&self, levels_up: Option<u16>) -> Vec<&Tile> {
+            self.root.flatten(levels_up)
         }
     }
 
@@ -447,9 +474,15 @@ pub mod cesium3dtiles {
     /// [Tile](https://github.com/CesiumGS/3d-tiles/tree/main/specification#tile).
     #[derive(Serialize, Default, Debug)]
     #[serde(rename_all = "camelCase")]
-    struct Tile {
+    pub struct Tile {
+        #[serde(skip)]
+        x: usize,
+        #[serde(skip)]
+        y: usize,
+        #[serde(skip)]
+        z: u16,
         bounding_volume: BoundingVolume,
-        geometric_error: GeometricError,
+        pub geometric_error: GeometricError,
         #[serde(skip_serializing_if = "Option::is_none")]
         viewer_request_volume: Option<BoundingVolume>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -460,6 +493,60 @@ pub mod cesium3dtiles {
         content: Option<Content>,
         #[serde(skip_serializing_if = "Option::is_none")]
         children: Option<Vec<Tile>>,
+    }
+
+    impl Tile {
+        fn flatten_recurse<'collect>(
+            &'collect self,
+            nodes: &mut Vec<&'collect Tile>,
+            limit_upwards: &u16,
+        ) {
+            if self.z < *limit_upwards {
+                if let Some(ref children) = self.children {
+                    for child in children {
+                        child.flatten_recurse(nodes, limit_upwards);
+                    }
+                }
+            } else if let Some(ref children) = self.children {
+                for child in children {
+                    child.flatten_recurse(nodes, limit_upwards);
+                }
+            } else {
+                nodes.push(self);
+            }
+        }
+
+        /// Flatten the tile hierarchy, visiting each tile in the quadtree.
+        /// If 'levels_up' is provided, the tiles will be flattened only
+        /// 'n levels upwards from the leaves', outputting only the flattened tiles
+        /// (instead of the whole tree).
+        pub fn flatten(&self, levels_up: Option<u16>) -> Vec<&Tile> {
+            let max_level = self.max_level();
+            let mut limit_upwards: u16 = 0;
+            if let Some(limit) = levels_up {
+                if max_level - limit > 0 {
+                    limit_upwards = max_level - limit;
+                }
+            }
+            let mut flat_tiles: Vec<&Tile> = Vec::new();
+            self.flatten_recurse(&mut flat_tiles, &limit_upwards);
+            flat_tiles
+        }
+        fn max_level(&self) -> u16 {
+            let mut max_level: u16 = 0;
+            self.max_level_recurse(&mut max_level);
+            max_level
+        }
+
+        fn max_level_recurse(&self, current_level: &mut u16) {
+            if let Some(ref children) = self.children {
+                for child in children {
+                    child.max_level_recurse(current_level);
+                }
+            } else if self.z > *current_level {
+                *current_level = self.z;
+            }
+        }
     }
 
     /// [boundingVolume](https://github.com/CesiumGS/3d-tiles/tree/main/specification#bounding-volume).
