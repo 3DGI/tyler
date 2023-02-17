@@ -164,11 +164,11 @@
         "atribute_spec": "{{attribute_spec}}",
         "cotypes": "{{cotypes}}",
         "lod_filter": {
-          "Building": "1.0",
-          "LandUse": "1.2",
-          "PlantCover": "1.2",
-          "Road": "1.2",
-          "WaterBody": "1.2"
+          "Building": "1",
+          "LandUse": "1",
+          "PlantCover": "1",
+          "Road": "1",
+          "WaterBody": "1"
         },
         "optimal_lod": false,
         "optimal_lod_value": "2.2"

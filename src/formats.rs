@@ -57,7 +57,7 @@ pub mod cesium3dtiles {
             //     1.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
             // ]);
 
-            let mut root = Self::generate_tiles(quadtree, world, &transformer, arg_minz, arg_maxz);
+            let root = Self::generate_tiles(quadtree, world, &transformer, arg_minz, arg_maxz);
             // root.transform = Some(y_up_to_z_up);
 
             // Using gltf tile content
