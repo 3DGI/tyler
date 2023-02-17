@@ -88,6 +88,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             spatial_structs::QuadTreeCapacity::Vertices(cli.qtree_capacity.unwrap())
         }
     };
+    let metadata_class: String = match cli.format {
+        Formats::_3DTiles => {
+            if cli.metadata_class.is_none() {
+                panic!("metadata_class must be set for writiing 3D Tiles")
+            } else {
+                cli.metadata_class.unwrap()
+            }
+        }
+        Formats::CityJSON => "".to_string(),
+    };
     // --- end of argument parsing
 
     // Populate the World with features
@@ -216,7 +226,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .arg(format!("--max_x={}", b[3]))
                 .arg(format!("--max_y={}", b[4]))
                 .arg(format!("--max_z={}", b[5]))
-                .arg(format!("--cotypes={}", &cotypes_arg));
+                .arg(format!("--cotypes={}", &cotypes_arg))
+                .arg(format!("--metadata_class={}", &metadata_class));
 
             if cli.format == Formats::_3DTiles {
                 // geof specific args

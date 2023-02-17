@@ -45,6 +45,7 @@ parser.add_argument("--max_x", help="Bounding box maximum x coordinate")
 parser.add_argument("--max_y", help="Bounding box maximum y coordinate")
 parser.add_argument("--max_z", help="Bounding box maximum z coordinate")
 parser.add_argument("--cotypes", help="Comma separated list of CityObject types to include in the tile")
+parser.add_argument("--metadata_class", help="The name of the metadata class to create (for EXT_structural_metadata).")
 
 if __name__ == "__main__":
     args = parser.parse_args()

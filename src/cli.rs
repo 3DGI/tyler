@@ -23,6 +23,10 @@ pub struct Cli {
     /// (https://www.cityjson.org/specs/1.1.3/#the-different-city-objects).
     #[arg(long, value_enum)]
     pub object_type: Option<Vec<crate::parser::CityObjectType>>,
+    /// The metadata class to assign to the property table when the output is
+    /// 3D Tiles (https://github.com/CesiumGS/glTF/tree/3d-tiles-next/extensions/2.0/Vendor/EXT_structural_metadata#class).
+    #[arg(long)]
+    pub metadata_class: Option<String>,
     /// Export the grid and the feature centroids in to .tsv files in the working
     /// directory. Used for debugging.
     #[arg(long)]
