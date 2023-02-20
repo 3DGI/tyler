@@ -6,6 +6,7 @@ pub mod cesium3dtiles {
     //! Supported version: 1.1.
     //! Not supported: `extras`.
     use std::collections::HashMap;
+    use std::fmt::{Display, Formatter};
     use std::fs::File;
     use std::path::Path;
 
@@ -131,9 +132,7 @@ pub mod cesium3dtiles {
                 }
 
                 Tile {
-                    x: quadtree.x,
-                    y: quadtree.y,
-                    z: quadtree.z,
+                    id: TileId::from(&quadtree.id),
                     bounding_volume,
                     geometric_error: d,
                     viewer_request_volume: None,
@@ -242,9 +241,7 @@ pub mod cesium3dtiles {
                 }
 
                 Tile {
-                    x: quadtree.x,
-                    y: quadtree.y,
-                    z: quadtree.z,
+                    id: TileId::from(&quadtree.id),
                     bounding_volume,
                     geometric_error: 0.0,
                     viewer_request_volume: None,
@@ -252,7 +249,7 @@ pub mod cesium3dtiles {
                     transform: None,
                     content: Some(Content {
                         bounding_volume: Some(content_bounding_voume),
-                        uri: format!("tiles/{}.glb", quadtree.id()),
+                        uri: format!("tiles/{}.glb", quadtree.id),
                     }),
                     children: None,
                 }
@@ -307,9 +304,7 @@ pub mod cesium3dtiles {
                 // this is a leaf node, so the geometric_error is 0
                 // LoD2.2
                 let tile_lod22 = Tile {
-                    x: cellid.column,
-                    y: cellid.row,
-                    z: 3,
+                    id: TileId::new(cellid.column, cellid.row, 3),
                     bounding_volume,
                     geometric_error: 0.0,
                     viewer_request_volume: None,
@@ -324,9 +319,7 @@ pub mod cesium3dtiles {
 
                 // LoD 1.3
                 let tile_lod13 = Tile {
-                    x: cellid.column,
-                    y: cellid.row,
-                    z: 2,
+                    id: TileId::new(cellid.column, cellid.row, 2),
                     bounding_volume,
                     geometric_error: dz * 0.1,
                     viewer_request_volume: None,
@@ -341,9 +334,7 @@ pub mod cesium3dtiles {
 
                 // LoD 1.2
                 root_children.push(Tile {
-                    x: cellid.column,
-                    y: cellid.row,
-                    z: 1,
+                    id: TileId::new(cellid.column, cellid.row, 1),
                     bounding_volume,
                     geometric_error: dz * 0.3,
                     // geometric_error: 10.0,
@@ -364,9 +355,7 @@ pub mod cesium3dtiles {
             let root_geometric_error = grid.bbox[3] - grid.bbox[0];
 
             let root = Tile {
-                x: 0,
-                y: 0,
-                z: 0,
+                id: TileId::new(0, 0, 0),
                 bounding_volume: root_volume,
                 geometric_error: root_geometric_error,
                 viewer_request_volume: None,
@@ -476,11 +465,7 @@ pub mod cesium3dtiles {
     #[serde(rename_all = "camelCase")]
     pub struct Tile {
         #[serde(skip)]
-        x: usize,
-        #[serde(skip)]
-        y: usize,
-        #[serde(skip)]
-        z: u16,
+        id: TileId,
         bounding_volume: BoundingVolume,
         pub geometric_error: GeometricError,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -501,7 +486,7 @@ pub mod cesium3dtiles {
             nodes: &mut Vec<&'collect Tile>,
             limit_upwards: &u16,
         ) {
-            if self.z < *limit_upwards {
+            if self.id.z < *limit_upwards {
                 if let Some(ref children) = self.children {
                     for child in children {
                         child.flatten_recurse(nodes, limit_upwards);
@@ -543,8 +528,43 @@ pub mod cesium3dtiles {
                 for child in children {
                     child.max_level_recurse(current_level);
                 }
-            } else if self.z > *current_level {
-                *current_level = self.z;
+            } else if self.id.z > *current_level {
+                *current_level = self.id.z;
+            }
+        }
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct TileId {
+        x: usize,
+        y: usize,
+        z: u16,
+    }
+
+    impl Default for TileId {
+        fn default() -> Self {
+            Self { x: 0, y: 0, z: 0 }
+        }
+    }
+
+    impl TileId {
+        pub fn new(x: usize, y: usize, z: u16) -> Self {
+            Self { x, y, z }
+        }
+    }
+
+    impl Display for TileId {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}/{}/{}", self.z, self.x, self.y)
+        }
+    }
+
+    impl From<&crate::spatial_structs::QuadTreeNodeId> for TileId {
+        fn from(value: &crate::spatial_structs::QuadTreeNodeId) -> Self {
+            Self {
+                x: value.x,
+                y: value.y,
+                z: value.z,
             }
         }
     }

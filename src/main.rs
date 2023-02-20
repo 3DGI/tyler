@@ -176,7 +176,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     leaves.into_par_iter().for_each(|tile| {
         if tile.nr_items > 0 {
-            let tileid = tile.id();
+            let tileid = tile.id.to_string();
             let file_name = tileid.clone();
             let output_file = path_output_tiles
                 .join(&file_name)
@@ -314,7 +314,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         } else {
-            debug!("tile {} is empty", &tile.id())
+            debug!("tile {} is empty", &tile.id)
         }
     });
     info!("Done");

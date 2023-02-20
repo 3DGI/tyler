@@ -10,9 +10,7 @@ use std::io::prelude::*;
 /// We don't expect that the quadtree has more than 65535 levels (u16).
 #[derive(Clone, Debug)]
 pub struct QuadTree {
-    pub x: usize,
-    pub y: usize,
-    pub z: u16,
+    pub id: QuadTreeNodeId,
     side_length: u64,
     pub children: Vec<QuadTree>,
     pub cells: Vec<CellId>,
@@ -56,9 +54,7 @@ impl QuadTree {
                     }
                 }
                 QuadTree {
-                    x: x as usize,
-                    y: y as usize,
-                    z: max_level,
+                    id: QuadTreeNodeId::new(x as usize, y as usize, max_level),
                     side_length: grid.cellsize as u64,
                     children: Vec::new(),
                     cells: vec![cellid],
@@ -96,9 +92,7 @@ impl QuadTree {
             }
             if sum_items <= limit {
                 QuadTree {
-                    x: tiles[0].x,
-                    y: tiles[0].y,
-                    z: level,
+                    id: QuadTreeNodeId::new(tiles[0].id.x, tiles[0].id.y, level),
                     side_length: tiles[0].side_length * 2,
                     children: vec![],
                     cells,
@@ -113,9 +107,7 @@ impl QuadTree {
                     );
                 }
                 QuadTree {
-                    x: tiles[0].x,
-                    y: tiles[0].y,
-                    z: level,
+                    id: QuadTreeNodeId::new(tiles[0].id.x, tiles[0].id.y, level),
                     side_length: tiles[0].side_length * 2,
                     children: tiles.clone(),
                     cells: vec![],
@@ -141,13 +133,9 @@ impl QuadTree {
         leaves
     }
 
-    pub fn id(&self) -> String {
-        format!("{}/{}/{}", self.z, self.x, self.y)
-    }
-
     pub fn bbox(&self, grid: &SquareGrid) -> Bbox {
-        let minx = grid.origin[0] + (self.x * grid.cellsize as usize) as f64;
-        let miny = grid.origin[1] + (self.y * grid.cellsize as usize) as f64;
+        let minx = grid.origin[0] + (self.id.x * grid.cellsize as usize) as f64;
+        let miny = grid.origin[1] + (self.id.y * grid.cellsize as usize) as f64;
         [
             minx,
             miny,
@@ -156,6 +144,29 @@ impl QuadTree {
             miny + self.side_length as f64,
             grid.bbox[5],
         ]
+    }
+
+    // pub fn node(&self, id: QuadTreeNodeId) -> &Self {
+    //
+    // }
+}
+
+#[derive(Clone, Debug)]
+pub struct QuadTreeNodeId {
+    pub x: usize,
+    pub y: usize,
+    pub z: u16,
+}
+
+impl QuadTreeNodeId {
+    pub fn new(x: usize, y: usize, z: u16) -> Self {
+        Self { x, y, z }
+    }
+}
+
+impl Display for QuadTreeNodeId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}/{}", self.z, self.x, self.y)
     }
 }
 
@@ -624,7 +635,7 @@ mod tests {
         let qtree = QuadTree::from_grid(&grid, QuadTreeCapacity::Objects(20));
         let leaves: Vec<&QuadTree> = QuadTree::collect_leaves(&qtree);
         for tile in leaves {
-            println!("{}", tile.id());
+            println!("{}", tile.id);
         }
     }
 }
