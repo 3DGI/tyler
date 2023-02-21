@@ -192,9 +192,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let qtree_nodeid: spatial_structs::QuadTreeNodeId = tileid.into();
         let qtree_node = quadtree
             .node(&qtree_nodeid)
-            .expect(&*format!("did not find tile {} in quadtree", tileid));
+            .unwrap_or_else(|| panic!("did not find tile {} in quadtree", tileid));
         if qtree_node.nr_items > 0 {
-            let tileid = tile.id.to_string();
+            let tileid = tileid.to_string();
             let file_name = tileid.clone();
             let output_file = path_output_tiles
                 .join(&file_name)
@@ -217,7 +217,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &path_features_input_file
                 )
             });
-            for cellid in qtree_node.cells.iter() {
+            for cellid in qtree_node.cells() {
                 let cell = world.grid.cell(cellid);
                 for fid in cell.feature_ids.iter() {
                     let fp = world.features[*fid]

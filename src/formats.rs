@@ -145,14 +145,14 @@ pub mod cesium3dtiles {
             } else {
                 // Compute the tile content bounding box <-- the bbox of all the cells in a tile
                 let mut tile_content_bbox_qc = crate::spatial_structs::BboxQc([0, 0, 0, 0, 0, 0]);
-                for cellid in &quadtree.cells {
+                for cellid in quadtree.cells() {
                     let cell = world.grid.cell(cellid);
                     if !cell.feature_ids.is_empty() {
                         tile_content_bbox_qc = world.features[cell.feature_ids[0]].bbox_qc.clone();
                         break;
                     }
                 }
-                for cellid in &quadtree.cells {
+                for cellid in quadtree.cells() {
                     let cell = world.grid.cell(cellid);
                     for fi in cell.feature_ids.iter() {
                         tile_content_bbox_qc.update_with(&world.features[*fi].bbox_qc);

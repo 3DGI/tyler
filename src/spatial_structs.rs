@@ -14,7 +14,7 @@ pub struct QuadTree {
     pub id: QuadTreeNodeId,
     side_length: u64,
     pub children: Vec<QuadTree>,
-    pub cells: Vec<CellId>,
+    cells: Vec<CellId>,
     pub nr_items: usize,
 }
 
@@ -163,6 +163,24 @@ impl QuadTree {
         }
         // Did not find the node
         None
+    }
+
+    pub fn cells(&self) -> Vec<&CellId> {
+        let mut cellids: Vec<&CellId> = Vec::new();
+        let mut q = VecDeque::new();
+        q.push_back(self);
+        while let Some(node) = q.pop_front() {
+            if node.children.is_empty() {
+                for cell in node.cells.iter() {
+                    cellids.push(cell);
+                }
+            } else {
+                for child in &node.children {
+                    q.push_back(child);
+                }
+            }
+        }
+        cellids
     }
 }
 
