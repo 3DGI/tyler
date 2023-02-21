@@ -6,6 +6,7 @@ pub mod cesium3dtiles {
     //! Supported version: 1.1.
     //! Not supported: `extras`.
     use std::collections::HashMap;
+    use std::collections::VecDeque;
     use std::fmt::{Display, Formatter};
     use std::fs::File;
     use std::path::Path;
@@ -391,6 +392,14 @@ pub mod cesium3dtiles {
         pub fn flatten(&self, levels_up: Option<u16>) -> Vec<&Tile> {
             self.root.flatten(levels_up)
         }
+
+        /// Flatten the tile hierarchy, visiting each tile in the quadtree.
+        /// If 'levels_up' is provided, the tiles will be flattened only
+        /// 'n levels upwards from the leaves', outputting only the flattened tiles
+        /// (instead of the whole tree).
+        pub fn flatten_mut(&mut self, levels_up: Option<u16>) -> Vec<&mut Tile> {
+            self.root.flatten_mut(levels_up)
+        }
     }
 
     /// [Asset](https://github.com/CesiumGS/3d-tiles/tree/main/specification#asset).
@@ -465,7 +474,7 @@ pub mod cesium3dtiles {
     #[serde(rename_all = "camelCase")]
     pub struct Tile {
         #[serde(skip)]
-        id: TileId,
+        pub id: TileId,
         bounding_volume: BoundingVolume,
         pub geometric_error: GeometricError,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -477,7 +486,7 @@ pub mod cesium3dtiles {
         #[serde(skip_serializing_if = "Option::is_none")]
         content: Option<Content>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        children: Option<Vec<Tile>>,
+        pub children: Option<Vec<Tile>>,
     }
 
     impl Tile {
@@ -492,12 +501,13 @@ pub mod cesium3dtiles {
                         child.flatten_recurse(nodes, limit_upwards);
                     }
                 }
-            } else if let Some(ref children) = self.children {
-                for child in children {
-                    child.flatten_recurse(nodes, limit_upwards);
-                }
             } else {
                 nodes.push(self);
+                if let Some(ref children) = self.children {
+                    for child in children {
+                        child.flatten_recurse(nodes, limit_upwards);
+                    }
+                }
             }
         }
 
@@ -509,7 +519,7 @@ pub mod cesium3dtiles {
             let max_level = self.max_level();
             let mut limit_upwards: u16 = 0;
             if let Some(limit) = levels_up {
-                if max_level - limit > 0 {
+                if limit < max_level {
                     limit_upwards = max_level - limit;
                 }
             }
@@ -517,6 +527,36 @@ pub mod cesium3dtiles {
             self.flatten_recurse(&mut flat_tiles, &limit_upwards);
             flat_tiles
         }
+
+        /// Flatten the tile hierarchy, visiting each tile in the quadtree.
+        /// If 'levels_up' is provided, the tiles will be flattened only
+        /// 'n levels upwards from the leaves', outputting only the flattened tiles
+        /// (instead of the whole tree).
+        pub fn flatten_mut(&mut self, levels_up: Option<u16>) -> Vec<&mut Tile> {
+            let max_level = self.max_level();
+            let mut lower_limit: u16 = 0;
+            if let Some(limit) = levels_up {
+                if limit < max_level {
+                    lower_limit = max_level - limit;
+                }
+            }
+            let mut flat_tiles: Vec<&mut Tile> = Vec::new();
+            let mut q = VecDeque::new();
+            q.push_back(self);
+            while let Some(node) = q.pop_front() {
+                if node.id.z < lower_limit {
+                    if let Some(ref mut children) = node.children {
+                        for child in children.iter_mut() {
+                            q.push_back(child);
+                        }
+                    }
+                } else {
+                    flat_tiles.push(node);
+                }
+            }
+            flat_tiles
+        }
+
         fn max_level(&self) -> u16 {
             let mut max_level: u16 = 0;
             self.max_level_recurse(&mut max_level);
@@ -532,9 +572,18 @@ pub mod cesium3dtiles {
                 *current_level = self.id.z;
             }
         }
+
+        // Adds `Content` to the Tile, by generating a content bounding volume from the
+        // tile's bounding volume and a filepath from the tile.id.
+        pub fn add_content(&mut self) {
+            self.content = Some(Content {
+                bounding_volume: Some(self.bounding_volume),
+                uri: format!("tiles/{}.glb", self.id),
+            })
+        }
     }
 
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, Eq, PartialEq)]
     pub struct TileId {
         x: usize,
         y: usize,
@@ -566,6 +615,12 @@ pub mod cesium3dtiles {
                 y: value.y,
                 z: value.z,
             }
+        }
+    }
+
+    impl Into<crate::spatial_structs::QuadTreeNodeId> for &TileId {
+        fn into(self) -> crate::spatial_structs::QuadTreeNodeId {
+            crate::spatial_structs::QuadTreeNodeId::new(self.x, self.y, self.z)
         }
     }
 

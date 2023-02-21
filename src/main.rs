@@ -64,18 +64,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         Formats::CityJSON => {
-            if let Some(exe) = cli.exe_python {
-                SubprocessConfig {
-                    output_extension: "city.json".to_string(),
-                    exe,
-                    script: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                        .join("resources")
-                        .join("python")
-                        .join("convert_cityjsonfeatures.py"),
-                }
-            } else {
-                panic!("exe_python must be set for generating CityJSON tiles")
-            }
+            // TODO: refactor parallel loop
+            panic!("cityjson output is not supported");
+            // if let Some(exe) = cli.exe_python {
+            //     SubprocessConfig {
+            //         output_extension: "city.json".to_string(),
+            //         exe,
+            //         script: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            //             .join("resources")
+            //             .join("python")
+            //             .join("convert_cityjsonfeatures.py"),
+            //     }
+            // } else {
+            //     panic!("exe_python must be set for generating CityJSON tiles")
+            // }
         }
     };
     debug!("{:?}", &subprocess_config);
@@ -126,20 +128,42 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Building quadtree");
     let quadtree = spatial_structs::QuadTree::from_world(&world, quadtree_capacity);
 
-    let mut nodes: Vec<&formats::cesium3dtiles::Tile> = Vec::new();
-    if cli.format == Formats::_3DTiles {
-        // 3D Tiles
-        info!("Generating 3D Tiles tileset");
-        let tileset_path = cli.output.join("tileset.json");
-        let tileset = formats::cesium3dtiles::Tileset::from_quadtree(
-            &quadtree,
-            &world,
-            cli.grid_minz,
-            cli.grid_maxz,
-        );
-        tileset.to_file(tileset_path)?;
-        nodes = tileset.flatten(Some(4));
+    // let tiles: Vec<&formats::cesium3dtiles::Tile> = Vec::new();
+    // if cli.format == Formats::_3DTiles {
+    //     // 3D Tiles
+    //     info!("Generating 3D Tiles tileset");
+    //     let tileset_path = cli.output.join("tileset.json");
+    //     let tileset = formats::cesium3dtiles::Tileset::from_quadtree(
+    //         &quadtree,
+    //         &world,
+    //         cli.grid_minz,
+    //         cli.grid_maxz,
+    //     );
+    //     tileset.to_file(tileset_path)?;
+    //     tiles = tileset.flatten(Some(4));
+    // }
+    // 3D Tiles
+    info!("Generating 3D Tiles tileset");
+    let tileset_path = cli.output.join("tileset.json");
+    let mut tileset = formats::cesium3dtiles::Tileset::from_quadtree(
+        &quadtree,
+        &world,
+        cli.grid_minz,
+        cli.grid_maxz,
+    );
+    // Select how many levels of tiles from the hierarchy do we want to export with
+    // content.
+    let levels_up: u16 = 2;
+    {
+        let tiles = tileset.flatten_mut(Some(levels_up));
+        for tile in tiles {
+            if tile.children.is_some() {
+                tile.add_content();
+            }
+        }
     }
+    let tiles = tileset.flatten(Some(levels_up));
+    tileset.to_file(tileset_path)?;
 
     // Export by calling a subprocess to merge the .jsonl files and convert them to the
     // target format
@@ -164,18 +188,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(attributes) => attributes.join(","),
     };
 
-    // TODO: For passing the intermediate nodes from the tree, we should iterate over the
-    //  tileset tiles ('nodes' variable) instead of the quadtree leaves.
-    //  Then for each tile, get the corresponding quadtree node, using their ID-s.
-    //  While Quadtree.id() exists, Tile.id() needs to be impelemented, plus
-    //  Quadtree.node(ID) -> &Quadtree {} is needed too.
-    let leaves: Vec<&spatial_structs::QuadTree> = quadtree.collect_leaves();
-    info!("Exporting and optimizing {} tiles", leaves.len());
+    // TODO: need to refactor this parallel loop somehow that it does not only read the
+    //  3d tiles tiles, but also works with cityjson output
+    info!("Exporting and optimizing {} tiles", tiles.len());
     if cli.format == Formats::_3DTiles && cli.exe_gltfpack.is_none() {
         debug!("exe_gltfpack is not set, skipping gltf optimization")
     };
-    leaves.into_par_iter().for_each(|tile| {
-        if tile.nr_items > 0 {
+    tiles.into_par_iter().for_each(|tile| {
+        let tileid = &tile.id;
+        let qtree_nodeid: spatial_structs::QuadTreeNodeId = tileid.into();
+        let qtree_node = quadtree
+            .node(&qtree_nodeid)
+            .expect(&*format!("did not find tile {} in quadtree", tileid));
+        if qtree_node.nr_items > 0 {
             let tileid = tile.id.to_string();
             let file_name = tileid.clone();
             let output_file = path_output_tiles
@@ -199,7 +224,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &path_features_input_file
                 )
             });
-            for cellid in tile.cells.iter() {
+            for cellid in qtree_node.cells.iter() {
                 let cell = world.grid.cell(cellid);
                 for fid in cell.feature_ids.iter() {
                     let fp = world.features[*fid]
@@ -213,7 +238,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
-            let b = tile.bbox(&world.grid);
+            // We use the quadtree node bbox here instead of the Tileset.Tile bounding
+            // volume, because the Tile is in EPSG:4979 and we need the input data CRS
+            let b = qtree_node.bbox(&world.grid);
             // We need to string-format all the arguments with an = separator, because that's what
             // geof can accept.
             // TODO: maybe replace the subprocess carte with std::process to remove the dependency
@@ -240,7 +267,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .arg(format!("--max_z={}", b[5]))
                 .arg(format!("--cotypes={}", &cotypes_arg))
                 .arg(format!("--metadata_class={}", &metadata_class))
-                .arg(format!("--attribute_spec={}", &attribute_spec));
+                .arg(format!("--attribute_spec={}", &attribute_spec))
+                .arg(format!("--geometric_error={}", &tile.geometric_error));
 
             if cli.format == Formats::_3DTiles {
                 // geof specific args

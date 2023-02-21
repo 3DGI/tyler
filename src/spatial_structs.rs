@@ -1,6 +1,7 @@
 //! Spatial data structures for indexing the features.
 use crate::parser::FeatureSet;
 use log::{debug, error};
+use std::collections::VecDeque;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::prelude::*;
@@ -146,12 +147,26 @@ impl QuadTree {
         ]
     }
 
-    // pub fn node(&self, id: QuadTreeNodeId) -> &Self {
-    //
-    // }
+    /// Breadth-first search for a node.
+    pub fn node(&self, id: &QuadTreeNodeId) -> Option<&QuadTree> {
+        let mut q = VecDeque::new();
+        q.push_back(self);
+
+        while let Some(n) = q.pop_front() {
+            if &n.id == id {
+                return Some(n);
+            } else {
+                for child in &n.children {
+                    q.push_back(child);
+                }
+            }
+        }
+        // Did not find the node
+        None
+    }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct QuadTreeNodeId {
     pub x: usize,
     pub y: usize,
@@ -531,6 +546,84 @@ impl Display for CellId {
     }
 }
 
+/// 3D bounding box.
+///
+/// [min x, min y, min z, max x, max y, max z]
+pub type Bbox = [f64; 6];
+
+/// 3D bounding box with quantized coordinates.
+///
+/// [min x, min y, min z, max x, max y, max z]
+#[derive(Debug, Default, Clone, Ord, PartialOrd, Eq, PartialEq)]
+pub struct BboxQc(pub [i64; 6]); // This `pub [i64; 6]` makes the BboxQc constructor public
+
+impl BboxQc {
+    /// Compute the real-world coordinates from the quantized coordinates and the
+    /// transformation properties.
+    ///
+    /// Optionally, the z-coordinate limits can be overriden by the `arg_minz` and
+    /// `arg_maxz` arguments.
+    pub fn to_bbox(
+        &self,
+        transform: &crate::parser::Transform,
+        arg_minz: Option<i32>,
+        arg_maxz: Option<i32>,
+    ) -> Bbox {
+        // Get the real-world coordinates for the extent
+        let extent_rw_min = self.0[0..3]
+            .iter()
+            .enumerate()
+            .map(|(i, qc)| (*qc as f64 * transform.scale[i]) + transform.translate[i]);
+        let extent_rw_max = self.0[3..6]
+            .iter()
+            .enumerate()
+            .map(|(i, qc)| (*qc as f64 * transform.scale[i]) + transform.translate[i]);
+        let mut extent_rw: [f64; 6] = extent_rw_min
+            .chain(extent_rw_max)
+            .collect::<Vec<f64>>()
+            .try_into()
+            .expect("should be able to create an [f64; 6] from the extent_rw vector");
+        if let Some(minz) = arg_minz {
+            if extent_rw[2] < minz as f64 {
+                debug!(
+                "Setting min. z for the grid extent from provided value {}, instead of the computed value {}",
+                minz, extent_rw[2]
+            );
+                extent_rw[2] = minz as f64
+            }
+        }
+        if let Some(maxz) = arg_maxz {
+            if extent_rw[5] > maxz as f64 {
+                debug!(
+                "Setting max. z for the grid extent from provided value {}, instead of the computed value {}",
+                maxz, extent_rw[5]
+            );
+                extent_rw[5] = maxz as f64
+            }
+        }
+        extent_rw
+    }
+
+    // Update with another bounding box, if the other is larger.
+    pub fn update_with(&mut self, bbox_qc: &Self) {
+        if bbox_qc.0[0] < self.0[0] {
+            self.0[0] = bbox_qc.0[0]
+        } else if bbox_qc.0[3] > self.0[3] {
+            self.0[3] = bbox_qc.0[3]
+        }
+        if bbox_qc.0[1] < self.0[1] {
+            self.0[1] = bbox_qc.0[1]
+        } else if bbox_qc.0[4] > self.0[4] {
+            self.0[4] = bbox_qc.0[4]
+        }
+        if bbox_qc.0[2] < self.0[2] {
+            self.0[2] = bbox_qc.0[2]
+        } else if bbox_qc.0[5] > self.0[5] {
+            self.0[5] = bbox_qc.0[5]
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -638,82 +731,32 @@ mod tests {
             println!("{}", tile.id);
         }
     }
-}
 
-/// 3D bounding box.
-///
-/// [min x, min y, min z, max x, max y, max z]
-pub type Bbox = [f64; 6];
-
-/// 3D bounding box with quantized coordinates.
-///
-/// [min x, min y, min z, max x, max y, max z]
-#[derive(Debug, Default, Clone, Ord, PartialOrd, Eq, PartialEq)]
-pub struct BboxQc(pub [i64; 6]); // This `pub [i64; 6]` makes the BboxQc constructor public
-
-impl BboxQc {
-    /// Compute the real-world coordinates from the quantized coordinates and the
-    /// transformation properties.
-    ///
-    /// Optionally, the z-coordinate limits can be overriden by the `arg_minz` and
-    /// `arg_maxz` arguments.
-    pub fn to_bbox(
-        &self,
-        transform: &crate::parser::Transform,
-        arg_minz: Option<i32>,
-        arg_maxz: Option<i32>,
-    ) -> Bbox {
-        // Get the real-world coordinates for the extent
-        let extent_rw_min = self.0[0..3]
-            .iter()
-            .enumerate()
-            .map(|(i, qc)| (*qc as f64 * transform.scale[i]) + transform.translate[i]);
-        let extent_rw_max = self.0[3..6]
-            .iter()
-            .enumerate()
-            .map(|(i, qc)| (*qc as f64 * transform.scale[i]) + transform.translate[i]);
-        let mut extent_rw: [f64; 6] = extent_rw_min
-            .chain(extent_rw_max)
-            .collect::<Vec<f64>>()
-            .try_into()
-            .expect("should be able to create an [f64; 6] from the extent_rw vector");
-        if let Some(minz) = arg_minz {
-            if extent_rw[2] < minz as f64 {
-                debug!(
-                "Setting min. z for the grid extent from provided value {}, instead of the computed value {}",
-                minz, extent_rw[2]
-            );
-                extent_rw[2] = minz as f64
+    #[test]
+    fn test_quadtree_node() {
+        let mut feature_set: FeatureSet = Vec::new();
+        let mut grid = SquareGrid::new(&[0.0, 0.0, 0.0, 16.0, 16.0, 1.0], 1, 0, None);
+        for x in 0..16_u64 {
+            for y in 0..16u64 {
+                for f in 0..5 {
+                    feature_set.push(crate::parser::Feature {
+                        centroid_qc: [0, 0],
+                        nr_vertices: 0,
+                        path_jsonl: Default::default(),
+                        bbox_qc: BboxQc([0, 0, 0, 0, 0, 0]),
+                    });
+                    let xc: f64 = format!("{}.{}", &x, &f).parse().unwrap();
+                    grid.insert(&[xc, y as f64], f as usize);
+                }
             }
         }
-        if let Some(maxz) = arg_maxz {
-            if extent_rw[5] > maxz as f64 {
-                debug!(
-                "Setting max. z for the grid extent from provided value {}, instead of the computed value {}",
-                maxz, extent_rw[5]
-            );
-                extent_rw[5] = maxz as f64
-            }
-        }
-        extent_rw
-    }
-
-    // Update with another bounding box, if the other is larger.
-    pub fn update_with(&mut self, bbox_qc: &Self) {
-        if bbox_qc.0[0] < self.0[0] {
-            self.0[0] = bbox_qc.0[0]
-        } else if bbox_qc.0[3] > self.0[3] {
-            self.0[3] = bbox_qc.0[3]
-        }
-        if bbox_qc.0[1] < self.0[1] {
-            self.0[1] = bbox_qc.0[1]
-        } else if bbox_qc.0[4] > self.0[4] {
-            self.0[4] = bbox_qc.0[4]
-        }
-        if bbox_qc.0[2] < self.0[2] {
-            self.0[2] = bbox_qc.0[2]
-        } else if bbox_qc.0[5] > self.0[5] {
-            self.0[5] = bbox_qc.0[5]
+        let qtree = QuadTree::from_grid(&grid, QuadTreeCapacity::Objects(20));
+        let leaves: Vec<&QuadTree> = QuadTree::collect_leaves(&qtree);
+        let n = qtree.node(&QuadTreeNodeId::new(0, 0, 2));
+        if let Some(node) = n {
+            println!("{:?}", &n);
+        } else {
+            println!("did not find node");
         }
     }
 }
