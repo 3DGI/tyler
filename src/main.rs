@@ -153,9 +153,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     // Select how many levels of tiles from the hierarchy do we want to export with
     // content.
-    let levels_up: Option<u16> = Some(2);
-    tileset.add_content(levels_up);
-    let tiles = tileset.flatten(levels_up);
+    tileset.add_content(cli.qtree_export_levels);
+    let tiles = tileset.flatten(cli.qtree_export_levels);
     tileset.to_file(tileset_path)?;
 
     // Export by calling a subprocess to merge the .jsonl files and convert them to the
