@@ -393,12 +393,8 @@ pub mod cesium3dtiles {
             self.root.flatten(levels_up)
         }
 
-        /// Flatten the tile hierarchy, visiting each tile in the quadtree.
-        /// If 'levels_up' is provided, the tiles will be flattened only
-        /// 'n levels upwards from the leaves', outputting only the flattened tiles
-        /// (instead of the whole tree).
-        pub fn flatten_mut(&mut self, levels_up: Option<u16>) -> Vec<&mut Tile> {
-            self.root.flatten_mut(levels_up)
+        pub fn add_content(&mut self, levels_up: Option<u16>) {
+            self.root.add_content_from_level(levels_up);
         }
     }
 
@@ -528,11 +524,7 @@ pub mod cesium3dtiles {
             flat_tiles
         }
 
-        /// Flatten the tile hierarchy, visiting each tile in the quadtree.
-        /// If 'levels_up' is provided, the tiles will be flattened only
-        /// 'n levels upwards from the leaves', outputting only the flattened tiles
-        /// (instead of the whole tree).
-        pub fn flatten_mut(&mut self, levels_up: Option<u16>) -> Vec<&mut Tile> {
+        fn add_content_from_level(&mut self, levels_up: Option<u16>) {
             let max_level = self.max_level();
             let mut lower_limit: u16 = 0;
             if let Some(limit) = levels_up {
@@ -540,21 +532,18 @@ pub mod cesium3dtiles {
                     lower_limit = max_level - limit;
                 }
             }
-            let mut flat_tiles: Vec<&mut Tile> = Vec::new();
             let mut q = VecDeque::new();
             q.push_back(self);
             while let Some(node) = q.pop_front() {
-                if node.id.z < lower_limit {
-                    if let Some(ref mut children) = node.children {
-                        for child in children.iter_mut() {
-                            q.push_back(child);
-                        }
+                if node.id.z >= lower_limit {
+                    node.add_content();
+                }
+                if let Some(ref mut children) = node.children {
+                    for child in children.iter_mut() {
+                        q.push_back(child);
                     }
-                } else {
-                    flat_tiles.push(node);
                 }
             }
-            flat_tiles
         }
 
         fn max_level(&self) -> u16 {
