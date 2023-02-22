@@ -500,7 +500,7 @@ pub mod cesium3dtiles {
             nodes: &mut Vec<&'collect Tile>,
             limit_upwards: &u16,
         ) {
-            if self.id.z < *limit_upwards {
+            if self.id.level < *limit_upwards {
                 if let Some(ref children) = self.children {
                     for child in children {
                         child.flatten_recurse(nodes, limit_upwards);
@@ -544,7 +544,7 @@ pub mod cesium3dtiles {
             let mut q = VecDeque::new();
             q.push_back(self);
             while let Some(node) = q.pop_front() {
-                if node.id.z >= lower_limit {
+                if node.id.level >= lower_limit {
                     node.add_content();
                 }
                 if let Some(ref mut children) = node.children {
@@ -566,8 +566,8 @@ pub mod cesium3dtiles {
                 for child in children {
                     child.max_level_recurse(current_level);
                 }
-            } else if self.id.z > *current_level {
-                *current_level = self.id.z;
+            } else if self.id.level > *current_level {
+                *current_level = self.id.level;
             }
         }
 
@@ -585,24 +585,24 @@ pub mod cesium3dtiles {
     pub struct TileId {
         x: usize,
         y: usize,
-        z: u16,
+        level: u16,
     }
 
     impl Default for TileId {
         fn default() -> Self {
-            Self { x: 0, y: 0, z: 0 }
+            Self { x: 0, y: 0, level: 0 }
         }
     }
 
     impl TileId {
-        pub fn new(x: usize, y: usize, z: u16) -> Self {
-            Self { x, y, z }
+        pub fn new(x: usize, y: usize, level: u16) -> Self {
+            Self { x, y, level }
         }
     }
 
     impl Display for TileId {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{}/{}/{}", self.z, self.x, self.y)
+            write!(f, "{}/{}/{}", self.level, self.x, self.y)
         }
     }
 
@@ -611,14 +611,14 @@ pub mod cesium3dtiles {
             Self {
                 x: value.x,
                 y: value.y,
-                z: value.z,
+                level: value.level,
             }
         }
     }
 
     impl Into<crate::spatial_structs::QuadTreeNodeId> for &TileId {
         fn into(self) -> crate::spatial_structs::QuadTreeNodeId {
-            crate::spatial_structs::QuadTreeNodeId::new(self.x, self.y, self.z)
+            crate::spatial_structs::QuadTreeNodeId::new(self.x, self.y, self.level)
         }
     }
 

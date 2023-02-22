@@ -188,18 +188,18 @@ impl QuadTree {
 pub struct QuadTreeNodeId {
     pub x: usize,
     pub y: usize,
-    pub z: u16,
+    pub level: u16,
 }
 
 impl QuadTreeNodeId {
-    pub fn new(x: usize, y: usize, z: u16) -> Self {
-        Self { x, y, z }
+    pub fn new(x: usize, y: usize, level: u16) -> Self {
+        Self { x, y, level }
     }
 }
 
 impl Display for QuadTreeNodeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}/{}/{}", self.z, self.x, self.y)
+        write!(f, "{}/{}/{}", self.level, self.x, self.y)
     }
 }
 
