@@ -771,7 +771,7 @@ mod tests {
         let qtree = QuadTree::from_grid(&grid, QuadTreeCapacity::Objects(20));
         let leaves: Vec<&QuadTree> = QuadTree::collect_leaves(&qtree);
         let n = qtree.node(&QuadTreeNodeId::new(0, 0, 2));
-        if let Some(node) = n {
+        if let Some(_) = n {
             println!("{:?}", &n);
         } else {
             println!("did not find node");

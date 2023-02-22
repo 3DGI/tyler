@@ -12,7 +12,8 @@ pub mod cesium3dtiles {
     use std::path::Path;
 
     use log::{debug, error};
-    use serde::Serialize;
+    use serde::{Serialize, Serializer};
+    use serde_repr::Serialize_repr;
 
     use crate::proj::Proj;
 
@@ -141,6 +142,7 @@ pub mod cesium3dtiles {
                     transform: None,
                     content: None,
                     children: Some(tile_children),
+                    implicit_tiling: None,
                 }
             } else {
                 // Compute the tile content bounding box <-- the bbox of all the cells in a tile
@@ -253,6 +255,7 @@ pub mod cesium3dtiles {
                         uri: format!("tiles/{}.glb", quadtree.id),
                     }),
                     children: None,
+                    implicit_tiling: None,
                 }
             }
         }
@@ -316,6 +319,7 @@ pub mod cesium3dtiles {
                         uri: format!("tiles/{}-0-0.glb", cellid),
                     }),
                     children: None,
+                    implicit_tiling: None,
                 };
 
                 // LoD 1.3
@@ -331,6 +335,7 @@ pub mod cesium3dtiles {
                         uri: format!("tiles/{}-0.glb", cellid),
                     }),
                     children: Some(vec![tile_lod22]),
+                    implicit_tiling: None,
                 };
 
                 // LoD 1.2
@@ -347,6 +352,7 @@ pub mod cesium3dtiles {
                         uri: format!("tiles/{}.glb", cellid),
                     }),
                     children: Some(vec![tile_lod13]),
+                    implicit_tiling: None,
                 });
             }
 
@@ -364,6 +370,7 @@ pub mod cesium3dtiles {
                 transform: None,
                 content: None,
                 children: Some(root_children),
+                implicit_tiling: None,
             };
 
             // Using gltf tile content
@@ -483,6 +490,8 @@ pub mod cesium3dtiles {
         content: Option<Content>,
         #[serde(skip_serializing_if = "Option::is_none")]
         pub children: Option<Vec<Tile>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        implicit_tiling: Option<ImplicitTiling>,
     }
 
     impl Tile {
@@ -773,10 +782,119 @@ pub mod cesium3dtiles {
         uri: String,
     }
 
+    /// Implicit tiling object.
+    /// https://github.com/CesiumGS/3d-tiles/tree/1.1/specification/ImplicitTiling#implicit-root-tile
+    /// https://github.com/CesiumGS/3d-tiles/blob/1.1/specification/schema/tile.implicitTiling.schema.json
+    #[derive(Serialize, Default, Debug)]
+    #[serde(rename_all = "camelCase")]
+    struct ImplicitTiling {
+        subdivision_scheme: SubdivisionScheme,
+        subtree_levels: u8,
+        available_levels: u8,
+        subtrees: Subtrees,
+    }
+
+    /// Implicit tiling subtree subdivision scheme.
+    /// https://github.com/CesiumGS/3d-tiles/tree/1.1/specification/ImplicitTiling#subdivision-scheme
+    #[allow(dead_code)]
+    #[derive(Serialize, Debug, Default)]
+    #[serde(rename_all = "UPPERCASE")]
+    enum SubdivisionScheme {
+        #[default]
+        Quadtree,
+        Octree,
+    }
+
+    /// Implicit tiling subtrees.
+    /// https://github.com/CesiumGS/3d-tiles/tree/1.1/specification/ImplicitTiling#subtrees
+    #[derive(Serialize, Debug)]
+    struct Subtrees {
+        uri: String,
+    }
+
+    impl Default for Subtrees {
+        fn default() -> Self {
+            Self {
+                uri: String::from("subtrees/{level}/{x}/{y}.json"),
+            }
+        }
+    }
+
+    /// Implicit tiling subtree object.
+    /// Metadata is not supported.
+    /// https://github.com/CesiumGS/3d-tiles/blob/1.1/specification/schema/Subtree/subtree.schema.json
+    #[derive(Serialize, Debug, Default)]
+    #[serde(rename_all = "camelCase")]
+    struct Subtree {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        buffers: Option<Vec<Buffer>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        buffer_views: Option<Vec<BufferView>>,
+        tile_availability: Availability,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        content_availability: Option<Vec<Availability>>,
+        child_subtree_availability: Availability,
+    }
+
+    #[derive(Serialize, Debug, Default)]
+    #[serde(rename_all = "camelCase")]
+    struct Buffer {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        byte_length: usize,
+    }
+
+    #[derive(Serialize, Debug, Default)]
+    #[serde(rename_all = "camelCase")]
+    struct BufferView {
+        buffer: u8,
+        byte_offset: usize,
+        byte_length: usize,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+    }
+
+    /// Implicit tiling subtree availability.
+    /// https://github.com/CesiumGS/3d-tiles/tree/1.1/specification/ImplicitTiling#availability-1
+    /// https://github.com/CesiumGS/3d-tiles/blob/1.1/specification/schema/Subtree/availability.schema.json
+    #[derive(Serialize, Debug, Default)]
+    #[serde(rename_all = "camelCase")]
+    struct Availability {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        bitstream: Option<u8>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        available_count: Option<u16>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        constant: Option<AvailabilityConstant>,
+    }
+
+    /// Integer indicating whether all of the elements are available (1) or all are unavailable (0).
+    #[allow(dead_code)]
+    #[derive(Debug, Default, Serialize_repr)]
+    #[repr(u8)]
+    enum AvailabilityConstant {
+        #[default]
+        Unavailable = 0,
+        Available = 1,
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
         use serde_json::to_string_pretty;
+
+        #[test]
+        fn test_implicittiling() {
+            let mut i = ImplicitTiling::default();
+            println!("{}", serde_json::to_string(&i).unwrap());
+        }
+
+        #[test]
+        fn test_availability() {
+            let a = AvailabilityConstant::Available;
+            println!("{:?}", &a);
+            println!("{}", serde_json::to_string(&a).unwrap());
+        }
 
         #[test]
         fn test_refinement() {
