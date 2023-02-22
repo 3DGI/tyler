@@ -296,6 +296,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         capturedata.stdout_str()
                     );
                 }
+                if !output_file.exists() {
+                    error!(
+                        "{} output {:?} was not written by the subprocess",
+                        &tileid, &output_file
+                    );
+                }
             } else if let Err(popen_error) = res_exit_status {
                 error!("{}", popen_error);
             }
