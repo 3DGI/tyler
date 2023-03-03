@@ -14,6 +14,7 @@ pub mod cesium3dtiles {
 
     use bitvec::prelude as bv;
     use log::{debug, error};
+    use morton_encoding::morton_encode;
     use serde::{Serialize, Serializer};
     use serde_repr::Serialize_repr;
 
@@ -454,13 +455,17 @@ pub mod cesium3dtiles {
                     let tile_side_length = extent_side_length / nr_tiles_current_level_side as f64;
                     let tile_side_length_u16 = tile_side_length as u16;
 
-                    debug!("creating grid_for_level {}-{}", &section, &level);
+                    // debug!("creating grid_for_level {}-{}", &section, &level);
                     let grid_for_level = crate::spatial_structs::SquareGrid::new(
                         &grid.bbox,
                         tile_side_length_u16,
                         grid.epsg,
                         grid_buffer,
                     );
+                    let mut grid_for_level_corner_coords: HashMap<
+                        String,
+                        (crate::spatial_structs::CellId, usize),
+                    > = HashMap::new();
 
                     // DEBUG
                     let mut file_grid =
@@ -468,98 +473,53 @@ pub mod cesium3dtiles {
                             .unwrap();
                     for (cellid, _) in &grid_for_level {
                         let wkt = grid_for_level.cell_to_wkt(&cellid);
-                        writeln!(file_grid, "{}\t{}", &cellid, wkt);
+                        writeln!(file_grid, "{}\t{}", &cellid, wkt).unwrap();
                     }
 
-                    let mut mortoncodes: Vec<u64> = grid_for_level
-                        .into_iter()
-                        .map(|(cellid, _)| {
-                            let [minx, miny, _minz, _maxx, _maxy, _maxz] =
-                                grid_for_level.cell_bbox(&cellid);
-                            crate::spatial_structs::interleave(&(minx as u64), &(miny as u64))
-                        })
-                        .collect();
-                    mortoncodes.sort();
-                    // let mut grid_cells_in_morton: HashMap<u64, crate::spatial_structs::CellId> =
-                    //     HashMap::new();
-                    // for (cellid, _) in &grid_for_level {
-                    //     let [minx, miny, _minz, _maxx, _maxy, _maxz] =
-                    //         grid_for_level.cell_bbox(&cellid);
-                    //     let mortoncode = crate::spatial_structs::interleave(
-                    //                     &(minx as u64),
-                    //                     &(miny as u64),
-                    //                 );
-                    //     grid_cells_in_morton.insert(mortoncode, cellid);
-                    // }
-                    let mut grid_cells_in_morton: Vec<(
-                        u64,
-                        crate::spatial_structs::CellId,
-                        f64,
-                        f64,
-                    )> = grid_for_level
-                        .into_iter()
-                        .map(|(cellid, _)| {
-                            let [minx, miny, _minz, _maxx, _maxy, _maxz] =
-                                grid_for_level.cell_bbox(&cellid);
-                            (
-                                // crate::spatial_structs::interleave(
-                                //     &(minx as u64),
-                                //     &(miny as u64),
-                                // ),
-                                crate::spatial_structs::interleave(
-                                    &(cellid.column as u64),
-                                    &(cellid.row as u64),
-                                ),
-                                cellid,
-                                minx,
-                                miny,
-                            )
-                        })
-                        .collect();
-                    grid_cells_in_morton.sort_by_key(|k| k.0);
+                    let mut mortoncodes: Vec<(u128, crate::spatial_structs::CellId)> =
+                        grid_for_level
+                            .into_iter()
+                            .map(|(cellid, _)| {
+                                (
+                                    morton_encode([cellid.row as u64, cellid.column as u64]),
+                                    cellid,
+                                )
+                            })
+                            .collect();
+                    mortoncodes.sort_by_key(|k| k.0);
 
-                    for (cellid, _) in &grid_for_level {
+                    let mut file_grid_morton =
+                        File::create(format!("grid_for_level_morton-{}-{}.tsv", &section, &level))
+                            .unwrap();
+                    for (i, (mc, cellid)) in mortoncodes.iter().enumerate() {
                         let [minx, miny, _minz, _maxx, _maxy, _maxz] =
                             grid_for_level.cell_bbox(&cellid);
-                        println!("[{},{}]", minx, miny);
+                        // Since the input for grid_cellsize is u16 and expected to be in the range
+                        //  of several (hundreds) of meters, we don't care about decimal precision.
+                        let corner_coord_string = format!("{:.0},{:.0}", minx, miny);
+                        grid_for_level_corner_coords.insert(corner_coord_string, (*cellid, i));
+                        let wkt = grid_for_level.cell_to_wkt(&cellid);
+                        writeln!(
+                            file_grid_morton,
+                            "{}\t{}\tPOINT({} {})",
+                            i, &cellid, minx, miny
+                        )
+                        .unwrap();
                     }
-                    for (cellid, _) in &grid_for_level {
-                        println!("[{},{}]", cellid.column, cellid.row);
-                    }
-
-                    for (mc, cellid, minx, miny) in &grid_cells_in_morton {
-                        let coords = crate::spatial_structs::deinterleave(mc);
-                        println!("{}\t{:?}\t[{},{}]\t{}", mc, coords, minx, miny, cellid);
-                    }
-                    for (mc, cellid, minx, miny) in &grid_cells_in_morton {
-                        let coords = crate::spatial_structs::deinterleave(mc);
-                        println!("{:?}", coords);
-                    }
-                    for (mc, cellid, minx, miny) in &grid_cells_in_morton {
-                        let coords = crate::spatial_structs::deinterleave(mc);
-                        println!("[{},{}]", minx, miny);
-                    }
-                    for (mc, cellid, minx, miny) in &grid_cells_in_morton {
-                        let coords = crate::spatial_structs::deinterleave(mc);
-                        println!("{}", cellid);
-                    }
-                    debug!("grid_cells_in_morton {:?}", grid_cells_in_morton);
-                    // for (i, mc) in mortoncodes.iter().enumerate() {
-                    //     assert_eq!(*mc, grid_cells_in_morton[i].0)
-                    // }
 
                     let nr_bytes = (nr_tiles_current_level as f32 / 8_f32).ceil() as u32;
                     let mut tile_availability_for_level = bv::bitvec![u8, bv::Msb0;];
                     tile_availability_for_level.resize((nr_bytes * 8) as usize, false);
                     let mut content_availability_for_level = bv::bitvec![u8, bv::Msb0;];
                     content_availability_for_level.resize((nr_bytes * 8) as usize, false);
-                    debug!(
-                        "tile_availability_for_level {}-{}: {:?}",
-                        &section, &level, &tile_availability_for_level
-                    );
+                    // debug!(
+                    //     "tile_availability_for_level {}-{}: {:?}",
+                    //     &section, &level, &tile_availability_for_level
+                    // );
 
                     // Check if the tile exists (== present in tileset)
                     let mut children_current_level: Vec<&Tile> = Vec::new();
+                    let mut children_cntr = 0;
                     for t in tiles_queue.iter() {
                         if let Some(ref ch) = t.children {
                             for c in ch {
@@ -572,9 +532,27 @@ pub mod cesium3dtiles {
                                 } else {
                                     debug!("found empty tile {}", tileid);
                                 }
+                                children_cntr += 1;
                             }
+                        } else {
+                            debug!("tile {} has no children", t.id);
                         }
                     }
+
+                    // println!(
+                    //     "tiles_queue length at {}-{} is {}",
+                    //     section,
+                    //     level,
+                    //     tiles_queue.len()
+                    // );
+                    //
+                    // println!(
+                    //     "children_current_level length at {}-{} is {}",
+                    //     section,
+                    //     level,
+                    //     children_current_level.len()
+                    // );
+                    // println!("but visited {} children", children_cntr);
 
                     while let Some(tile) = tiles_queue.pop_front() {
                         let tileid = &tile.id;
@@ -582,47 +560,45 @@ pub mod cesium3dtiles {
                         let tile_bbox = qtree.node(&qtree_nodeid).unwrap().bbox(grid);
                         let tile_minx = tile_bbox[0];
                         let tile_miny = tile_bbox[1];
-                        let tile_mortoncode = crate::spatial_structs::interleave(
-                            &(tile_minx as u64),
-                            &(tile_miny as u64),
-                        );
+                        let tile_corner_coord = format!("{:.0},{:.0}", tile_minx, tile_miny);
                         // Set the tile and content available
-                        if let Ok(tile_idx) = mortoncodes.binary_search(&tile_mortoncode) {
-                            debug!("index in mortoncodes {}", tile_idx);
-                            let (_, cellid, minx, miny) = grid_cells_in_morton[tile_idx];
-                            debug!("tile {} matched grid cell {}", tileid, cellid);
+                        if let Some((cellid_grid_level, i_z_curve)) =
+                            grid_for_level_corner_coords.get(&tile_corner_coord)
+                        {
+                            // debug!(
+                            //     "tile {} matched grid cell {}, z-curve idx {}",
+                            //     tileid, cellid_grid_level, i_z_curve
+                            // );
                             let mut tile_bit =
-                                tile_availability_for_level.get_mut(tile_idx).unwrap();
+                                tile_availability_for_level.get_mut(*i_z_curve).unwrap();
                             *tile_bit = true;
                             if tile.content.is_some() {
                                 let mut content_bit =
-                                    content_availability_for_level.get_mut(tile_idx).unwrap();
+                                    content_availability_for_level.get_mut(*i_z_curve).unwrap();
                                 *content_bit = true;
                             }
                         } else {
-                            error!(
-                                "tile {} morton-code should match one of the generated cells",
-                                tile.id
-                            );
+                            debug!("could not locate tile {} in grid_for_level", tileid);
                         }
                     }
                     tiles_queue.extend(children_current_level);
 
-                    // DEBUG
-                    debug!(
-                        "tile_availability_for_level {}-{}: {:?}",
-                        &section, &level, &tile_availability_for_level
-                    );
+                    // // DEBUG
+                    // debug!(
+                    //     "tile_availability_for_level {}-{}: {:?}",
+                    //     &section, &level, &tile_availability_for_level
+                    // );
                     let mut file_implicit_tileset_at_level =
                         File::create(format!("implicit-level-{}-{}.tsv", section, level)).unwrap();
-                    for (i, cellref) in grid_for_level.into_iter().enumerate() {
-                        let wkt = grid_for_level.cell_to_wkt(&cellref.0);
-                        let tile_available = tile_availability_for_level.get(i).unwrap();
-                        let content_available = content_availability_for_level.get(i).unwrap();
+                    for (cellid_grid_level, i_z_curve) in grid_for_level_corner_coords.values() {
+                        let wkt = grid_for_level.cell_to_wkt(cellid_grid_level);
+                        let tile_available = tile_availability_for_level.get(*i_z_curve).unwrap();
+                        let content_available =
+                            content_availability_for_level.get(*i_z_curve).unwrap();
                         writeln!(
                             file_implicit_tileset_at_level,
                             "{}\t{}\t{}\t{}",
-                            &cellref.0,
+                            cellid_grid_level,
                             tile_available.as_ref(),
                             content_available.as_ref(),
                             wkt

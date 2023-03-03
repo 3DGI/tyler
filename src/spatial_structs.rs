@@ -6,6 +6,8 @@ use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::prelude::*;
 
+use morton_encoding::{morton_decode, morton_encode};
+
 /// Quadtree
 ///
 /// We don't expect that the quadtree has more than 65535 levels (u16).
@@ -28,14 +30,17 @@ impl QuadTree {
         let nr_cells = grid.length.pow(2) as f64;
         let max_level = (nr_cells.ln() / 4.0_f64.ln()).ceil() as u16;
         debug!("Calculated maximum level for quadtree: {}", &max_level);
-        let mut mortoncodes: Vec<u64> = grid
+        let mut mortoncodes: Vec<u128> = grid
             .into_iter()
-            .map(|(cellid, _)| interleave(&(cellid.column as u64), &(cellid.row as u64)))
+            .map(|(cellid, _)| morton_encode([cellid.row as u64, cellid.column as u64]))
             .collect();
         mortoncodes.sort();
         let tiles_morton: Vec<QuadTree> = mortoncodes
             .iter()
-            .map(deinterleave)
+            .map(|mc| {
+                let coords: [u64; 2] = morton_decode(*mc);
+                coords
+            })
             .map(|[x, y]| {
                 let cellid = CellId {
                     row: y as usize,
@@ -599,7 +604,7 @@ pub struct CellId {
 
 impl Display for CellId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}-{}", &self.row, &self.column)
+        write!(f, "{}-{}", &self.column, &self.row)
     }
 }
 
