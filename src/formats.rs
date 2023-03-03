@@ -9,8 +9,10 @@ pub mod cesium3dtiles {
     use std::collections::VecDeque;
     use std::fmt::{Display, Formatter};
     use std::fs::File;
+    use std::io::Write;
     use std::path::Path;
 
+    use bitvec::prelude as bv;
     use log::{debug, error};
     use serde::{Serialize, Serializer};
     use serde_repr::Serialize_repr;
@@ -132,7 +134,6 @@ pub mod cesium3dtiles {
                         arg_maxz,
                     ));
                 }
-
                 Tile {
                     id: TileId::from(&quadtree.id),
                     bounding_volume,
@@ -403,6 +404,248 @@ pub mod cesium3dtiles {
         pub fn add_content(&mut self, levels_up: Option<u16>) {
             self.root.add_content_from_level(levels_up);
         }
+
+        /// The number of levels in the quadtree.
+        pub fn available_levels(&self) -> u16 {
+            self.root.max_level()
+        }
+
+        /// Convert to implicit tiling.
+        /// It modifies the tileset and deletes the explicit tiles.
+        /// Expects that explicit tiling is already created.
+        pub fn make_implicit(
+            &mut self,
+            grid: &crate::spatial_structs::SquareGrid,
+            qtree: &crate::spatial_structs::QuadTree,
+        ) {
+            let subtree_sections: usize = 2;
+            let subtree_levels =
+                (self.available_levels() as f32 / subtree_sections as f32).ceil() as u16;
+            let subtrees = Subtrees::default();
+            let implicittiling = ImplicitTiling {
+                subdivision_scheme: SubdivisionScheme::Quadtree,
+                subtree_levels,
+                available_levels: self.available_levels(),
+                subtrees,
+            };
+            self.root.implicit_tiling = Some(implicittiling);
+
+            // We want to have a sparse implicit tileset, which stores the availability
+            //  of each tile. We do not have a full quadtree, because of the node
+            //  capacity that is set.
+            // In order to create this sparse implicit tileset, we need to have a full
+            //  theoretical quadtree of the same height as the explicit quadtree
+            //  (tileset), and for each node in the theoretical tree, we need to mark
+            //  whether that node (tile) is indeed available and whether it has a
+            //  content in the explicit tileset.
+            let mut tiles_queue = VecDeque::new();
+            tiles_queue.push_back(&self.root);
+            let extent_side_length = grid.bbox[3] - grid.bbox[0];
+            let grid_buffer = None;
+            let mut level_cntr: u32 = 0;
+            for section in 0..subtree_sections {
+                let mut buffer_bytearray: Vec<u8> = Vec::new();
+                // let mut tile_availability_bitstream = bv::bitvec![u8, bv::Msb0;];
+                // let mut content_availability_bitstream = bv::bitvec![u8, bv::Msb0;];
+                for level in 0..subtree_levels as usize {
+                    let nr_tiles_current_level = 4_usize.pow(level_cntr);
+                    let nr_tiles_current_level_side = 2_usize.pow(level_cntr);
+                    level_cntr += 1;
+                    let tile_side_length = extent_side_length / nr_tiles_current_level_side as f64;
+                    let tile_side_length_u16 = tile_side_length as u16;
+
+                    debug!("creating grid_for_level {}-{}", &section, &level);
+                    let grid_for_level = crate::spatial_structs::SquareGrid::new(
+                        &grid.bbox,
+                        tile_side_length_u16,
+                        grid.epsg,
+                        grid_buffer,
+                    );
+
+                    // DEBUG
+                    let mut file_grid =
+                        File::create(format!("grid_for_level-{}-{}.tsv", &section, &level))
+                            .unwrap();
+                    for (cellid, _) in &grid_for_level {
+                        let wkt = grid_for_level.cell_to_wkt(&cellid);
+                        writeln!(file_grid, "{}\t{}", &cellid, wkt);
+                    }
+
+                    let mut mortoncodes: Vec<u64> = grid_for_level
+                        .into_iter()
+                        .map(|(cellid, _)| {
+                            let [minx, miny, _minz, _maxx, _maxy, _maxz] =
+                                grid_for_level.cell_bbox(&cellid);
+                            crate::spatial_structs::interleave(&(minx as u64), &(miny as u64))
+                        })
+                        .collect();
+                    mortoncodes.sort();
+                    // let mut grid_cells_in_morton: HashMap<u64, crate::spatial_structs::CellId> =
+                    //     HashMap::new();
+                    // for (cellid, _) in &grid_for_level {
+                    //     let [minx, miny, _minz, _maxx, _maxy, _maxz] =
+                    //         grid_for_level.cell_bbox(&cellid);
+                    //     let mortoncode = crate::spatial_structs::interleave(
+                    //                     &(minx as u64),
+                    //                     &(miny as u64),
+                    //                 );
+                    //     grid_cells_in_morton.insert(mortoncode, cellid);
+                    // }
+                    let mut grid_cells_in_morton: Vec<(
+                        u64,
+                        crate::spatial_structs::CellId,
+                        f64,
+                        f64,
+                    )> = grid_for_level
+                        .into_iter()
+                        .map(|(cellid, _)| {
+                            let [minx, miny, _minz, _maxx, _maxy, _maxz] =
+                                grid_for_level.cell_bbox(&cellid);
+                            (
+                                // crate::spatial_structs::interleave(
+                                //     &(minx as u64),
+                                //     &(miny as u64),
+                                // ),
+                                crate::spatial_structs::interleave(
+                                    &(cellid.column as u64),
+                                    &(cellid.row as u64),
+                                ),
+                                cellid,
+                                minx,
+                                miny,
+                            )
+                        })
+                        .collect();
+                    grid_cells_in_morton.sort_by_key(|k| k.0);
+
+                    for (cellid, _) in &grid_for_level {
+                        let [minx, miny, _minz, _maxx, _maxy, _maxz] =
+                            grid_for_level.cell_bbox(&cellid);
+                        println!("[{},{}]", minx, miny);
+                    }
+                    for (cellid, _) in &grid_for_level {
+                        println!("[{},{}]", cellid.column, cellid.row);
+                    }
+
+                    for (mc, cellid, minx, miny) in &grid_cells_in_morton {
+                        let coords = crate::spatial_structs::deinterleave(mc);
+                        println!("{}\t{:?}\t[{},{}]\t{}", mc, coords, minx, miny, cellid);
+                    }
+                    for (mc, cellid, minx, miny) in &grid_cells_in_morton {
+                        let coords = crate::spatial_structs::deinterleave(mc);
+                        println!("{:?}", coords);
+                    }
+                    for (mc, cellid, minx, miny) in &grid_cells_in_morton {
+                        let coords = crate::spatial_structs::deinterleave(mc);
+                        println!("[{},{}]", minx, miny);
+                    }
+                    for (mc, cellid, minx, miny) in &grid_cells_in_morton {
+                        let coords = crate::spatial_structs::deinterleave(mc);
+                        println!("{}", cellid);
+                    }
+                    debug!("grid_cells_in_morton {:?}", grid_cells_in_morton);
+                    // for (i, mc) in mortoncodes.iter().enumerate() {
+                    //     assert_eq!(*mc, grid_cells_in_morton[i].0)
+                    // }
+
+                    let nr_bytes = (nr_tiles_current_level as f32 / 8_f32).ceil() as u32;
+                    let mut tile_availability_for_level = bv::bitvec![u8, bv::Msb0;];
+                    tile_availability_for_level.resize((nr_bytes * 8) as usize, false);
+                    let mut content_availability_for_level = bv::bitvec![u8, bv::Msb0;];
+                    content_availability_for_level.resize((nr_bytes * 8) as usize, false);
+                    debug!(
+                        "tile_availability_for_level {}-{}: {:?}",
+                        &section, &level, &tile_availability_for_level
+                    );
+
+                    // Check if the tile exists (== present in tileset)
+                    let mut children_current_level: Vec<&Tile> = Vec::new();
+                    for t in tiles_queue.iter() {
+                        if let Some(ref ch) = t.children {
+                            for c in ch {
+                                let tileid = &c.id;
+                                let qtree_nodeid: crate::spatial_structs::QuadTreeNodeId =
+                                    tileid.into();
+                                let cell = qtree.node(&qtree_nodeid).unwrap();
+                                if cell.nr_items > 0 {
+                                    children_current_level.push(c)
+                                } else {
+                                    debug!("found empty tile {}", tileid);
+                                }
+                            }
+                        }
+                    }
+
+                    while let Some(tile) = tiles_queue.pop_front() {
+                        let tileid = &tile.id;
+                        let qtree_nodeid: crate::spatial_structs::QuadTreeNodeId = tileid.into();
+                        let tile_bbox = qtree.node(&qtree_nodeid).unwrap().bbox(grid);
+                        let tile_minx = tile_bbox[0];
+                        let tile_miny = tile_bbox[1];
+                        let tile_mortoncode = crate::spatial_structs::interleave(
+                            &(tile_minx as u64),
+                            &(tile_miny as u64),
+                        );
+                        // Set the tile and content available
+                        if let Ok(tile_idx) = mortoncodes.binary_search(&tile_mortoncode) {
+                            debug!("index in mortoncodes {}", tile_idx);
+                            let (_, cellid, minx, miny) = grid_cells_in_morton[tile_idx];
+                            debug!("tile {} matched grid cell {}", tileid, cellid);
+                            let mut tile_bit =
+                                tile_availability_for_level.get_mut(tile_idx).unwrap();
+                            *tile_bit = true;
+                            if tile.content.is_some() {
+                                let mut content_bit =
+                                    content_availability_for_level.get_mut(tile_idx).unwrap();
+                                *content_bit = true;
+                            }
+                        } else {
+                            error!(
+                                "tile {} morton-code should match one of the generated cells",
+                                tile.id
+                            );
+                        }
+                    }
+                    tiles_queue.extend(children_current_level);
+
+                    // DEBUG
+                    debug!(
+                        "tile_availability_for_level {}-{}: {:?}",
+                        &section, &level, &tile_availability_for_level
+                    );
+                    let mut file_implicit_tileset_at_level =
+                        File::create(format!("implicit-level-{}-{}.tsv", section, level)).unwrap();
+                    for (i, cellref) in grid_for_level.into_iter().enumerate() {
+                        let wkt = grid_for_level.cell_to_wkt(&cellref.0);
+                        let tile_available = tile_availability_for_level.get(i).unwrap();
+                        let content_available = content_availability_for_level.get(i).unwrap();
+                        writeln!(
+                            file_implicit_tileset_at_level,
+                            "{}\t{}\t{}\t{}",
+                            &cellref.0,
+                            tile_available.as_ref(),
+                            content_available.as_ref(),
+                            wkt
+                        )
+                        .unwrap();
+                    }
+                }
+                // write subtree file
+                let buffer = Buffer {
+                    name: None,
+                    byte_length: buffer_bytearray.len(),
+                };
+                let subtree = Subtree {
+                    buffers: Some(vec![buffer]),
+                    buffer_views: None,
+                    tile_availability: Default::default(),
+                    content_availability: None,
+                    child_subtree_availability: Default::default(),
+                };
+            }
+
+            self.root.children = None;
+        }
     }
 
     /// [Asset](https://github.com/CesiumGS/3d-tiles/tree/main/specification#asset).
@@ -502,6 +745,7 @@ pub mod cesium3dtiles {
         ) {
             if self.id.level < *limit_upwards {
                 if let Some(ref children) = self.children {
+                    debug!("nr of children {}", children.len());
                     for child in children {
                         child.flatten_recurse(nodes, limit_upwards);
                     }
@@ -509,6 +753,7 @@ pub mod cesium3dtiles {
             } else {
                 nodes.push(self);
                 if let Some(ref children) = self.children {
+                    debug!("nr of children {}", children.len());
                     for child in children {
                         child.flatten_recurse(nodes, limit_upwards);
                     }
@@ -581,17 +826,11 @@ pub mod cesium3dtiles {
         }
     }
 
-    #[derive(Clone, Debug, Eq, PartialEq)]
+    #[derive(Clone, Debug, Default, Eq, PartialEq)]
     pub struct TileId {
         x: usize,
         y: usize,
         level: u16,
-    }
-
-    impl Default for TileId {
-        fn default() -> Self {
-            Self { x: 0, y: 0, level: 0 }
-        }
     }
 
     impl TileId {
@@ -789,8 +1028,8 @@ pub mod cesium3dtiles {
     #[serde(rename_all = "camelCase")]
     struct ImplicitTiling {
         subdivision_scheme: SubdivisionScheme,
-        subtree_levels: u8,
-        available_levels: u8,
+        subtree_levels: u16,
+        available_levels: u16,
         subtrees: Subtrees,
     }
 
@@ -815,7 +1054,7 @@ pub mod cesium3dtiles {
     impl Default for Subtrees {
         fn default() -> Self {
             Self {
-                uri: String::from("subtrees/{level}/{x}/{y}.json"),
+                uri: String::from("subtrees/{level}/{x}/{y}.subtree"),
             }
         }
     }
@@ -882,9 +1121,51 @@ pub mod cesium3dtiles {
     mod tests {
         use super::*;
         use serde_json::to_string_pretty;
+        use std::path::PathBuf;
+
+        fn test_data_dir() -> PathBuf {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("resources")
+                .join("data")
+        }
 
         #[test]
         fn test_implicittiling() {
+            // 85162.9 447106.8 85562.9 447706.8
+            // let bbox: crate::spatial_structs::Bbox =
+            //     [85162.9, 447106.8, -10.7, 85962.9, 447906.8, 320.5];
+            // let grid = crate::spatial_structs::SquareGrid::new(&bbox, 200, 7415, Some(10.0));
+
+            let mut world = crate::parser::World::new(
+                test_data_dir()
+                    .join("features_3dbag_5909")
+                    .join("metadata.city.json"),
+                test_data_dir()
+                    .join("features_3dbag_5909")
+                    .join("3dbag_v21031_7425c21b_5909_subset"),
+                200,
+                Some(vec![
+                    crate::parser::CityObjectType::Building,
+                    crate::parser::CityObjectType::BuildingPart,
+                ]),
+                None,
+                None,
+            )
+            .unwrap();
+            world.index_with_grid();
+
+            world.export_grid();
+
+            let quadtree = crate::spatial_structs::QuadTree::from_world(
+                &world,
+                crate::spatial_structs::QuadTreeCapacity::Vertices(15000),
+            );
+            quadtree.export(&world.grid).unwrap();
+
+            let mut tileset = Tileset::from_quadtree(&quadtree, &world, None, None);
+
+            tileset.make_implicit(&world.grid, &quadtree);
+
             let mut i = ImplicitTiling::default();
             println!("{}", serde_json::to_string(&i).unwrap());
         }
@@ -892,8 +1173,7 @@ pub mod cesium3dtiles {
         #[test]
         fn test_availability() {
             let a = AvailabilityConstant::Available;
-            println!("{:?}", &a);
-            println!("{}", serde_json::to_string(&a).unwrap());
+            assert_eq!("1", serde_json::to_string(&a).unwrap());
         }
 
         #[test]

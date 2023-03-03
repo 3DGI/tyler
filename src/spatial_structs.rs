@@ -91,9 +91,13 @@ impl QuadTree {
                     cells.push(*c)
                 }
             }
+            let id = QuadTreeNodeId::new(tiles[0].id.x, tiles[0].id.y, level);
+            let id_string = id.to_string();
+            // FIXME: this also adds the quadtree if sum_items == 0 so the parent will have 4
+            //  children instead of 3. Probably should return Option<Quadtree>
             if sum_items <= limit {
                 QuadTree {
-                    id: QuadTreeNodeId::new(tiles[0].id.x, tiles[0].id.y, level),
+                    id,
                     side_length: tiles[0].side_length * 2,
                     children: vec![],
                     cells,
@@ -102,13 +106,13 @@ impl QuadTree {
             } else {
                 if tiles.len() % 4 != 0 {
                     error!(
-                        "number of children is not divisable by 4: {}, in level {}",
+                        "number of children is not dividable by 4: {}, in level {}",
                         tiles.len(),
                         &level
                     );
                 }
                 QuadTree {
-                    id: QuadTreeNodeId::new(tiles[0].id.x, tiles[0].id.y, level),
+                    id,
                     side_length: tiles[0].side_length * 2,
                     children: tiles.clone(),
                     cells: vec![],
@@ -181,6 +185,41 @@ impl QuadTree {
             }
         }
         cellids
+    }
+
+    /// The WKT of the 2D boundary of the current node.
+    pub fn to_wkt(&self, grid: &SquareGrid) -> String {
+        let [minx, miny, _minz, maxx, maxy, _maxz] = self.bbox(grid);
+        format!(
+            "POLYGON(({minx} {miny}, {maxx} {miny}, {maxx} {maxy}, {minx} {maxy}, {minx} {miny}))",
+            minx = minx,
+            miny = miny,
+            maxx = maxx,
+            maxy = maxy
+        )
+    }
+
+    pub fn export(&self, grid: &SquareGrid) -> std::io::Result<()> {
+        let mut file_grid = File::create("quadtree.tsv")?;
+        let mut q = VecDeque::new();
+        q.push_back(self);
+
+        while let Some(node) = q.pop_front() {
+            let wkt = node.to_wkt(grid);
+            file_grid
+                .write_all(
+                    format!(
+                        "{}\t{}\t{}\t{}\n",
+                        node.id, node.id.level, node.nr_items, wkt
+                    )
+                    .as_bytes(),
+                )
+                .expect("cannot write quadtree node");
+            for child in &node.children {
+                q.push_back(child);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -452,7 +491,7 @@ impl SquareGrid {
         Ok(())
     }
 
-    fn cell_to_wkt(&self, cellid: &CellId) -> String {
+    pub fn cell_to_wkt(&self, cellid: &CellId) -> String {
         let minx = self.origin[0] + (cellid.column * self.cellsize as usize) as f64;
         let miny = self.origin[1] + (cellid.row * self.cellsize as usize) as f64;
         format!(
@@ -645,6 +684,7 @@ impl BboxQc {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use morton_encoding::morton_encode;
 
     #[test]
     fn test_create_grid() {
@@ -665,6 +705,122 @@ mod tests {
                 column: 2_usize,
             }
         );
+    }
+
+    #[test]
+    fn test_morton_encode_rd() {
+        let coords = vec![
+            [84362.9, 446306.814],
+            [84362.9, 446706.814],
+            [84362.9, 447106.814],
+            [84362.9, 447506.814],
+            [84762.9, 446306.814],
+            [84762.9, 446706.814],
+            [84762.9, 447106.814],
+            [84762.9, 447506.814],
+            [85162.9, 446306.814],
+            [85162.9, 446706.814],
+            [85162.9, 447106.814],
+            [85162.9, 447506.814],
+            [85562.9, 446306.814],
+            [85562.9, 446706.814],
+            [85562.9, 447106.814],
+            [85562.9, 447506.814],
+        ];
+        let row_col = vec![
+            [0, 0],
+            [0, 1],
+            [0, 2],
+            [0, 3],
+            [1, 0],
+            [1, 1],
+            [1, 2],
+            [1, 3],
+            [2, 0],
+            [2, 1],
+            [2, 2],
+            [2, 3],
+            [3, 0],
+            [3, 1],
+            [3, 2],
+            [3, 3],
+        ];
+        let grid = coords.iter().zip(row_col.iter());
+
+        let mut morton: Vec<(u128, CellId)> = grid
+            .map(|(coord, idx)| {
+                let x: f64 = coord[0];
+                let y: f64 = coord[1];
+                let xu64 = x.floor() as u64;
+                let yu64 = y.floor() as u64;
+                let mc = morton_encode([xu64, yu64]);
+                (
+                    // interleave(&xu64, &yu64),
+                    mc,
+                    CellId {
+                        row: idx[0],
+                        column: idx[1],
+                    },
+                )
+            })
+            .collect();
+        morton.sort_by_key(|k| k.0);
+
+        let res_col_row_morton = [
+            [0, 0],
+            [1, 0],
+            [0, 1],
+            [1, 1],
+            [2, 0],
+            [3, 0],
+            [2, 1],
+            [3, 1],
+            [0, 2],
+            [1, 2],
+            [0, 3],
+            [1, 3],
+            [2, 2],
+            [3, 2],
+            [2, 3],
+            [3, 3],
+        ];
+        let res_coords_morton = [
+            [84362.9, 446306.814],
+            [84762.9, 446306.814],
+            [84362.9, 446706.814],
+            [84762.9, 446706.814],
+            [85162.9, 446306.814],
+            [85562.9, 446306.814],
+            [85162.9, 446706.814],
+            [85562.9, 446706.814],
+            [84362.9, 447106.814],
+            [84762.9, 447106.814],
+            [84362.9, 447506.814],
+            [84762.9, 447506.814],
+            [85162.9, 447106.814],
+            [85562.9, 447106.814],
+            [85162.9, 447506.814],
+            [85562.9, 447506.814],
+        ];
+
+        for (i, (mc, cellid)) in morton.iter().enumerate() {
+            let res_cellid = CellId {
+                column: res_col_row_morton[i][0],
+                row: res_col_row_morton[i][1],
+            };
+            println!(
+                "correct: {} computed: {} morton: {}",
+                res_cellid, cellid, mc
+            );
+        }
+
+        for (i, (mc, cellid)) in morton.iter().enumerate() {
+            let res_cellid = CellId {
+                column: res_col_row_morton[i][0],
+                row: res_col_row_morton[i][1],
+            };
+            assert_eq!(*cellid, res_cellid);
+        }
     }
 
     #[test]

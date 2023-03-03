@@ -13,6 +13,10 @@ readme = "README.md"
 name = "tyler"
 path = "src/main.rs"
 
+[[bin]]
+name = "test"
+path = "src/test.rs"
+
 [dependencies]
 log = "0.4.17"
 env_logger = "0.10.0"
@@ -28,3 +32,5 @@ proj-sys = { version = "0.23.1" , features = ["network"]}
 num-traits = "0.2.14"
 libc = "0.2.119"
 thiserror = "1.0.30"
+bitvec = "1.0.1"
+morton-encoding = "2.0.1"

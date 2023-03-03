@@ -128,6 +128,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Building quadtree");
     let quadtree = spatial_structs::QuadTree::from_world(&world, quadtree_capacity);
 
+    // Debug
+    if cli.grid_export {
+        debug!("Exporting the quadtree to the working directory");
+        quadtree.export(&world.grid)?;
+    }
+
     // let tiles: Vec<&formats::cesium3dtiles::Tile> = Vec::new();
     // if cli.format == Formats::_3DTiles {
     //     // 3D Tiles
@@ -156,6 +162,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tileset.add_content(cli.qtree_export_levels);
     let tiles = tileset.flatten(cli.qtree_export_levels);
     tileset.to_file(tileset_path)?;
+
+    tileset.make_implicit(&world.grid, &quadtree);
+
+    return Ok(());
 
     // Export by calling a subprocess to merge the .jsonl files and convert them to the
     // target format
