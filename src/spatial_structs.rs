@@ -30,6 +30,9 @@ impl QuadTree {
         let nr_cells = grid.length.pow(2) as f64;
         let max_level = (nr_cells.ln() / 4.0_f64.ln()).ceil() as u16;
         debug!("Calculated maximum level for quadtree: {}", &max_level);
+        // Somehow, the morton_encoding::morton_encode needs [y,x] for creating a Z-curve.
+        //  If [x,y] is used, it creates an N-curve.
+        //  crate::spatial_structs::interleave(x,y) creates a Z-curve.
         let mut mortoncodes: Vec<u128> = grid
             .into_iter()
             .map(|(cellid, _)| morton_encode([cellid.row as u64, cellid.column as u64]))
