@@ -8,57 +8,57 @@
     "GF_PROCESS_OFFSET_X": [
       "offset in X coordinate",
       "float",
-      3916129.75
+      76190.0
     ],
     "GF_PROCESS_OFFSET_Y": [
       "offset in Y coordinate",
       "float",
-      294954.625
+      453857.75
     ],
     "GF_PROCESS_OFFSET_Z": [
       "offset in Z coordinate",
       "float",
-      5008821.0
+      -15.0
     ],
     "attribute_spec": [
       "Attribute names and types to output. Format: <attribute_name>:<attribute_type>,... eg: name1:string,name2:int,name3:float,name",
       "str",
-      "objectid:int,bagpandid:string,bouwjaar:int"
+      "objectid:int,bronhouder:string,bgt_fysiekvoorkomen:string"
     ],
     "cotypes": [
       "comma separated list of cityobject types. Leave empty for no filter.",
       "str",
-      ""
-    ],
-    "metadata_class": [
-      "The name of the metadata class to create (for EXT_structural_metadata).",
-      "str",
-      "building"
+      "LandUse,PlantCover,WaterBody,Road,GenericCityObject,Bridge"
     ],
     "max_x": [
       "",
       "float",
-      81965.5625
+      76690.0
     ],
     "max_y": [
       "",
       "float",
-      456979.90625
+      454357.75
     ],
     "max_z": [
       "",
       "float",
       310.0
     ],
+    "metadata_class": [
+      "The name of the metadata class to create (for EXT_structural_metadata).",
+      "str",
+      "terrain"
+    ],
     "min_x": [
       "",
       "float",
-      80965.5625
+      76190.0
     ],
     "min_y": [
       "",
       "float",
-      455979.90625
+      453857.75
     ],
     "min_z": [
       "",
@@ -68,17 +68,17 @@
     "output_file": [
       "output (glb) file",
       "str",
-      "/dev/shm/3dtiles/tiles/4/2/0.glb"
+      "/dev/shm/3dtiles-terrain/tiles/6/28/23.glb"
     ],
     "output_format": [
       "glb or city.json",
       "str",
-      "glb"
+      "3dtiles"
     ],
     "path_features_input_file": [
       "text file with on each line an input CityJSON feature path",
       "str",
-      "/dev/shm/3dtiles/inputs/4/2/0.input"
+      "/dev/shm/3dtiles-terrain/inputs/6/28/23.input"
     ],
     "path_metadata": [
       "CityJSON features metadata file",
@@ -156,6 +156,7 @@
     },
     "GLTFWriter": {
       "marked_inputs": {
+        "attributes": false,
         "feature_type": false,
         "normals": false,
         "triangles": false
@@ -166,10 +167,10 @@
         "embed_buffers": true,
         "embed_images": true,
         "filepath": "{{output_file}}",
+        "metadata_class": "{{metadata_class}}",
         "pretty_print": false,
-        "relative_to_center": false,
-        "feature_id": "",
-        "metadata_class": "{{metadata_class}}"
+        "quantizeVertex": true,
+        "relative_to_center": true
       },
       "position": [
         1010.0,
@@ -182,6 +183,7 @@
     },
     "GLTFWriter-gltf": {
       "marked_inputs": {
+        "attributes": false,
         "feature_type": false,
         "normals": false,
         "triangles": false
@@ -192,14 +194,14 @@
         "embed_buffers": false,
         "embed_images": false,
         "filepath": "{{output_file}}.gltf",
+        "metadata_class": "{{metadata_class}}",
         "pretty_print": true,
-        "relative_to_center": false,
-        "feature_id": "",
-        "metadata_class": "{{metadata_class}}"
+        "quantizeVertex": true,
+        "relative_to_center": true
       },
       "position": [
-        1010.0,
-        210.0
+        908.0,
+        194.0
       ],
       "type": [
         "CoreIO",
@@ -208,25 +210,25 @@
     },
     "processFeatures": {
       "connections": {
-        "CityJSONL2Mesh.feature_type": [
-          [
-            "GLTFWriter",
-            "feature_type"
-          ]
-        ],
         "CityJSONL2Mesh.attributes": [
           [
             "GLTFWriter",
             "attributes"
           ]
         ],
-        "Mesh2TriangleCollection.normals": [
+        "CityJSONL2Mesh.feature_type": [
+          [
+            "GLTFWriter",
+            "feature_type"
+          ]
+        ],
+        "MeshClipper.normals": [
           [
             "GLTFWriter",
             "normals"
           ]
         ],
-        "Mesh2TriangleCollection.triangles": [
+        "MeshClipper.triangles": [
           [
             "GLTFWriter",
             "triangles"
@@ -240,12 +242,13 @@
       "marked_outputs": {
         "CityJSONL2Mesh.attributes": false,
         "CityJSONL2Mesh.feature_type": false,
-        "Mesh2TriangleCollection.normals": false,
-        "Mesh2TriangleCollection.triangles": false,
+        "MeshClipper.normals": false,
+        "MeshClipper.triangles": false,
         "processFeatures.timings": false
       },
       "parameters": {
         "filepath": "process_feature.json",
+        "push_any_for_empty_sfterminal": false,
         "require_input_globals": true,
         "require_input_wait": true
       },

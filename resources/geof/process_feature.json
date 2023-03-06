@@ -80,8 +80,8 @@
         "min_z": "{{min_z}}"
       },
       "position": [
-        569.0,
-        40.0
+        636.0,
+        258.0
       ],
       "type": [
         "Core",
@@ -144,7 +144,7 @@
       "connections": {
         "meshes": [
           [
-            "MeshClipper",
+            "Mesh2SurfaceMesh",
             "mesh"
           ]
         ]
@@ -165,10 +165,10 @@
         "cotypes": "{{cotypes}}",
         "lod_filter": {
           "Building": "1",
-          "LandUse": "1",
-          "PlantCover": "1",
-          "Road": "1",
-          "WaterBody": "1"
+          "LandUse": "1.2",
+          "PlantCover": "1.2",
+          "Road": "1.2",
+          "WaterBody": "1.2"
         },
         "optimal_lod": false,
         "optimal_lod_value": "2.2"
@@ -182,24 +182,7 @@
         "CityJSONL2Mesh"
       ]
     },
-    "Mesh2TriangleCollection": {
-      "marked_inputs": {
-        "cgal_surface_mesh": false
-      },
-      "marked_outputs": {
-        "normals": true,
-        "triangles": true
-      },
-      "position": [
-        868.0,
-        239.0
-      ],
-      "type": [
-        "building-reconstruction",
-        "Mesh2TriangleCollection"
-      ]
-    },
-    "MeshClipper": {
+    "Mesh2SurfaceMesh": {
       "connections": {
         "cgal_surface_mesh": [
           [
@@ -209,18 +192,37 @@
         ]
       },
       "marked_inputs": {
-        "bbox": false,
         "mesh": false
       },
       "marked_outputs": {
         "cgal_surface_mesh": false
       },
+      "position": [
+        828.0,
+        146.0
+      ],
+      "type": [
+        "building-reconstruction",
+        "Mesh2CGALSurfaceMesh"
+      ]
+    },
+    "MeshClipper": {
+      "marked_inputs": {
+        "bbox": false,
+        "mesh": false
+      },
+      "marked_outputs": {
+        "cgal_surface_mesh": false,
+        "normals": true,
+        "triangles": true
+      },
       "parameters": {
+        "cgal_clip": false,
         "skip_clip": "{{skip_clip}}"
       },
       "position": [
-        819.0,
-        122.0
+        896.0,
+        231.0
       ],
       "type": [
         "building-reconstruction",
@@ -231,8 +233,8 @@
       "connections": {
         "cgal_surface_mesh": [
           [
-            "Mesh2TriangleCollection",
-            "cgal_surface_mesh"
+            "MeshClipper",
+            "mesh"
           ]
         ]
       },
@@ -246,8 +248,8 @@
         "stop_ratio": "{{simplify_ratio}}"
       },
       "position": [
-        841.0,
-        186.0
+        870.0,
+        185.0
       ],
       "type": [
         "building-reconstruction",
