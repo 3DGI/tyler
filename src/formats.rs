@@ -446,8 +446,8 @@ pub mod cesium3dtiles {
             let mut level_cntr: u32 = 0;
             for section in 0..subtree_sections {
                 let mut buffer_bytearray: Vec<u8> = Vec::new();
-                // let mut tile_availability_bitstream = bv::bitvec![u8, bv::Msb0;];
-                // let mut content_availability_bitstream = bv::bitvec![u8, bv::Msb0;];
+                let mut tile_availability_bitstream = bv::bitvec![u8, bv::Msb0;];
+                let mut content_availability_bitstream = bv::bitvec![u8, bv::Msb0;];
                 for level in 0..subtree_levels as usize {
                     // Grid for the current level
                     let nr_tiles_current_level = 4_usize.pow(level_cntr);
@@ -507,11 +507,11 @@ pub mod cesium3dtiles {
                         .unwrap();
                     }
 
-                    let nr_bytes = (nr_tiles_current_level as f32 / 8_f32).ceil() as u32;
+                    // let nr_bytes = (nr_tiles_current_level as f32 / 8_f32).ceil() as u32;
                     let mut tile_availability_for_level = bv::bitvec![u8, bv::Msb0;];
-                    tile_availability_for_level.resize((nr_bytes * 8) as usize, false);
+                    tile_availability_for_level.resize(nr_tiles_current_level, false);
                     let mut content_availability_for_level = bv::bitvec![u8, bv::Msb0;];
-                    content_availability_for_level.resize((nr_bytes * 8) as usize, false);
+                    content_availability_for_level.resize(nr_tiles_current_level, false);
 
                     // debug!(
                     //     "tile_availability_for_level {}-{}: {:?}",
@@ -570,13 +570,9 @@ pub mod cesium3dtiles {
                             //     "tile {} matched grid cell {}, z-curve idx {}",
                             //     tileid, cellid_grid_level, i_z_curve
                             // );
-                            let mut tile_bit =
-                                tile_availability_for_level.get_mut(*i_z_curve).unwrap();
-                            *tile_bit = true;
+                            tile_availability_for_level.set(*i_z_curve, true);
                             if tile.content.is_some() {
-                                let mut content_bit =
-                                    content_availability_for_level.get_mut(*i_z_curve).unwrap();
-                                *content_bit = true;
+                                content_availability_for_level.set(*i_z_curve, true);
                             }
                         } else {
                             debug!("could not locate tile {} in grid_for_level", tileid);
@@ -589,36 +585,48 @@ pub mod cesium3dtiles {
                     //     "tile_availability_for_level {}-{}: {:?}",
                     //     &section, &level, &tile_availability_for_level
                     // );
-                    let mut file_implicit_tileset_at_level =
-                        File::create(format!("implicit-level-{}-{}.tsv", section, level)).unwrap();
-                    for (cellid_grid_level, i_z_curve) in grid_for_level_corner_coords.values() {
-                        let wkt = grid_for_level.cell_to_wkt(cellid_grid_level);
-                        let tile_available = tile_availability_for_level.get(*i_z_curve).unwrap();
-                        let content_available =
-                            content_availability_for_level.get(*i_z_curve).unwrap();
-                        writeln!(
-                            file_implicit_tileset_at_level,
-                            "{}\t{}\t{}\t{}",
-                            cellid_grid_level,
-                            tile_available.as_ref(),
-                            content_available.as_ref(),
-                            wkt
-                        )
-                        .unwrap();
-                    }
+                    // let mut file_implicit_tileset_at_level =
+                    //     File::create(format!("implicit-level-{}-{}.tsv", section, level)).unwrap();
+                    // for (cellid_grid_level, i_z_curve) in grid_for_level_corner_coords.values() {
+                    //     let wkt = grid_for_level.cell_to_wkt(cellid_grid_level);
+                    //     let tile_available = tile_availability_for_level.get(*i_z_curve).unwrap();
+                    //     let content_available =
+                    //         content_availability_for_level.get(*i_z_curve).unwrap();
+                    //     writeln!(
+                    //         file_implicit_tileset_at_level,
+                    //         "{}\t{}\t{}\t{}",
+                    //         cellid_grid_level,
+                    //         tile_available.as_ref(),
+                    //         content_available.as_ref(),
+                    //         wkt
+                    //     )
+                    //     .unwrap();
+                    // }
+                    tile_availability_for_level.set_uninitialized(false);
+                    content_availability_for_level.set_uninitialized(false);
+                    tile_availability_bitstream.extend_from_bitslice(&tile_availability_for_level);
+                    content_availability_bitstream
+                        .extend_from_bitslice(&content_availability_for_level);
                     level_cntr += 1;
                 }
 
-                // Get child-subtree tile availability
+                // Init child-subtree tile availability
                 let nr_tiles_child_level = 4_usize.pow(level_cntr);
                 let nr_tiles_child_level_side = 2_usize.pow(level_cntr);
                 let tile_side_length_child = extent_side_length / nr_tiles_child_level_side as f64;
                 let tile_side_length_u16_child = tile_side_length_child as u16;
 
-                let nr_bytes = (nr_tiles_child_level as f32 / 8_f32).ceil() as u32;
+                let nr_bytes_child_subtree = (nr_tiles_child_level as f64 / 8_f64).ceil() as usize;
                 let mut child_subtree_availability_for_section = bv::bitvec![u8, bv::Msb0;];
-                child_subtree_availability_for_section.resize((nr_bytes * 8) as usize, false);
+                child_subtree_availability_for_section.resize(nr_tiles_child_level, false);
 
+                // Bufferviews
+                let mut bufferviews: Vec<BufferView> = Vec::with_capacity(3);
+                let bf_tile_availability = 0;
+                let bf_content_availability = 1;
+                let bf_child_subtree_availability = 2;
+
+                // Fill child-subtree availability
                 let grid_for_child_subtree = crate::spatial_structs::SquareGrid::new(
                     &grid.bbox,
                     tile_side_length_u16_child,
@@ -669,32 +677,101 @@ pub mod cesium3dtiles {
                     if let Some((cellid_grid_level, i_z_curve)) =
                         grid_for_child_subtree_corner_coords.get(&tile_corner_coord)
                     {
-                        let mut tile_bit = child_subtree_availability_for_section
-                            .get_mut(*i_z_curve)
-                            .unwrap();
-                        *tile_bit = true;
+                        child_subtree_availability_for_section.set(*i_z_curve, true);
                     } else {
                         debug!("could not locate tile {} in grid_for_child_subtree", tileid);
                     }
                 }
-
-                let mut file_child_subtree =
-                    File::create(format!("child-subtree-{}.tsv", section)).unwrap();
-                for (cellid_grid_level, i_z_curve) in grid_for_child_subtree_corner_coords.values()
-                {
-                    let wkt = grid_for_child_subtree.cell_to_wkt(cellid_grid_level);
-                    let tile_available = child_subtree_availability_for_section
-                        .get(*i_z_curve)
-                        .unwrap();
-                    writeln!(
-                        file_child_subtree,
-                        "{}\t{}\t{}",
-                        cellid_grid_level,
-                        tile_available.as_ref(),
-                        wkt
-                    )
-                    .unwrap();
+                let mut child_subtree_availability = Availability::default();
+                if child_subtree_availability_for_section.not_any() {
+                    child_subtree_availability = Availability {
+                        bitstream: None,
+                        available_count: None,
+                        constant: Some(AvailabilityConstant::Unavailable),
+                    };
+                } else if child_subtree_availability_for_section.all() {
+                    child_subtree_availability = Availability {
+                        bitstream: None,
+                        available_count: None,
+                        constant: Some(AvailabilityConstant::Available),
+                    };
+                } else {
+                    child_subtree_availability = Availability {
+                        bitstream: Some(bf_child_subtree_availability),
+                        available_count: Some(child_subtree_availability_for_section.count_ones()),
+                        constant: None,
+                    };
                 }
+                child_subtree_availability_for_section.set_uninitialized(false);
+
+                let mut tile_availability = Availability::default();
+                if tile_availability_bitstream.not_any() {
+                    tile_availability = Availability {
+                        bitstream: None,
+                        available_count: None,
+                        constant: Some(AvailabilityConstant::Unavailable),
+                    };
+                } else if tile_availability_bitstream.all() {
+                    tile_availability = Availability {
+                        bitstream: None,
+                        available_count: None,
+                        constant: Some(AvailabilityConstant::Available),
+                    };
+                } else {
+                    tile_availability = Availability {
+                        bitstream: Some(bf_tile_availability),
+                        available_count: Some(tile_availability_bitstream.count_ones()),
+                        constant: None,
+                    };
+                }
+
+                // Since we have a single content per tile, the contentAvailabilty array always has
+                //  1 item.
+                let mut content_availability: Option<Vec<Availability>> = None;
+                if content_availability_bitstream.not_any() {
+                    content_availability = None;
+                } else if content_availability_bitstream.all() {
+                    content_availability = Some(vec![Availability {
+                        bitstream: None,
+                        available_count: None,
+                        constant: Some(AvailabilityConstant::Available),
+                    }]);
+                } else {
+                    content_availability = Some(vec![Availability {
+                        bitstream: Some(bf_content_availability),
+                        available_count: Some(content_availability_bitstream.count_ones()),
+                        constant: None,
+                    }]);
+                }
+
+                // Push bufferViews
+                let tile_availability_bytearray = tile_availability_bitstream.into_vec();
+                bufferviews.push(BufferView {
+                    buffer: 0,
+                    byte_offset: 0,
+                    byte_length: tile_availability_bytearray.len(),
+                    name: None,
+                });
+                buffer_bytearray.extend(tile_availability_bytearray);
+
+                let content_availability_bytearray = content_availability_bitstream.into_vec();
+                bufferviews.push(BufferView {
+                    buffer: 0,
+                    byte_offset: buffer_bytearray.len(),
+                    byte_length: content_availability_bytearray.len(),
+                    name: None,
+                });
+                buffer_bytearray.extend(content_availability_bytearray);
+
+                let child_subtree_availability_bytearray =
+                    child_subtree_availability_for_section.into_vec();
+                bufferviews.push(BufferView {
+                    buffer: 0,
+                    byte_offset: buffer_bytearray.len(),
+                    byte_length: child_subtree_availability_bytearray.len(),
+                    name: None,
+                });
+                buffer_bytearray.extend(child_subtree_availability_bytearray);
 
                 // write subtree file
                 let buffer = Buffer {
@@ -703,11 +780,30 @@ pub mod cesium3dtiles {
                 };
                 let subtree = Subtree {
                     buffers: Some(vec![buffer]),
-                    buffer_views: None,
-                    tile_availability: Default::default(),
-                    content_availability: None,
-                    child_subtree_availability: Default::default(),
+                    buffer_views: Some(bufferviews),
+                    tile_availability,
+                    content_availability,
+                    child_subtree_availability,
                 };
+
+                // // DEBUG
+                // let mut file_child_subtree =
+                //     File::create(format!("child-subtree-{}.tsv", section)).unwrap();
+                // for (cellid_grid_level, i_z_curve) in grid_for_child_subtree_corner_coords.values()
+                // {
+                //     let wkt = grid_for_child_subtree.cell_to_wkt(cellid_grid_level);
+                //     let tile_available = child_subtree_availability_for_section
+                //         .get(*i_z_curve)
+                //         .unwrap();
+                //     writeln!(
+                //         file_child_subtree,
+                //         "{}\t{}\t{}",
+                //         cellid_grid_level,
+                //         tile_available.as_ref(),
+                //         wkt
+                //     )
+                //     .unwrap();
+                // }
             }
 
             self.root.children = None;
@@ -1165,15 +1261,16 @@ pub mod cesium3dtiles {
     #[derive(Serialize, Debug, Default)]
     #[serde(rename_all = "camelCase")]
     struct Availability {
+        /// An integer index that identifies the buffer view containing the availability bitstream.
         #[serde(skip_serializing_if = "Option::is_none")]
-        bitstream: Option<u8>,
+        bitstream: Option<usize>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        available_count: Option<u16>,
+        available_count: Option<usize>,
         #[serde(skip_serializing_if = "Option::is_none")]
         constant: Option<AvailabilityConstant>,
     }
 
-    /// Integer indicating whether all of the elements are available (1) or all are unavailable (0).
+    /// Integer indicating whether all of the elements are Available (1) or all are Unavailable (0).
     #[allow(dead_code)]
     #[derive(Debug, Default, Serialize_repr)]
     #[repr(u8)]
