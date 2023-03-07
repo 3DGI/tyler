@@ -439,15 +439,29 @@ pub mod cesium3dtiles {
             //  (tileset), and for each node in the theoretical tree, we need to mark
             //  whether that node (tile) is indeed available and whether it has a
             //  content in the explicit tileset.
+            let mut level_cntr: u32 = 0;
+            let mut level_subtree_root: u32 = 0;
             let mut tiles_queue = VecDeque::new();
             tiles_queue.push_back(&self.root);
+            let mut subtree_queue = VecDeque::new();
+            let rootid = &self.root.id;
+            let cellid: crate::spatial_structs::CellId = rootid.into();
+            subtree_queue.push_back((level_subtree_root, cellid, &self.root));
             let extent_side_length = grid.bbox[3] - grid.bbox[0];
             let grid_buffer = None;
-            let mut level_cntr: u32 = 0;
+
             for section in 0..subtree_sections {
-                let mut buffer_bytearray: Vec<u8> = Vec::new();
-                let mut tile_availability_bitstream = bv::bitvec![u8, bv::Msb0;];
-                let mut content_availability_bitstream = bv::bitvec![u8, bv::Msb0;];
+                let mut buffer_bytearray: Vec<u64> = Vec::new();
+                let mut tile_availability_bitstream = bv::bitvec![u64, bv::Msb0;];
+                let mut content_availability_bitstream = bv::bitvec![u64, bv::Msb0;];
+
+                while let Some((lvl, cellid, tile)) = subtree_queue.pop_front() {
+                    debug!(
+                        "processing subtree {}/{}/{}.subtree",
+                        lvl, cellid.column, cellid.row
+                    );
+                }
+
                 for level in 0..subtree_levels as usize {
                     // Grid for the current level
                     let nr_tiles_current_level = 4_usize.pow(level_cntr);
@@ -508,15 +522,10 @@ pub mod cesium3dtiles {
                     }
 
                     // let nr_bytes = (nr_tiles_current_level as f32 / 8_f32).ceil() as u32;
-                    let mut tile_availability_for_level = bv::bitvec![u8, bv::Msb0;];
+                    let mut tile_availability_for_level = bv::bitvec![u64, bv::Msb0;];
                     tile_availability_for_level.resize(nr_tiles_current_level, false);
-                    let mut content_availability_for_level = bv::bitvec![u8, bv::Msb0;];
+                    let mut content_availability_for_level = bv::bitvec![u64, bv::Msb0;];
                     content_availability_for_level.resize(nr_tiles_current_level, false);
-
-                    // debug!(
-                    //     "tile_availability_for_level {}-{}: {:?}",
-                    //     &section, &level, &tile_availability_for_level
-                    // );
 
                     // Check if the tile exists (== present in tileset)
                     let mut children_current_level: Vec<&Tile> = Vec::new();
@@ -539,21 +548,6 @@ pub mod cesium3dtiles {
                             debug!("tile {} has no children", t.id);
                         }
                     }
-
-                    // println!(
-                    //     "tiles_queue length at {}-{} is {}",
-                    //     section,
-                    //     level,
-                    //     tiles_queue.len()
-                    // );
-                    //
-                    // println!(
-                    //     "children_current_level length at {}-{} is {}",
-                    //     section,
-                    //     level,
-                    //     children_current_level.len()
-                    // );
-                    // println!("but visited {} children", children_cntr);
 
                     while let Some(tile) = tiles_queue.pop_front() {
                         let tileid = &tile.id;
@@ -616,8 +610,7 @@ pub mod cesium3dtiles {
                 let tile_side_length_child = extent_side_length / nr_tiles_child_level_side as f64;
                 let tile_side_length_u16_child = tile_side_length_child as u16;
 
-                let nr_bytes_child_subtree = (nr_tiles_child_level as f64 / 8_f64).ceil() as usize;
-                let mut child_subtree_availability_for_section = bv::bitvec![u8, bv::Msb0;];
+                let mut child_subtree_availability_for_section = bv::bitvec![u64, bv::Msb0;];
                 child_subtree_availability_for_section.resize(nr_tiles_child_level, false);
 
                 // Bufferviews
@@ -678,6 +671,7 @@ pub mod cesium3dtiles {
                         grid_for_child_subtree_corner_coords.get(&tile_corner_coord)
                     {
                         child_subtree_availability_for_section.set(*i_z_curve, true);
+                        subtree_queue.push_back((level_subtree_root, *cellid_grid_level, child));
                     } else {
                         debug!("could not locate tile {} in grid_for_child_subtree", tileid);
                     }
@@ -745,11 +739,12 @@ pub mod cesium3dtiles {
                 }
 
                 // Push bufferViews
+                // "For efficient memory access, the byteOffset of a buffer view shall be aligned to a multiple of 8 bytes."
                 let tile_availability_bytearray = tile_availability_bitstream.into_vec();
                 bufferviews.push(BufferView {
                     buffer: 0,
                     byte_offset: 0,
-                    byte_length: tile_availability_bytearray.len(),
+                    byte_length: tile_availability_bytearray.len() * 8,
                     name: None,
                 });
                 buffer_bytearray.extend(tile_availability_bytearray);
@@ -758,7 +753,7 @@ pub mod cesium3dtiles {
                 bufferviews.push(BufferView {
                     buffer: 0,
                     byte_offset: buffer_bytearray.len(),
-                    byte_length: content_availability_bytearray.len(),
+                    byte_length: content_availability_bytearray.len() * 8,
                     name: None,
                 });
                 buffer_bytearray.extend(content_availability_bytearray);
@@ -768,7 +763,7 @@ pub mod cesium3dtiles {
                 bufferviews.push(BufferView {
                     buffer: 0,
                     byte_offset: buffer_bytearray.len(),
-                    byte_length: child_subtree_availability_bytearray.len(),
+                    byte_length: child_subtree_availability_bytearray.len() * 8,
                     name: None,
                 });
                 buffer_bytearray.extend(child_subtree_availability_bytearray);
@@ -776,7 +771,7 @@ pub mod cesium3dtiles {
                 // write subtree file
                 let buffer = Buffer {
                     name: None,
-                    byte_length: buffer_bytearray.len(),
+                    byte_length: buffer_bytearray.len() * 8,
                 };
                 let subtree = Subtree {
                     buffers: Some(vec![buffer]),
@@ -785,25 +780,56 @@ pub mod cesium3dtiles {
                     content_availability,
                     child_subtree_availability,
                 };
+                let subtree_json = serde_json::to_string(&subtree)
+                    .expect("failed to serialize the subtree to json");
 
-                // // DEBUG
-                // let mut file_child_subtree =
-                //     File::create(format!("child-subtree-{}.tsv", section)).unwrap();
-                // for (cellid_grid_level, i_z_curve) in grid_for_child_subtree_corner_coords.values()
-                // {
-                //     let wkt = grid_for_child_subtree.cell_to_wkt(cellid_grid_level);
-                //     let tile_available = child_subtree_availability_for_section
-                //         .get(*i_z_curve)
-                //         .unwrap();
-                //     writeln!(
-                //         file_child_subtree,
-                //         "{}\t{}\t{}",
-                //         cellid_grid_level,
-                //         tile_available.as_ref(),
-                //         wkt
-                //     )
-                //     .unwrap();
-                // }
+                let subtree_name = format!("{}/0/0", level_subtree_root);
+                debug!("writing subtree {}", &subtree_name);
+                let mut subtree_file = File::create(format!("{}.subtree", subtree_name)).unwrap();
+                // Header
+                let magic = String::from("subt");
+                if let Err(e) = bincode::serialize_into(&subtree_file, &magic) {
+                    error!(
+                        "failed to write magic to subtree {}, error:\n{}",
+                        subtree_name, e
+                    );
+                }
+                let version: u32 = 1;
+                if let Err(e) = bincode::serialize_into(&subtree_file, &version) {
+                    error!(
+                        "failed to write version to subtree {}, error:\n{}",
+                        subtree_name, e
+                    );
+                }
+                let json_byte_length: u64 = subtree_json.as_bytes().len() as u64;
+                if let Err(e) = bincode::serialize_into(&subtree_file, &json_byte_length) {
+                    error!(
+                        "failed to write json byte length to subtree {}, error:\n{}",
+                        subtree_name, e
+                    );
+                }
+                let buffer_byte_length: u64 = (buffer_bytearray.len() * 8) as u64;
+                if let Err(e) = bincode::serialize_into(&subtree_file, &buffer_byte_length) {
+                    error!(
+                        "failed to write buffer byte length to subtree {}, error:\n{}",
+                        subtree_name, e
+                    );
+                }
+
+                // Content
+                if let Err(e) = subtree_file.write_all(subtree_json.as_bytes()) {
+                    error!(
+                        "failed to write json content to subtree {}, error:\n{}",
+                        subtree_name, e
+                    );
+                };
+                if let Err(e) = bincode::serialize_into(&subtree_file, &buffer_bytearray) {
+                    error!(
+                        "failed to write binary buffer to subtree {}, error:\n{}",
+                        subtree_name, e
+                    );
+                }
+                level_subtree_root = level_cntr;
             }
 
             self.root.children = None;
@@ -1020,6 +1046,15 @@ pub mod cesium3dtiles {
     impl Into<crate::spatial_structs::QuadTreeNodeId> for &TileId {
         fn into(self) -> crate::spatial_structs::QuadTreeNodeId {
             crate::spatial_structs::QuadTreeNodeId::new(self.x, self.y, self.level)
+        }
+    }
+
+    impl Into<crate::spatial_structs::CellId> for &TileId {
+        fn into(self) -> crate::spatial_structs::CellId {
+            crate::spatial_structs::CellId {
+                column: self.x,
+                row: self.y,
+            }
         }
     }
 
