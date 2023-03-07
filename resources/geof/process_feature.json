@@ -164,7 +164,7 @@
         "atribute_spec": "{{attribute_spec}}",
         "cotypes": "{{cotypes}}",
         "lod_filter": {
-          "Building": "1",
+          "Building": "1.3",
           "LandUse": "1",
           "PlantCover": "1",
           "Road": "1",

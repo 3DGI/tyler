@@ -157,15 +157,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         cli.grid_minz,
         cli.grid_maxz,
     );
+
     // Select how many levels of tiles from the hierarchy do we want to export with
     // content.
     tileset.add_content(cli.qtree_export_levels);
     let tiles = tileset.flatten(cli.qtree_export_levels);
-    tileset.to_file(tileset_path)?;
 
-    tileset.make_implicit(&world.grid, &quadtree);
-
-    return Ok(());
+    let subtrees_path = cli.output.join("subtrees");
+    fs::create_dir_all(&subtrees_path);
+    let mut tileset_implicit = tileset.clone();
+    tileset_implicit.make_implicit(&world.grid, &quadtree, subtrees_path);
+    tileset_implicit.to_file(tileset_path)?;
 
     // Export by calling a subprocess to merge the .jsonl files and convert them to the
     // target format
