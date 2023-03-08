@@ -163,11 +163,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tileset.add_content(cli.qtree_export_levels);
     let tiles = tileset.flatten(cli.qtree_export_levels);
 
-    let subtrees_path = cli.output.join("subtrees");
-    fs::create_dir_all(&subtrees_path);
-    let mut tileset_implicit = tileset.clone();
-    tileset_implicit.make_implicit(&world.grid, &quadtree, subtrees_path);
-    tileset_implicit.to_file(tileset_path)?;
+    // let subtrees_path = cli.output.join("subtrees");
+    // fs::create_dir_all(&subtrees_path);
+    // let mut tileset_implicit = tileset.clone();
+    // tileset_implicit.make_implicit(&world.grid, &quadtree, subtrees_path);
+    // tileset_implicit.to_file(tileset_path)?;
+
+    tileset.to_file(tileset_path)?;
+
+    // return Ok(());
 
     // Export by calling a subprocess to merge the .jsonl files and convert them to the
     // target format

@@ -9,7 +9,7 @@ pub mod cesium3dtiles {
     use std::collections::VecDeque;
     use std::fmt::{Display, Formatter};
     use std::fs::File;
-    use std::io::Write;
+    use std::io::{Seek, Write};
     use std::path::Path;
 
     use bitvec::prelude as bv;
@@ -679,11 +679,7 @@ pub mod cesium3dtiles {
                             grid_for_child_subtree_corner_coords.get(&tile_corner_coord)
                         {
                             child_subtree_availability_for_section.set(*i_z_curve, true);
-                            subtree_queue.push_back((
-                                level_subtree_root,
-                                *cellid_grid_level,
-                                child,
-                            ));
+                            subtree_queue.push_back((level_cntr, *cellid_grid_level, child));
                         } else {
                             debug!("could not locate tile {} in grid_for_child_subtree", tileid);
                         }
@@ -761,22 +757,40 @@ pub mod cesium3dtiles {
                         byte_length: tile_availability_bytearray.len() * 8,
                         name: None,
                     });
+                    if (tile_availability_bytearray.len() * 8) % 8 > 0 {
+                        debug!(
+                            "tile_availability_bytearray {} is not on 8-byte boundary",
+                            tile_availability_bytearray.len() * 8
+                        );
+                    }
                     buffer_bytearray.extend(tile_availability_bytearray);
 
                     let content_availability_bytearray = content_availability_bitstream.into_vec();
                     bufferviews.push(BufferView {
                         buffer: 0,
-                        byte_offset: buffer_bytearray.len(),
+                        byte_offset: buffer_bytearray.len() * 8,
                         byte_length: content_availability_bytearray.len() * 8,
                         name: None,
                     });
+                    if (content_availability_bytearray.len() * 8) % 64 > 0 {
+                        debug!(
+                            "content_availability_bytearray {} is not on 8-byte boundary",
+                            content_availability_bytearray.len() * 8
+                        );
+                    }
                     buffer_bytearray.extend(content_availability_bytearray);
 
                     let child_subtree_availability_bytearray =
                         child_subtree_availability_for_section.into_vec();
+                    if (child_subtree_availability_bytearray.len() * 8) % 64 > 0 {
+                        debug!(
+                            "child_subtree_availability_bytearray {} is not on 8-byte boundary",
+                            child_subtree_availability_bytearray.len() * 8
+                        );
+                    }
                     bufferviews.push(BufferView {
                         buffer: 0,
-                        byte_offset: buffer_bytearray.len(),
+                        byte_offset: buffer_bytearray.len() * 8,
                         byte_length: child_subtree_availability_bytearray.len() * 8,
                         name: None,
                     });
@@ -801,6 +815,7 @@ pub mod cesium3dtiles {
                     if remainder > 0 {
                         padding = 64 - remainder;
                     }
+                    debug!("subtree_json is {} bytes long, padding it with {} spaces until the 8-byte boundary", subtree_json.as_bytes().len(), &padding);
                     for i in 0..padding {
                         subtree_json += " ";
                     }
@@ -812,36 +827,63 @@ pub mod cesium3dtiles {
                     let out_path = output_dir.join(&subtree_name).with_extension("subtree");
                     let mut subtree_file = File::create(&out_path)
                         .unwrap_or_else(|_| panic!("could not create {:?} for writing", &out_path));
+
+                    debug!(
+                        "binary length before header is {} bytes",
+                        subtree_file.stream_position().unwrap()
+                    );
                     // Header
                     // let magic = String::from("subt");
                     let magic = 0x74627573u32.to_le_bytes(); // subt
+                    debug!("magic is {} bytes", magic.len());
                     if let Err(e) = subtree_file.write_all(&magic) {
                         error!(
                             "failed to write json content to subtree {}, error:\n{}",
                             subtree_name, e
                         );
                     };
-                    let version: u32 = 1;
-                    if let Err(e) = bincode::serialize_into(&subtree_file, &version) {
+                    let version = 1_u32.to_le_bytes();
+                    debug!("version is {} bytes", 32 / 8);
+                    if let Err(e) = subtree_file.write_all(&version) {
                         error!(
                             "failed to write version to subtree {}, error:\n{}",
                             subtree_name, e
                         );
                     }
-                    let json_byte_length: u64 = subtree_json_bytes.len() as u64;
-                    if let Err(e) = bincode::serialize_into(&subtree_file, &json_byte_length) {
+                    let json_byte_length = (subtree_json_bytes.len() as u64).to_le_bytes();
+                    debug!("json_byte_length is {} bytes", 64 / 8);
+                    if let Err(e) = subtree_file.write_all(&json_byte_length) {
                         error!(
                             "failed to write json byte length to subtree {}, error:\n{}",
                             subtree_name, e
                         );
                     }
-                    let buffer_byte_length: u64 = (buffer_bytearray.len() * 8) as u64;
-                    if let Err(e) = bincode::serialize_into(&subtree_file, &buffer_byte_length) {
+                    let buffer_byte_length = ((buffer_bytearray.len() * 8) as u64).to_le_bytes();
+                    if buffer_byte_length.len() % 8 > 0 {
+                        debug!(
+                            "buffer length {} is not on 8-byte boundary",
+                            buffer_byte_length.len() / 8
+                        );
+                    }
+                    // debug!("buffer_byte_length is {} bytes", buffer_byte_length);
+                    if let Err(e) = subtree_file.write_all(&buffer_byte_length) {
                         error!(
                             "failed to write buffer byte length to subtree {}, error:\n{}",
                             subtree_name, e
                         );
                     }
+                    let header_length = subtree_file.stream_position().unwrap();
+                    debug!("binary header is {} bytes", &header_length);
+                    if header_length != 24 {
+                        error!(
+                            "subtree {} binary header must be 24 bytes long, it is {}",
+                            &subtree_name, header_length
+                        );
+                    }
+                    debug!(
+                        "adding subtree_json_bytes with {} bytes",
+                        &subtree_json_bytes.len(),
+                    );
 
                     // Content
                     if let Err(e) = subtree_file.write_all(subtree_json_bytes) {
@@ -850,16 +892,32 @@ pub mod cesium3dtiles {
                             subtree_name, e
                         );
                     };
+                    debug!(
+                        "binary length is {}",
+                        subtree_file.stream_position().unwrap()
+                    );
+                    debug!(
+                        "adding buffer_bytearray with {} bytes",
+                        &buffer_bytearray.len() * 8,
+                    );
                     if let Err(e) = bincode::serialize_into(&subtree_file, &buffer_bytearray) {
                         error!(
                             "failed to write binary buffer to subtree {}, error:\n{}",
                             subtree_name, e
                         );
                     }
+                    debug!(
+                        "binary length is {}",
+                        subtree_file.stream_position().unwrap()
+                    );
                 }
                 level_subtree_root = level_cntr;
             }
 
+            self.root.content = Some(Content {
+                bounding_volume: None,
+                uri: "tiles/{level}/{x}/{y}.glb".to_string(),
+            });
             self.root.children = None;
         }
     }
