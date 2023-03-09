@@ -151,6 +151,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 3D Tiles
     info!("Generating 3D Tiles tileset");
     let tileset_path = cli.output.join("tileset.json");
+    let tileset_path_implicit = cli.output.join("tileset_implicit.json");
     let mut tileset = formats::cesium3dtiles::Tileset::from_quadtree(
         &quadtree,
         &world,
@@ -162,16 +163,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // content.
     tileset.add_content(cli.qtree_export_levels);
     let tiles = tileset.flatten(cli.qtree_export_levels);
+    tileset.to_file(&tileset_path)?;
 
-    // let subtrees_path = cli.output.join("subtrees");
-    // fs::create_dir_all(&subtrees_path);
-    // let mut tileset_implicit = tileset.clone();
-    // tileset_implicit.make_implicit(&world.grid, &quadtree, subtrees_path);
-    // tileset_implicit.to_file(tileset_path)?;
+    let subtrees_path = cli.output.join("subtrees");
+    fs::create_dir_all(&subtrees_path);
+    let mut tileset_implicit = tileset.clone();
+    tileset_implicit.make_implicit(&world.grid, &quadtree, subtrees_path);
+    tileset_implicit.to_file(&tileset_path_implicit)?;
 
-    tileset.to_file(tileset_path)?;
-
-    // return Ok(());
+    return Ok(());
 
     // Export by calling a subprocess to merge the .jsonl files and convert them to the
     // target format

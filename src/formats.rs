@@ -406,9 +406,9 @@ pub mod cesium3dtiles {
             self.root.add_content_from_level(levels_up);
         }
 
-        /// The number of levels in the quadtree.
+        /// The number of levels in the quadtree, which is `max_level + 1`.
         pub fn available_levels(&self) -> u16 {
-            self.root.max_level()
+            self.root.max_level() + 1
         }
 
         /// Convert to implicit tiling.
@@ -772,22 +772,10 @@ pub mod cesium3dtiles {
                         byte_length: content_availability_bytearray.len() * 8,
                         name: None,
                     });
-                    if (content_availability_bytearray.len() * 8) % 64 > 0 {
-                        debug!(
-                            "content_availability_bytearray {} is not on 8-byte boundary",
-                            content_availability_bytearray.len() * 8
-                        );
-                    }
                     buffer_bytearray.extend(content_availability_bytearray);
 
                     let child_subtree_availability_bytearray =
                         child_subtree_availability_for_section.into_vec();
-                    if (child_subtree_availability_bytearray.len() * 8) % 64 > 0 {
-                        debug!(
-                            "child_subtree_availability_bytearray {} is not on 8-byte boundary",
-                            child_subtree_availability_bytearray.len() * 8
-                        );
-                    }
                     bufferviews.push(BufferView {
                         buffer: 0,
                         byte_offset: buffer_bytearray.len() * 8,
@@ -823,7 +811,8 @@ pub mod cesium3dtiles {
 
                     let subtree_name = format!("{}/{}/{}", lvl, cellid.column, cellid.row);
                     debug!("writing subtree {}", &subtree_name);
-                    std::fs::create_dir_all(output_dir.join(format!("{}/{}", lvl, cellid.column)));
+                    std::fs::create_dir_all(output_dir.join(format!("{}/{}", lvl, cellid.column)))
+                        .unwrap();
                     let out_path = output_dir.join(&subtree_name).with_extension("subtree");
                     let mut subtree_file = File::create(&out_path)
                         .unwrap_or_else(|_| panic!("could not create {:?} for writing", &out_path));
@@ -866,6 +855,13 @@ pub mod cesium3dtiles {
                         );
                     }
                     // debug!("buffer_byte_length is {} bytes", buffer_byte_length);
+                    // if let Err(e) = subtree_file.write_all(&(0_u64.to_le_bytes())) {
+                    //     error!(
+                    //         "failed to write buffer byte length to subtree {}, error:\n{}",
+                    //         subtree_name, e
+                    //     );
+                    // }
+                    // debug!("buffer_byte_length is {} bytes", buffer_byte_length);
                     if let Err(e) = subtree_file.write_all(&buffer_byte_length) {
                         error!(
                             "failed to write buffer byte length to subtree {}, error:\n{}",
@@ -900,12 +896,17 @@ pub mod cesium3dtiles {
                         "adding buffer_bytearray with {} bytes",
                         &buffer_bytearray.len() * 8,
                     );
-                    if let Err(e) = bincode::serialize_into(&subtree_file, &buffer_bytearray) {
+                    let buffer_bytes: Vec<u8> = buffer_bytearray
+                        .iter()
+                        .map(|i| i.to_le_bytes())
+                        .flat_map(|bytearray| bytearray.to_vec())
+                        .collect();
+                    if let Err(e) = subtree_file.write_all(buffer_bytes.as_slice()) {
                         error!(
                             "failed to write binary buffer to subtree {}, error:\n{}",
                             subtree_name, e
                         );
-                    }
+                    };
                     debug!(
                         "binary length is {}",
                         subtree_file.stream_position().unwrap()

@@ -24,4 +24,5 @@ def printTree(root, markerStr="+- ", levelMarkers=[]):
             printTree(child, markerStr, [*levelMarkers, not isLast])
 
 
-printTree(tileset["root"])
+if __name__ == "__main__":
+    printTree(tileset["root"])
