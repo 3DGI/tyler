@@ -440,479 +440,215 @@ pub mod cesium3dtiles {
             //  (tileset), and for each node in the theoretical tree, we need to mark
             //  whether that node (tile) is indeed available and whether it has a
             //  content in the explicit tileset.
-            let mut level_cntr: u32 = 0;
-            let mut level_subtree_root: u32 = 0;
-            let mut tiles_queue = VecDeque::new();
-            tiles_queue.push_back(&self.root);
+
+            let extent_width = grid.bbox[3] - grid.bbox[0];
+            let level_subtree_root: u32 = 0;
             let mut subtree_queue = VecDeque::new();
             let rootid = &self.root.id;
             let cellid: crate::spatial_structs::CellId = rootid.into();
             subtree_queue.push_back((level_subtree_root, cellid, &self.root));
-            let extent_side_length = grid.bbox[3] - grid.bbox[0];
-            let grid_buffer = None;
 
-            for section in 0..subtree_sections {
-                while let Some((lvl, cellid, tile)) = subtree_queue.pop_front() {
-                    let mut buffer_bytearray: Vec<u64> = Vec::new();
-                    let mut tile_availability_bitstream = bv::bitvec![u64, bv::Msb0;];
-                    let mut content_availability_bitstream = bv::bitvec![u64, bv::Msb0;];
-                    debug!(
-                        "processing subtree {}/{}/{}.subtree",
-                        lvl, cellid.column, cellid.row
-                    );
+            while let Some((level_subtree_root, cellid, tile)) = subtree_queue.pop_front() {
+                let subtree_id = TileId::new(cellid.column, cellid.row, level_subtree_root as u16);
+                debug!("\n\t\t{:=>10}\tprocessing subtree {}", "", &subtree_id);
 
-                    let mut level_cntr_within_subtree: u32 = 0;
-                    for level in 0..subtree_levels as u32 {
-                        level_cntr_within_subtree = level + level_cntr;
-                        // Grid for the current level
-                        let nr_tiles_current_level = 4_usize.pow(level_cntr_within_subtree);
-                        let nr_tiles_current_level_side = 2_usize.pow(level_cntr_within_subtree);
-                        let tile_side_length =
-                            extent_side_length / nr_tiles_current_level_side as f64;
-                        let tile_side_length_u16 = tile_side_length as u16;
+                let mut buffer_vec: Vec<u64> = Vec::new();
+                let mut tile_availability_bitstream = bv::bitvec![u64, bv::Msb0;];
+                let mut content_availability_bitstream = bv::bitvec![u64, bv::Msb0;];
 
-                        // debug!("creating grid_for_level {}-{}", &section, &level);
-                        let grid_for_level = crate::spatial_structs::SquareGrid::new(
-                            &grid.bbox,
-                            tile_side_length_u16,
-                            grid.epsg,
-                            grid_buffer,
-                        );
-                        let mut grid_for_level_corner_coords: HashMap<
-                            String,
-                            (crate::spatial_structs::CellId, usize),
-                        > = HashMap::new();
+                let mut tiles_queue = VecDeque::new();
+                tiles_queue.push_back(tile);
+                let mut level_current: u32 = 0;
+                for level in 0..subtree_levels as u32 {
+                    level_current = level_subtree_root + level;
+                    let nr_tiles = 4_usize.pow(level_current);
+                    let grid_coordinate_map =
+                        Self::grid_coordinate_map(level_current, extent_width, grid);
 
-                        // DEBUG
-                        let mut file_grid =
-                            File::create(format!("grid_for_level-{}-{}.tsv", &section, &level))
-                                .unwrap();
-                        for (cellid, _) in &grid_for_level {
-                            let wkt = grid_for_level.cell_to_wkt(&cellid);
-                            writeln!(file_grid, "{}\t{}", &cellid, wkt).unwrap();
-                        }
-
-                        let mut mortoncodes: Vec<(u128, crate::spatial_structs::CellId)> =
-                            grid_for_level
-                                .into_iter()
-                                .map(|(cellid, _)| {
-                                    (
-                                        morton_encode([cellid.row as u64, cellid.column as u64]),
-                                        cellid,
-                                    )
-                                })
-                                .collect();
-                        mortoncodes.sort_by_key(|k| k.0);
-
-                        let mut file_grid_morton = File::create(format!(
-                            "grid_for_level_morton-{}-{}.tsv",
-                            &section, &level
-                        ))
-                        .unwrap();
-                        for (i, (mc, cellid)) in mortoncodes.iter().enumerate() {
-                            let [minx, miny, _minz, _maxx, _maxy, _maxz] =
-                                grid_for_level.cell_bbox(&cellid);
-                            // Since the input for grid_cellsize is u16 and expected to be in the range
-                            //  of several (hundreds) of meters, we don't care about decimal precision.
-                            let corner_coord_string = format!("{:.0},{:.0}", minx, miny);
-                            grid_for_level_corner_coords.insert(corner_coord_string, (*cellid, i));
-                            let wkt = grid_for_level.cell_to_wkt(&cellid);
-                            writeln!(
-                                file_grid_morton,
-                                "{}\t{}\tPOINT({} {})",
-                                i, &cellid, minx, miny
-                            )
-                            .unwrap();
-                        }
-
-                        // let nr_bytes = (nr_tiles_current_level as f32 / 8_f32).ceil() as u32;
-                        let mut tile_availability_for_level = bv::bitvec![u64, bv::Msb0;];
-                        tile_availability_for_level.resize(nr_tiles_current_level, false);
-                        let mut content_availability_for_level = bv::bitvec![u64, bv::Msb0;];
-                        content_availability_for_level.resize(nr_tiles_current_level, false);
-
-                        // Check if the tile exists (== present in tileset)
-                        let mut children_current_level: Vec<&Tile> = Vec::new();
-                        let mut children_cntr = 0;
-                        for t in tiles_queue.iter() {
-                            if let Some(ref ch) = t.children {
-                                for c in ch {
-                                    let tileid = &c.id;
-                                    let qtree_nodeid: crate::spatial_structs::QuadTreeNodeId =
-                                        tileid.into();
-                                    let cell = qtree.node(&qtree_nodeid).unwrap();
-                                    if cell.nr_items > 0 {
-                                        children_current_level.push(c)
-                                    } else {
-                                        debug!("found empty tile {}", tileid);
-                                    }
-                                    children_cntr += 1;
+                    let mut children_current_level: Vec<&Tile> = Vec::new();
+                    for t in tiles_queue.iter() {
+                        if let Some(ref ch) = t.children {
+                            for c in ch {
+                                let tileid = &c.id;
+                                let qtree_nodeid: crate::spatial_structs::QuadTreeNodeId =
+                                    tileid.into();
+                                let cell = qtree.node(&qtree_nodeid).unwrap();
+                                if cell.nr_items > 0 {
+                                    children_current_level.push(c)
+                                } else {
+                                    debug!("found empty tile {}", tileid);
                                 }
-                            } else {
-                                debug!("tile {} has no children", t.id);
                             }
-                        }
-
-                        while let Some(tile) = tiles_queue.pop_front() {
-                            let tileid = &tile.id;
-                            let qtree_nodeid: crate::spatial_structs::QuadTreeNodeId =
-                                tileid.into();
-                            let tile_bbox = qtree.node(&qtree_nodeid).unwrap().bbox(grid);
-                            let tile_minx = tile_bbox[0];
-                            let tile_miny = tile_bbox[1];
-                            let tile_corner_coord = format!("{:.0},{:.0}", tile_minx, tile_miny);
-                            // Set the tile and content available
-                            if let Some((cellid_grid_level, i_z_curve)) =
-                                grid_for_level_corner_coords.get(&tile_corner_coord)
-                            {
-                                debug!(
-                                    "tile {} matched grid cell {}, z-curve idx {}",
-                                    tileid, cellid_grid_level, i_z_curve
-                                );
-                                tile_availability_for_level.set(*i_z_curve, true);
-                                if tile.content.is_some() {
-                                    content_availability_for_level.set(*i_z_curve, true);
-                                }
-                            } else {
-                                debug!("could not locate tile {} in grid_for_level", tileid);
-                            }
-                        }
-                        tiles_queue.extend(children_current_level);
-
-                        // // DEBUG
-                        // debug!(
-                        //     "tile_availability_for_level {}-{}: {:?}",
-                        //     &section, &level, &tile_availability_for_level
-                        // );
-                        // let mut file_implicit_tileset_at_level =
-                        //     File::create(format!("implicit-level-{}-{}.tsv", section, level)).unwrap();
-                        // for (cellid_grid_level, i_z_curve) in grid_for_level_corner_coords.values() {
-                        //     let wkt = grid_for_level.cell_to_wkt(cellid_grid_level);
-                        //     let tile_available = tile_availability_for_level.get(*i_z_curve).unwrap();
-                        //     let content_available =
-                        //         content_availability_for_level.get(*i_z_curve).unwrap();
-                        //     writeln!(
-                        //         file_implicit_tileset_at_level,
-                        //         "{}\t{}\t{}\t{}",
-                        //         cellid_grid_level,
-                        //         tile_available.as_ref(),
-                        //         content_available.as_ref(),
-                        //         wkt
-                        //     )
-                        //     .unwrap();
-                        // }
-                        tile_availability_for_level.set_uninitialized(false);
-                        content_availability_for_level.set_uninitialized(false);
-                        tile_availability_bitstream
-                            .extend_from_bitslice(&tile_availability_for_level);
-                        content_availability_bitstream
-                            .extend_from_bitslice(&content_availability_for_level);
-                    }
-                    level_cntr = level_cntr_within_subtree;
-
-                    // Init child-subtree tile availability
-                    let nr_tiles_child_level = 4_usize.pow(level_cntr);
-                    let nr_tiles_child_level_side = 2_usize.pow(level_cntr);
-                    let tile_side_length_child =
-                        extent_side_length / nr_tiles_child_level_side as f64;
-                    let tile_side_length_u16_child = tile_side_length_child as u16;
-
-                    let mut child_subtree_availability_for_section = bv::bitvec![u64, bv::Msb0;];
-                    child_subtree_availability_for_section.resize(nr_tiles_child_level, false);
-
-                    // Bufferviews
-                    let mut bufferviews: Vec<BufferView> = Vec::with_capacity(3);
-                    let bf_tile_availability = 0;
-                    let bf_content_availability = 1;
-                    let bf_child_subtree_availability = 2;
-
-                    // Fill child-subtree availability
-                    let grid_for_child_subtree = crate::spatial_structs::SquareGrid::new(
-                        &grid.bbox,
-                        tile_side_length_u16_child,
-                        grid.epsg,
-                        grid_buffer,
-                    );
-                    let mut grid_for_child_subtree_corner_coords: HashMap<
-                        String,
-                        (crate::spatial_structs::CellId, usize),
-                    > = HashMap::new();
-
-                    let mut mortoncodes: Vec<(u128, crate::spatial_structs::CellId)> =
-                        grid_for_child_subtree
-                            .into_iter()
-                            .map(|(cellid, _)| {
-                                (
-                                    morton_encode([cellid.row as u64, cellid.column as u64]),
-                                    cellid,
-                                )
-                            })
-                            .collect();
-                    mortoncodes.sort_by_key(|k| k.0);
-
-                    let mut file_grid_morton =
-                        File::create(format!("grid_for_child_subtree_morton-{}.tsv", &section))
-                            .unwrap();
-                    for (i, (mc, cellid)) in mortoncodes.iter().enumerate() {
-                        let [minx, miny, _minz, _maxx, _maxy, _maxz] =
-                            grid_for_child_subtree.cell_bbox(&cellid);
-                        let corner_coord_string = format!("{:.0},{:.0}", minx, miny);
-                        grid_for_child_subtree_corner_coords
-                            .insert(corner_coord_string, (*cellid, i));
-                        let wkt = grid_for_child_subtree.cell_to_wkt(&cellid);
-                        writeln!(
-                            file_grid_morton,
-                            "{}\t{}\tPOINT({} {})",
-                            i, &cellid, minx, miny
-                        )
-                        .unwrap();
-                    }
-
-                    for child in tiles_queue.iter() {
-                        let tileid = &child.id;
-                        let qtree_nodeid: crate::spatial_structs::QuadTreeNodeId = tileid.into();
-                        let tile_bbox = qtree.node(&qtree_nodeid).unwrap().bbox(grid);
-                        let tile_minx = tile_bbox[0];
-                        let tile_miny = tile_bbox[1];
-                        let tile_corner_coord = format!("{:.0},{:.0}", tile_minx, tile_miny);
-                        if let Some((cellid_grid_level, i_z_curve)) =
-                            grid_for_child_subtree_corner_coords.get(&tile_corner_coord)
-                        {
-                            child_subtree_availability_for_section.set(*i_z_curve, true);
-                            subtree_queue.push_back((level_cntr, *cellid_grid_level, child));
                         } else {
-                            debug!("could not locate tile {} in grid_for_child_subtree", tileid);
+                            debug!("tile {} has no children", t.id);
                         }
                     }
-                    let mut child_subtree_availability = Availability::default();
-                    if child_subtree_availability_for_section.not_any() {
-                        child_subtree_availability = Availability {
-                            bitstream: None,
-                            available_count: None,
-                            constant: Some(AvailabilityConstant::Unavailable),
-                        };
-                    } else if child_subtree_availability_for_section.all() {
-                        child_subtree_availability = Availability {
-                            bitstream: None,
-                            available_count: None,
-                            constant: Some(AvailabilityConstant::Available),
-                        };
-                    } else {
-                        child_subtree_availability = Availability {
-                            bitstream: Some(bf_child_subtree_availability),
-                            available_count: Some(
-                                child_subtree_availability_for_section.count_ones(),
-                            ),
-                            constant: None,
-                        };
-                    }
-                    child_subtree_availability_for_section.set_uninitialized(false);
 
-                    let mut tile_availability = Availability::default();
-                    if tile_availability_bitstream.not_any() {
-                        tile_availability = Availability {
-                            bitstream: None,
-                            available_count: None,
-                            constant: Some(AvailabilityConstant::Unavailable),
-                        };
-                    } else if tile_availability_bitstream.all() {
-                        tile_availability = Availability {
-                            bitstream: None,
-                            available_count: None,
-                            constant: Some(AvailabilityConstant::Available),
-                        };
-                    } else {
-                        tile_availability = Availability {
-                            bitstream: Some(bf_tile_availability),
-                            available_count: Some(tile_availability_bitstream.count_ones()),
-                            constant: None,
-                        };
+                    let mut tile_availability_for_level = bv::bitvec![u64, bv::Msb0;];
+                    tile_availability_for_level.resize(nr_tiles, false);
+                    let mut content_availability_for_level = bv::bitvec![u64, bv::Msb0;];
+                    content_availability_for_level.resize(nr_tiles, false);
+
+                    while let Some(tile) = tiles_queue.pop_front() {
+                        debug!("processing tile {}", tile.id);
+                        let tile_corner_coord = Self::tile_corner_coordinate(grid, qtree, tile);
+                        // Set the tile and content available
+                        if let Some((cellid_grid_level, i_z_curve)) =
+                            grid_coordinate_map.get(&tile_corner_coord)
+                        {
+                            debug!(
+                                "tile {} matched grid cell {}, z-curve idx {}",
+                                tile.id, cellid_grid_level, i_z_curve
+                            );
+                            tile_availability_for_level.set(*i_z_curve, true);
+                            if tile.content.is_some() {
+                                content_availability_for_level.set(*i_z_curve, true);
+                            }
+                        } else {
+                            debug!("could not locate tile {} in grid_for_level", tile.id);
+                        }
                     }
 
-                    // Since we have a single content per tile, the contentAvailabilty array always has
-                    //  1 item.
-                    let mut content_availability: Option<Vec<Availability>> = None;
-                    if content_availability_bitstream.not_any() {
-                        content_availability = None;
-                    } else if content_availability_bitstream.all() {
-                        content_availability = Some(vec![Availability {
-                            bitstream: None,
-                            available_count: None,
-                            constant: Some(AvailabilityConstant::Available),
-                        }]);
-                    } else {
-                        content_availability = Some(vec![Availability {
-                            bitstream: Some(bf_content_availability),
-                            available_count: Some(content_availability_bitstream.count_ones()),
-                            constant: None,
-                        }]);
-                    }
+                    tile_availability_for_level.set_uninitialized(false);
+                    content_availability_for_level.set_uninitialized(false);
+                    tile_availability_bitstream.extend_from_bitslice(&tile_availability_for_level);
+                    content_availability_bitstream
+                        .extend_from_bitslice(&content_availability_for_level);
+                    tiles_queue.extend(children_current_level);
+                }
 
-                    // Push bufferViews
-                    // "For efficient memory access, the byteOffset of a buffer view shall be aligned to a multiple of 8 bytes."
-                    let tile_availability_bytearray = tile_availability_bitstream.into_vec();
-                    bufferviews.push(BufferView {
-                        buffer: 0,
-                        byte_offset: 0,
-                        byte_length: tile_availability_bytearray.len() * 8,
-                        name: None,
-                    });
-                    if (tile_availability_bytearray.len() * 8) % 8 > 0 {
+                let level_child_subtree = level_current + 1;
+                let nr_tiles_child_level = 4_usize.pow(level_child_subtree);
+                let grid_coordinate_map =
+                    Self::grid_coordinate_map(level_child_subtree, extent_width, grid);
+
+                for child in tiles_queue.iter() {
+                    let tile_corner_coord = Self::tile_corner_coordinate(grid, qtree, child);
+                    if let Some((cellid_grid_level, i_z_curve)) =
+                        grid_coordinate_map.get(&tile_corner_coord)
+                    {
+                        subtree_queue.push_back((level_child_subtree, *cellid_grid_level, child));
+                    } else {
                         debug!(
-                            "tile_availability_bytearray {} is not on 8-byte boundary",
-                            tile_availability_bytearray.len() * 8
+                            "could not locate tile {} in grid_for_child_subtree",
+                            child.id
                         );
                     }
-                    buffer_bytearray.extend(tile_availability_bytearray);
+                }
 
-                    let content_availability_bytearray = content_availability_bitstream.into_vec();
-                    bufferviews.push(BufferView {
-                        buffer: 0,
-                        byte_offset: buffer_bytearray.len() * 8,
-                        byte_length: content_availability_bytearray.len() * 8,
-                        name: None,
-                    });
-                    buffer_bytearray.extend(content_availability_bytearray);
+                // Bufferviews
+                let mut bufferviews: Vec<BufferView> = Vec::with_capacity(3);
+                // bufferview indices
+                let bf_tile_availability = 0;
+                let bf_content_availability = 1;
+                let bf_child_subtree_availability = 2;
 
-                    let child_subtree_availability_bytearray =
-                        child_subtree_availability_for_section.into_vec();
-                    bufferviews.push(BufferView {
-                        buffer: 0,
-                        byte_offset: buffer_bytearray.len() * 8,
-                        byte_length: child_subtree_availability_bytearray.len() * 8,
-                        name: None,
-                    });
-                    buffer_bytearray.extend(child_subtree_availability_bytearray);
+                let mut child_subtree_availability_bitstream = bv::bitvec![u64, bv::Msb0;];
+                child_subtree_availability_bitstream.resize(nr_tiles_child_level, false);
 
-                    // write subtree file
-                    let buffer = Buffer {
-                        name: None,
-                        byte_length: buffer_bytearray.len() * 8,
-                    };
-                    let subtree = Subtree {
-                        buffers: Some(vec![buffer]),
-                        buffer_views: Some(bufferviews),
-                        tile_availability,
-                        content_availability,
-                        child_subtree_availability,
-                    };
-                    let mut subtree_json = serde_json::to_string(&subtree)
-                        .expect("failed to serialize the subtree to json");
-                    let remainder = subtree_json.as_bytes().len() % 64;
-                    let mut padding = 0;
-                    if remainder > 0 {
-                        padding = 64 - remainder;
-                    }
-                    debug!("subtree_json is {} bytes long, padding it with {} spaces until the 8-byte boundary", subtree_json.as_bytes().len(), &padding);
-                    for i in 0..padding {
-                        subtree_json += " ";
-                    }
-                    let subtree_json_bytes = subtree_json.as_bytes();
+                let tile_availability = Self::create_availability(
+                    bf_tile_availability,
+                    &mut tile_availability_bitstream,
+                );
+                let content_availability = Self::create_availability(
+                    bf_content_availability,
+                    &mut content_availability_bitstream,
+                );
+                let child_subtree_availability = Self::create_availability(
+                    bf_child_subtree_availability,
+                    &mut child_subtree_availability_bitstream,
+                );
 
-                    let subtree_name = format!("{}/{}/{}", lvl, cellid.column, cellid.row);
-                    debug!("writing subtree {}", &subtree_name);
-                    std::fs::create_dir_all(output_dir.join(format!("{}/{}", lvl, cellid.column)))
-                        .unwrap();
-                    let out_path = output_dir.join(&subtree_name).with_extension("subtree");
-                    let mut subtree_file = File::create(&out_path)
-                        .unwrap_or_else(|_| panic!("could not create {:?} for writing", &out_path));
+                Self::add_bitstream(
+                    &mut buffer_vec,
+                    &mut bufferviews,
+                    tile_availability_bitstream,
+                );
+                Self::add_bitstream(
+                    &mut buffer_vec,
+                    &mut bufferviews,
+                    content_availability_bitstream,
+                );
+                Self::add_bitstream(
+                    &mut buffer_vec,
+                    &mut bufferviews,
+                    child_subtree_availability_bitstream,
+                );
 
-                    debug!(
-                        "binary length before header is {} bytes",
-                        subtree_file.stream_position().unwrap()
-                    );
-                    // Header
-                    // let magic = String::from("subt");
-                    let magic = 0x74627573u32.to_le_bytes(); // subt
-                    debug!("magic is {} bytes", magic.len());
-                    if let Err(e) = subtree_file.write_all(&magic) {
-                        error!(
-                            "failed to write json content to subtree {}, error:\n{}",
-                            subtree_name, e
-                        );
-                    };
-                    let version = 1_u32.to_le_bytes();
-                    debug!("version is {} bytes", 32 / 8);
-                    if let Err(e) = subtree_file.write_all(&version) {
-                        error!(
-                            "failed to write version to subtree {}, error:\n{}",
-                            subtree_name, e
-                        );
-                    }
-                    let json_byte_length = (subtree_json_bytes.len() as u64).to_le_bytes();
-                    debug!("json_byte_length is {} bytes", 64 / 8);
-                    if let Err(e) = subtree_file.write_all(&json_byte_length) {
-                        error!(
-                            "failed to write json byte length to subtree {}, error:\n{}",
-                            subtree_name, e
-                        );
-                    }
-                    let buffer_byte_length = ((buffer_bytearray.len() * 8) as u64).to_le_bytes();
-                    if buffer_byte_length.len() % 8 > 0 {
-                        debug!(
-                            "buffer length {} is not on 8-byte boundary",
-                            buffer_byte_length.len() / 8
-                        );
-                    }
-                    // debug!("buffer_byte_length is {} bytes", buffer_byte_length);
-                    // if let Err(e) = subtree_file.write_all(&(0_u64.to_le_bytes())) {
-                    //     error!(
-                    //         "failed to write buffer byte length to subtree {}, error:\n{}",
-                    //         subtree_name, e
-                    //     );
-                    // }
-                    // debug!("buffer_byte_length is {} bytes", buffer_byte_length);
-                    if let Err(e) = subtree_file.write_all(&buffer_byte_length) {
-                        error!(
-                            "failed to write buffer byte length to subtree {}, error:\n{}",
-                            subtree_name, e
-                        );
-                    }
-                    let header_length = subtree_file.stream_position().unwrap();
-                    debug!("binary header is {} bytes", &header_length);
-                    if header_length != 24 {
-                        error!(
-                            "subtree {} binary header must be 24 bytes long, it is {}",
-                            &subtree_name, header_length
-                        );
-                    }
-                    debug!(
-                        "adding subtree_json_bytes with {} bytes",
-                        &subtree_json_bytes.len(),
-                    );
+                debug!("writing subtree {}", &subtree_id);
+                let buffer = Buffer {
+                    name: None,
+                    byte_length: buffer_vec.len() * 8,
+                };
+                let subtree = Subtree {
+                    buffers: Some(vec![buffer]),
+                    buffer_views: Some(bufferviews),
+                    tile_availability,
+                    content_availability: Some(vec![content_availability]),
+                    child_subtree_availability,
+                };
+                let mut subtree_json = serde_json::to_string(&subtree)
+                    .expect("failed to serialize the subtree to json");
+                let remainder = subtree_json.as_bytes().len() % 64;
+                let mut padding = 0;
+                if remainder > 0 {
+                    padding = 64 - remainder;
+                }
+                for i in 0..padding {
+                    subtree_json += " ";
+                }
+                let subtree_json_bytes = subtree_json.as_bytes();
 
-                    // Content
-                    if let Err(e) = subtree_file.write_all(subtree_json_bytes) {
-                        error!(
-                            "failed to write json content to subtree {}, error:\n{}",
-                            subtree_name, e
-                        );
-                    };
-                    debug!(
-                        "binary length is {}",
-                        subtree_file.stream_position().unwrap()
-                    );
-                    debug!(
-                        "adding buffer_bytearray with {} bytes",
-                        &buffer_bytearray.len() * 8,
-                    );
-                    let buffer_bytes: Vec<u8> = buffer_bytearray
-                        .iter()
-                        .map(|i| i.to_le_bytes())
-                        .flat_map(|bytearray| bytearray.to_vec())
-                        .collect();
-                    if let Err(e) = subtree_file.write_all(buffer_bytes.as_slice()) {
-                        error!(
-                            "failed to write binary buffer to subtree {}, error:\n{}",
-                            subtree_name, e
-                        );
-                    };
-                    debug!(
-                        "binary length is {}",
-                        subtree_file.stream_position().unwrap()
+                std::fs::create_dir_all(
+                    output_dir.join(format!("{}/{}", subtree_id.level, subtree_id.x)),
+                )
+                .unwrap();
+                let out_path = output_dir
+                    .join(&subtree_id.to_string())
+                    .with_extension("subtree");
+                let mut subtree_file = File::create(&out_path)
+                    .unwrap_or_else(|_| panic!("could not create {:?} for writing", &out_path));
+
+                // Header
+                let mut header: Vec<u8> = Vec::new();
+                let magic = 0x74627573u32.to_le_bytes(); // subt
+                let version = 1_u32.to_le_bytes();
+                let json_byte_length = (subtree_json_bytes.len() as u64).to_le_bytes();
+                let buffer_byte_length = ((buffer_vec.len() * 8) as u64).to_le_bytes();
+                header.extend_from_slice(&magic);
+                header.extend_from_slice(&version);
+                header.extend_from_slice(&json_byte_length);
+                header.extend_from_slice(&buffer_byte_length);
+                if header.len() != 24 {
+                    error!(
+                        "subtree {} binary header must be 24 bytes long, it is {}",
+                        &subtree_id,
+                        header.len()
                     );
                 }
-                level_subtree_root = level_cntr;
+
+                if let Err(e) = subtree_file.write_all(&header) {
+                    error!("failed to header to subtree {}, error:\n{}", subtree_id, e);
+                };
+
+                // Content
+                if let Err(e) = subtree_file.write_all(subtree_json_bytes) {
+                    error!(
+                        "failed to write json content to subtree {}, error:\n{}",
+                        subtree_id, e
+                    );
+                };
+                let buffer_bytes: Vec<u8> = buffer_vec
+                    .iter()
+                    .map(|i| i.to_le_bytes())
+                    .flat_map(|bytearray| bytearray.to_vec())
+                    .collect();
+                if let Err(e) = subtree_file.write_all(buffer_bytes.as_slice()) {
+                    error!(
+                        "failed to write binary buffer to subtree {}, error:\n{}",
+                        subtree_id, e
+                    );
+                };
             }
 
             self.root.content = Some(Content {
@@ -920,6 +656,133 @@ pub mod cesium3dtiles {
                 uri: "tiles/{level}/{x}/{y}.glb".to_string(),
             });
             self.root.children = None;
+        }
+
+        fn add_bitstream(
+            buffer_vec: &mut Vec<u64>,
+            bufferviews: &mut Vec<BufferView>,
+            availability_bitstream: bv::BitVec<u64, bv::Msb0>,
+        ) {
+            let availability_vec = availability_bitstream.into_vec();
+            bufferviews.push(BufferView {
+                buffer: 0,
+                byte_offset: buffer_vec.len() * 8,
+                byte_length: availability_vec.len() * 8,
+                name: None,
+            });
+            buffer_vec.extend(availability_vec);
+        }
+
+        fn create_availability(
+            bf_availability: usize,
+            availability_bitstream: &mut bv::BitVec<u64, bv::Msb0>,
+        ) -> Availability {
+            availability_bitstream.set_uninitialized(false);
+            if availability_bitstream.not_any() {
+                Availability {
+                    bitstream: None,
+                    available_count: None,
+                    constant: Some(AvailabilityConstant::Unavailable),
+                }
+            } else if availability_bitstream.all() {
+                Availability {
+                    bitstream: None,
+                    available_count: None,
+                    constant: Some(AvailabilityConstant::Available),
+                }
+            } else {
+                Availability {
+                    bitstream: Some(bf_availability),
+                    available_count: Some(availability_bitstream.count_ones()),
+                    constant: None,
+                }
+            }
+        }
+
+        fn tile_corner_coordinate(
+            grid: &crate::spatial_structs::SquareGrid,
+            qtree: &crate::spatial_structs::QuadTree,
+            tile: &Tile,
+        ) -> String {
+            let tileid = &tile.id;
+            let qtree_nodeid: crate::spatial_structs::QuadTreeNodeId = tileid.into();
+            let tile_bbox = qtree.node(&qtree_nodeid).unwrap().bbox(grid);
+            let [minx, miny, ..] = tile_bbox;
+            format!("{:.0},{:.0}", minx, miny)
+        }
+
+        /// Build a map of grid-cell-corner-coorinates and cell ID-s.
+        /// It is used for matching the "theoretical grid" to the quadtree nodes, based
+        /// on the coordinates.
+        fn grid_coordinate_map(
+            level_current: u32,
+            extent_width: f64,
+            grid: &crate::spatial_structs::SquareGrid,
+        ) -> HashMap<String, (crate::spatial_structs::CellId, usize)> {
+            let nr_tiles = 4_usize.pow(level_current);
+
+            // Grid for the current level
+            let tile_width = (extent_width / (nr_tiles as f64).sqrt()) as u16;
+            let grid_for_level =
+                crate::spatial_structs::SquareGrid::new(&grid.bbox, tile_width, grid.epsg, None);
+
+            // Map of:
+            //  - x,y coordinate of the min coordinate of the lower-left cell
+            //  - (cell ID, index in the z-order array)
+            let mut grid_for_level_corner_coords: HashMap<
+                String,
+                (crate::spatial_structs::CellId, usize),
+            > = HashMap::new();
+
+            let mut mortoncodes: Vec<(u128, crate::spatial_structs::CellId)> = grid_for_level
+                .into_iter()
+                .map(|(cellid, _)| {
+                    (
+                        morton_encode([cellid.row as u64, cellid.column as u64]),
+                        cellid,
+                    )
+                })
+                .collect();
+            mortoncodes.sort_by_key(|k| k.0);
+
+            for (i, (mc, cellid)) in mortoncodes.iter().enumerate() {
+                let [minx, miny, ..] = grid_for_level.cell_bbox(&cellid);
+                // Since the input for grid_cellsize is u16 and expected to be in the range
+                //  of several (hundreds) of meters, we don't care about decimal precision.
+                let corner_coord_string = format!("{:.0},{:.0}", minx, miny);
+                grid_for_level_corner_coords.insert(corner_coord_string, (*cellid, i));
+            }
+
+            {
+                // DEBUG
+                let first_cell = grid_for_level.into_iter().next().unwrap();
+                let mut file_grid = File::create(format!(
+                    "grid_for_level-{}-{}.tsv",
+                    &grid_for_level.length, &first_cell.0
+                ))
+                .unwrap();
+                for (cellid, _) in &grid_for_level {
+                    let wkt = grid_for_level.cell_to_wkt(&cellid);
+                    writeln!(file_grid, "{}\t{}", &cellid, wkt).unwrap();
+                }
+
+                let mut file_grid_morton = File::create(format!(
+                    "grid_for_level_morton-{}-{}.tsv",
+                    &grid_for_level.length, &first_cell.0
+                ))
+                .unwrap();
+                for (i, (mc, cellid)) in mortoncodes.iter().enumerate() {
+                    let [minx, miny, ..] = grid_for_level.cell_bbox(&cellid);
+                    writeln!(
+                        file_grid_morton,
+                        "{}\t{}\tPOINT({} {})",
+                        i, &cellid, minx, miny
+                    )
+                    .unwrap();
+                }
+            }
+
+            grid_for_level_corner_coords
         }
     }
 

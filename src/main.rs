@@ -150,8 +150,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // }
     // 3D Tiles
     info!("Generating 3D Tiles tileset");
-    let tileset_path = cli.output.join("tileset.json");
-    let tileset_path_implicit = cli.output.join("tileset_implicit.json");
+    let tileset_path = cli.output.join("tileset_explicit.json");
+    let tileset_path_implicit = cli.output.join("tileset.json");
     let mut tileset = formats::cesium3dtiles::Tileset::from_quadtree(
         &quadtree,
         &world,
