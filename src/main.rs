@@ -261,6 +261,67 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .arg(format!("--metadata_class={}", &metadata_class))
                 .arg(format!("--attribute_spec={}", &attribute_spec))
                 .arg(format!("--geometric_error={}", &tile.geometric_error));
+            
+            if !cli.color_building.is_none() {
+                cmd = cmd.arg(format!("--colorBuilding={}", cli.color_building.as_ref().unwrap()));
+            }
+            if !cli.color_building_part.is_none() {
+                cmd = cmd.arg(format!("--colorBuildingPart={}", cli.color_building_part.as_ref().unwrap()));
+            }
+            if !cli.color_building_installation.is_none() {
+                cmd = cmd.arg(format!("--colorBuildingInstallation={}", cli.color_building_installation.as_ref().unwrap()));
+            }
+            if !cli.color_tin_relief.is_none() {
+                cmd = cmd.arg(format!("--colorTINRelief={}", cli.color_tin_relief.as_ref().unwrap()));
+            }
+            if !cli.color_road.is_none() {
+                cmd = cmd.arg(format!("--colorRoad={}", cli.color_road.as_ref().unwrap()));
+            }
+            if !cli.color_railway.is_none() {
+                cmd = cmd.arg(format!("--colorRailway={}", cli.color_railway.as_ref().unwrap()));
+            }
+            if !cli.color_transport_square.is_none() {
+                cmd = cmd.arg(format!("--colorTransportSquare={}", cli.color_transport_square.as_ref().unwrap()));
+            }
+            if !cli.color_water_body.is_none() {
+                cmd = cmd.arg(format!("--colorWaterBody={}", cli.color_water_body.as_ref().unwrap()));
+            }
+            if !cli.color_plant_cover.is_none() {
+                cmd = cmd.arg(format!("--colorPlantCover={}", cli.color_plant_cover.as_ref().unwrap()));
+            }
+            if !cli.color_solitary_vegetation_object.is_none() {
+                cmd = cmd.arg(format!("--colorSolitaryVegetationObject={}", cli.color_solitary_vegetation_object.as_ref().unwrap()));
+            }
+            if !cli.color_land_use.is_none() {
+                cmd = cmd.arg(format!("--colorLandUse={}", cli.color_land_use.as_ref().unwrap()));
+            }
+            if !cli.color_city_furniture.is_none() {
+                cmd = cmd.arg(format!("--colorCityFurniture={}", cli.color_city_furniture.as_ref().unwrap()));
+            }
+            if !cli.color_bridge.is_none() {
+                cmd = cmd.arg(format!("--colorBridge={}", cli.color_bridge.as_ref().unwrap()));
+            }
+            if !cli.color_bridge_part.is_none() {
+                cmd = cmd.arg(format!("--colorBridgePart={}", cli.color_bridge_part.as_ref().unwrap()));
+            }
+            if !cli.color_bridge_installation.is_none() {
+                cmd = cmd.arg(format!("--colorBridgeInstallation={}", cli.color_bridge_installation.as_ref().unwrap()));
+            }
+            if !cli.color_bridge_construction_element.is_none() {
+                cmd = cmd.arg(format!("--colorBridgeConstructionElement={}", cli.color_bridge_construction_element.as_ref().unwrap()));
+            }
+            if !cli.color_tunnel.is_none() {
+                cmd = cmd.arg(format!("--colorTunnel={}", cli.color_tunnel.as_ref().unwrap()));
+            }
+            if !cli.color_tunnel_part.is_none() {
+                cmd = cmd.arg(format!("--colorTunnelPart={}", cli.color_tunnel_part.as_ref().unwrap()));
+            }
+            if !cli.color_tunnel_installation.is_none() {
+                cmd = cmd.arg(format!("--colorTunnelInstallation={}", cli.color_tunnel_installation.as_ref().unwrap()));
+            }
+            if !cli.color_generic_city_object.is_none() {
+                cmd = cmd.arg(format!("--colorGenericCityObject={}", cli.color_generic_city_object.as_ref().unwrap()));
+            }
 
             if cli.format == Formats::_3DTiles {
                 // geof specific args
