@@ -430,6 +430,7 @@ pub mod cesium3dtiles {
                 available_levels: self.available_levels(),
                 subtrees,
             };
+            debug!("{:?}", &implicittiling);
             self.root.implicit_tiling = Some(implicittiling);
 
             // We want to have a sparse implicit tileset, which stores the availability
@@ -519,6 +520,14 @@ pub mod cesium3dtiles {
 
                 let level_child_subtree = level_current + 1;
                 let nr_tiles_child_level = 4_usize.pow(level_child_subtree);
+                let nr_tiles_total_subtree = (4_usize.pow(subtree_levels as u32) - 1) / 3;
+                assert_eq!(
+                    tile_availability_bitstream.len(),
+                    nr_tiles_total_subtree,
+                    "tileAvailability bitstream must have {} elements, but it has {}",
+                    &nr_tiles_total_subtree,
+                    &tile_availability_bitstream.len()
+                );
                 let grid_coordinate_map =
                     Self::grid_coordinate_map(level_child_subtree, extent_width, grid);
 
