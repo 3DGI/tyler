@@ -287,9 +287,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         cmd = cmd.arg("--simplify_ratio=1.0").arg("--skip_clip=true");
                     }
                 }
-                if log_enabled!(Level::Debug) {
-                    cmd = cmd.arg("--verbose");
-                }
+                // if log_enabled!(Level::Debug) {
+                //     cmd = cmd.arg("--verbose");
+                // }
             }
             debug!("{}", cmd.to_cmdline_lossy());
             let res_exit_status = cmd
