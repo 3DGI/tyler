@@ -35,6 +35,66 @@ pub struct Cli {
     /// 3D Tiles (https://github.com/CesiumGS/glTF/tree/3d-tiles-next/extensions/2.0/Vendor/EXT_structural_metadata#class).
     #[arg(long)]
     pub metadata_class: Option<String>,
+    /// Color for Building features specified as a hex rgb-color value, eg. #FF0000 is red.
+    #[arg(long, value_parser = hex_color)]
+    pub color_building: Option<String>,
+    /// Color for BuildingPart features specified as a hex rgb-color value, eg. #FF0000 is red.
+    #[arg(long, value_parser = hex_color)]
+    pub color_building_part: Option<String>,
+    /// Color for BuildingInstallation features specified as a hex rgb-color value, eg. #FF0000 is red.
+    #[arg(long, value_parser = hex_color)]
+    pub color_building_installation: Option<String>,
+    /// Color for TINRelief features specified as a hex rgb-color value, eg. #FF0000 is red.
+    #[arg(long, value_parser = hex_color)]
+    pub color_tin_relief: Option<String>,
+    /// Color for Road features specified as a hex rgb-color value, eg. #FF0000 is red.
+    #[arg(long, value_parser = hex_color)]
+    pub color_road: Option<String>,
+    /// Color for Railway features specified as a hex rgb-color value, eg. #FF0000 is red.
+    #[arg(long, value_parser = hex_color)]
+    pub color_railway: Option<String>,
+    /// Color for TransportSquare features specified as a hex rgb-color value, eg. #FF0000 is red.
+    #[arg(long, value_parser = hex_color)]
+    pub color_transport_square: Option<String>,
+    /// Color for WaterBody features specified as a hex rgb-color value, eg. #FF0000 is red.
+    #[arg(long, value_parser = hex_color)]
+    pub color_water_body: Option<String>,
+    /// Color for PlantCover features specified as a hex rgb-color value, eg. #FF0000 is red.
+    #[arg(long, value_parser = hex_color)]
+    pub color_plant_cover: Option<String>,
+    /// Color for SolitaryVegetationObject features specified as a hex rgb-color value, eg. #FF0000 is red.
+    #[arg(long, value_parser = hex_color)]
+    pub color_solitary_vegetation_object: Option<String>,
+    /// Color for LandUse features specified as a hex rgb-color value, eg. #FF0000 is red.
+    #[arg(long, value_parser = hex_color)]
+    pub color_land_use: Option<String>,
+    /// Color for CityFurniture features specified as a hex rgb-color value, eg. #FF0000 is red.
+    #[arg(long, value_parser = hex_color)]
+    pub color_city_furniture: Option<String>,
+    /// Color for Bridge features specified as a hex rgb-color value, eg. #FF0000 is red.
+    #[arg(long, value_parser = hex_color)]
+    pub color_bridge: Option<String>,
+    /// Color for BridgePart features specified as a hex rgb-color value, eg. #FF0000 is red.
+    #[arg(long, value_parser = hex_color)]
+    pub color_bridge_part: Option<String>,
+    /// Color for BridgeInstallation features specified as a hex rgb-color value, eg. #FF0000 is red.
+    #[arg(long, value_parser = hex_color)]
+    pub color_bridge_installation: Option<String>,
+    /// Color for BridgeConstructionElement features specified as a hex rgb-color value, eg. #FF0000 is red.
+    #[arg(long, value_parser = hex_color)]
+    pub color_bridge_construction_element: Option<String>,
+    /// Color for Tunnel features specified as a hex rgb-color value, eg. #FF0000 is red.
+    #[arg(long, value_parser = hex_color)]
+    pub color_tunnel: Option<String>,
+    /// Color for TunnelPart features specified as a hex rgb-color value, eg. #FF0000 is red.
+    #[arg(long, value_parser = hex_color)]
+    pub color_tunnel_part: Option<String>,
+    /// Color for TunnelInstallation features specified as a hex rgb-color value, eg. #FF0000 is red.
+    #[arg(long, value_parser = hex_color)]
+    pub color_tunnel_installation: Option<String>,
+    /// Color for GenericCityObject features specified as a hex rgb-color value, eg. #FF0000 is red.
+    #[arg(long, value_parser = hex_color)]
+    pub color_generic_city_object: Option<String>,
     /// Export the grid and the feature centroids in to .tsv files in the working
     /// directory. Used for debugging.
     #[arg(long)]
@@ -99,6 +159,18 @@ fn existing_path(s: &str) -> Result<PathBuf, String> {
     } else {
         Err(format!("path {:?} does not exist", &p))
     }
+}
+
+/// Checks is `s` constains a 6 digit hexadecimal value preceded by a '#', eg. #FF0000
+fn hex_color(s: &str) -> Result<String, String> {
+    if s.len() != 7 || !s.starts_with('#') {
+        return Err(String::from("Input must be a 6-digit hexadecimal value preceded by a '#'"));
+    }
+    let hex_digits = &s[1..];
+    if !hex_digits.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(String::from("Input must be a 6-digit hexadecimal value preceded by a '#'"));
+    }
+    Ok(String::from(s))
 }
 
 #[cfg(test)]
