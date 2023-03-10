@@ -48,7 +48,7 @@
     "simplify_ratio": [
       "",
       "float",
-      0.949999988079071
+      0.10000000149011612
     ],
     "skip_clip": [
       "",
@@ -164,7 +164,7 @@
         "atribute_spec": "{{attribute_spec}}",
         "cotypes": "{{cotypes}}",
         "lod_filter": {
-          "Building": "1",
+          "Building": "1.0",
           "LandUse": "1.2",
           "PlantCover": "1.2",
           "Road": "1.2",
@@ -245,6 +245,7 @@
         "cgal_surface_mesh": false
       },
       "parameters": {
+        "border_correction": true,
         "stop_ratio": "{{simplify_ratio}}"
       },
       "position": [

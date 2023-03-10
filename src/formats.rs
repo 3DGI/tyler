@@ -117,7 +117,7 @@ pub mod cesium3dtiles {
                 // The geometric error of a tile is its 'size'.
                 // Since we have square tiles, we compute its size as the length of
                 // its side on the x-axis.
-                let d = tile_bbox[3] - tile_bbox[0];
+                let d = 1.0/50.0 * (tile_bbox[3] - tile_bbox[0]);
                 if d < 0.0 {
                     debug!("d is negative in parent");
                 }

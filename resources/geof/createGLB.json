@@ -94,7 +94,107 @@
       "",
       "bool",
       false
-    ]
+    ],
+    "colorBridge": [
+      "colorBridge hex color (eg #AABBCC)",
+      "str",
+      "#4F4A6A"
+      ],
+    "colorBridgeConstructionElement": [
+      "colorBridgeConstructionElement hex color (eg #AABBCC)",
+      "str",
+      "#4F4A6A"
+      ],
+    "colorBridgeInstallation": [
+      "colorBridgeInstallation hex color (eg #AABBCC)",
+      "str",
+      "#4F4A6A"
+      ],
+    "colorBridgePart": [
+      "colorBridgePart hex color (eg #AABBCC)",
+      "str",
+      "#4F4A6A"
+      ],
+    "colorBuilding": [
+      "colorBuilding hex color (eg #AABBCC)",
+      "str",
+      "#EC7658"
+      ],
+    "colorBuildingInstallation": [
+      "colorBuildingInstallation hex color (eg #AABBCC)",
+      "str",
+      "#EC7658"
+      ],
+    "colorBuildingPart": [
+      "colorBuildingPart hex color (eg #AABBCC)",
+      "str",
+      "#EC7658"
+      ],
+    "colorCityFurniture": [
+      "colorCityFurniture hex color (eg #AABBCC)",
+      "str",
+      "#4F4A6A"
+      ],
+    "colorGenericCityObject": [
+      "colorGenericCityObject hex color (eg #AABBCC)",
+      "str",
+      "#4F4A6A"
+      ],
+    "colorLandUse": [
+      "colorLandUse hex color (eg #AABBCC)",
+      "str",
+      "#C3DBB5"
+      ],
+    "colorPlantCover": [
+      "colorPlantCover hex color (eg #AABBCC)",
+      "str",
+      "#A6CD59"
+      ],
+    "colorRailway": [
+      "colorRailway hex color (eg #AABBCC)",
+      "str",
+      "#474447"
+      ],
+    "colorRoad": [
+      "colorRoad hex color (eg #AABBCC)",
+      "str",
+      "#474447"
+      ],
+    "colorSolitaryVegetationObject": [
+      "colorSolitaryVegetationObject hex color (eg #AABBCC)",
+      "str",
+      "#A6CD59"
+      ],
+    "colorTINRelief": [
+      "colorTINRelief hex color (eg #AABBCC)",
+      "str",
+      "#A6CD59"
+      ],
+    "colorTransportSquare": [
+      "colorTransportSquare hex color (eg #AABBCC)",
+      "str",
+      "#474447"
+      ],
+    "colorTunnel": [
+      "colorTunnel hex color (eg #AABBCC)",
+      "str",
+      "#4F4A6A"
+      ],
+    "colorTunnelInstallation": [
+      "colorTunnelInstallation hex color (eg #AABBCC)",
+      "str",
+      "#4F4A6A"
+      ],
+    "colorTunnelPart": [
+      "colorTunnelPart hex color (eg #AABBCC)",
+      "str",
+      "#4F4A6A"
+      ],
+    "colorWaterBody": [
+      "colorWaterBody hex color (eg #AABBCC)",
+      "str",
+      "#293A4A"
+      ]
   },
   "nodes": {
     "Box": {
@@ -164,12 +264,33 @@
       "parameters": {
         "CRS": "EPSG:4978",
         "binary": true,
+        "colorBridge": "{{colorBridge}}",
+        "colorBridgeConstructionElement": "{{colorBridgeConstructionElement}}",
+        "colorBridgeInstallation": "{{colorBridgeInstallation}}",
+        "colorBridgePart": "{{colorBridgePart}}",
+        "colorBuilding": "{{colorBuilding}}",
+        "colorBuildingInstallation": "{{colorBuildingInstallation}}",
+        "colorBuildingPart": "{{colorBuildingPart}}",
+        "colorCityFurniture": "{{colorCityFurniture}}",
+        "colorGenericCityObject": "{{colorGenericCityObject}}",
+        "colorLandUse": "{{colorLandUse}}",
+        "colorPlantCover": "{{colorPlantCover}}",
+        "colorRailway": "{{colorRailway}}",
+        "colorRoad": "{{colorRoad}}",
+        "colorSolitaryVegetationObject": "{{colorSolitaryVegetationObject}}",
+        "colorTINRelief": "{{colorTINRelief}}",
+        "colorTransportSquare": "{{colorTransportSquare}}",
+        "colorTunnel": "{{colorTunnel}}",
+        "colorTunnelInstallation": "{{colorTunnelInstallation}}",
+        "colorTunnelPart": "{{colorTunnelPart}}",
+        "colorWaterBody": "{{colorWaterBody}}",
         "embed_buffers": true,
         "embed_images": true,
         "filepath": "{{output_file}}",
+        "meshopt_compress": true,
         "metadata_class": "{{metadata_class}}",
         "pretty_print": false,
-        "quantizeVertex": true,
+        "quantize_vertex": true,
         "relative_to_center": true
       },
       "position": [
@@ -191,17 +312,38 @@
       "parameters": {
         "CRS": "EPSG:4978",
         "binary": false,
+        "colorBridge": "#4F4A6A",
+        "colorBridgeConstructionElement": "#4F4A6A",
+        "colorBridgeInstallation": "#4F4A6A",
+        "colorBridgePart": "#4F4A6A",
+        "colorBuilding": "#EC7658",
+        "colorBuildingInstallation": "#EC7658",
+        "colorBuildingPart": "#EC7658",
+        "colorCityFurniture": "#4F4A6A",
+        "colorGenericCityObject": "#4F4A6A",
+        "colorLandUse": "#C3DBB5",
+        "colorPlantCover": "#A6CD59",
+        "colorRailway": "#474447",
+        "colorRoad": "#474447",
+        "colorSolitaryVegetationObject": "#A6CD59",
+        "colorTINRelief": "#A6CD59",
+        "colorTransportSquare": "#474447",
+        "colorTunnel": "#4F4A6A",
+        "colorTunnelInstallation": "#4F4A6A",
+        "colorTunnelPart": "#4F4A6A",
+        "colorWaterBody": "#293A4A",
         "embed_buffers": false,
         "embed_images": false,
         "filepath": "{{output_file}}.gltf",
+        "meshopt_compress": true,
         "metadata_class": "{{metadata_class}}",
         "pretty_print": true,
-        "quantizeVertex": true,
+        "quantize_vertex": true,
         "relative_to_center": true
       },
       "position": [
-        908.0,
-        194.0
+        916.0,
+        238.0
       ],
       "type": [
         "CoreIO",
