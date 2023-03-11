@@ -161,17 +161,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Select how many levels of tiles from the hierarchy do we want to export with
     // content.
-    tileset.add_content(cli.qtree_export_levels);
-    let tiles = tileset.flatten(cli.qtree_export_levels);
+    // tileset.add_content(cli.qtree_export_levels);
+    // let tiles = tileset.flatten(cli.qtree_export_levels);
     tileset.to_file(&tileset_path)?;
 
     let subtrees_path = cli.output.join("subtrees");
     fs::create_dir_all(&subtrees_path)?;
     let mut tileset_implicit = tileset.clone();
-    tileset_implicit.make_implicit(&world.grid, &quadtree, subtrees_path);
+    // FIXME: here we have a Vec<(Tile, TileId)> in 'tiles' instead of Vec<&Tile>, because of the
+    //  mess with the implicit/explicit tile id-s.
+    let tiles = tileset_implicit.make_implicit(&world.grid, &quadtree, subtrees_path);
     tileset_implicit.to_file(&tileset_path_implicit)?;
 
-    // return Ok(());
+    return Ok(());
 
     // Export by calling a subprocess to merge the .jsonl files and convert them to the
     // target format
@@ -202,15 +204,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if cli.format == Formats::_3DTiles && cli.exe_gltfpack.is_none() {
         debug!("exe_gltfpack is not set, skipping gltf optimization")
     };
-    tiles.into_par_iter().for_each(|tile| {
-        let tileid = &tile.id;
-        let qtree_nodeid: spatial_structs::QuadTreeNodeId = tileid.into();
+    tiles.into_par_iter().for_each(|(tile, tileid_continuous)| {
+        let tileid = tileid_continuous;
+        let tileid_grid = &tile.id;
+        let qtree_nodeid: spatial_structs::QuadTreeNodeId = tileid_grid.into();
         let qtree_node = quadtree
             .node(&qtree_nodeid)
-            .unwrap_or_else(|| panic!("did not find tile {} in quadtree", tileid));
+            .unwrap_or_else(|| panic!("did not find tile {} in quadtree", tileid_grid));
         if qtree_node.nr_items > 0 {
-            let tileid = tileid.to_string();
-            let file_name = tileid.clone();
+            // FIXME: in case of explicit tiles, the Tile.Content.uri won't match the tileid_string,
+            //  but we need this continous id for the implicit tiles
+            let tileid_string = tileid.to_string();
+            let file_name = tileid_string;
             let output_file = path_output_tiles
                 .join(&file_name)
                 .with_extension(&subprocess_config.output_extension);
@@ -277,66 +282,123 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .arg(format!("--metadata_class={}", &metadata_class))
                 .arg(format!("--attribute_spec={}", &attribute_spec))
                 .arg(format!("--geometric_error={}", &tile.geometric_error));
-            
+
             if !cli.color_building.is_none() {
-                cmd = cmd.arg(format!("--colorBuilding={}", cli.color_building.as_ref().unwrap()));
+                cmd = cmd.arg(format!(
+                    "--colorBuilding={}",
+                    cli.color_building.as_ref().unwrap()
+                ));
             }
             if !cli.color_building_part.is_none() {
-                cmd = cmd.arg(format!("--colorBuildingPart={}", cli.color_building_part.as_ref().unwrap()));
+                cmd = cmd.arg(format!(
+                    "--colorBuildingPart={}",
+                    cli.color_building_part.as_ref().unwrap()
+                ));
             }
             if !cli.color_building_installation.is_none() {
-                cmd = cmd.arg(format!("--colorBuildingInstallation={}", cli.color_building_installation.as_ref().unwrap()));
+                cmd = cmd.arg(format!(
+                    "--colorBuildingInstallation={}",
+                    cli.color_building_installation.as_ref().unwrap()
+                ));
             }
             if !cli.color_tin_relief.is_none() {
-                cmd = cmd.arg(format!("--colorTINRelief={}", cli.color_tin_relief.as_ref().unwrap()));
+                cmd = cmd.arg(format!(
+                    "--colorTINRelief={}",
+                    cli.color_tin_relief.as_ref().unwrap()
+                ));
             }
             if !cli.color_road.is_none() {
                 cmd = cmd.arg(format!("--colorRoad={}", cli.color_road.as_ref().unwrap()));
             }
             if !cli.color_railway.is_none() {
-                cmd = cmd.arg(format!("--colorRailway={}", cli.color_railway.as_ref().unwrap()));
+                cmd = cmd.arg(format!(
+                    "--colorRailway={}",
+                    cli.color_railway.as_ref().unwrap()
+                ));
             }
             if !cli.color_transport_square.is_none() {
-                cmd = cmd.arg(format!("--colorTransportSquare={}", cli.color_transport_square.as_ref().unwrap()));
+                cmd = cmd.arg(format!(
+                    "--colorTransportSquare={}",
+                    cli.color_transport_square.as_ref().unwrap()
+                ));
             }
             if !cli.color_water_body.is_none() {
-                cmd = cmd.arg(format!("--colorWaterBody={}", cli.color_water_body.as_ref().unwrap()));
+                cmd = cmd.arg(format!(
+                    "--colorWaterBody={}",
+                    cli.color_water_body.as_ref().unwrap()
+                ));
             }
             if !cli.color_plant_cover.is_none() {
-                cmd = cmd.arg(format!("--colorPlantCover={}", cli.color_plant_cover.as_ref().unwrap()));
+                cmd = cmd.arg(format!(
+                    "--colorPlantCover={}",
+                    cli.color_plant_cover.as_ref().unwrap()
+                ));
             }
             if !cli.color_solitary_vegetation_object.is_none() {
-                cmd = cmd.arg(format!("--colorSolitaryVegetationObject={}", cli.color_solitary_vegetation_object.as_ref().unwrap()));
+                cmd = cmd.arg(format!(
+                    "--colorSolitaryVegetationObject={}",
+                    cli.color_solitary_vegetation_object.as_ref().unwrap()
+                ));
             }
             if !cli.color_land_use.is_none() {
-                cmd = cmd.arg(format!("--colorLandUse={}", cli.color_land_use.as_ref().unwrap()));
+                cmd = cmd.arg(format!(
+                    "--colorLandUse={}",
+                    cli.color_land_use.as_ref().unwrap()
+                ));
             }
             if !cli.color_city_furniture.is_none() {
-                cmd = cmd.arg(format!("--colorCityFurniture={}", cli.color_city_furniture.as_ref().unwrap()));
+                cmd = cmd.arg(format!(
+                    "--colorCityFurniture={}",
+                    cli.color_city_furniture.as_ref().unwrap()
+                ));
             }
             if !cli.color_bridge.is_none() {
-                cmd = cmd.arg(format!("--colorBridge={}", cli.color_bridge.as_ref().unwrap()));
+                cmd = cmd.arg(format!(
+                    "--colorBridge={}",
+                    cli.color_bridge.as_ref().unwrap()
+                ));
             }
             if !cli.color_bridge_part.is_none() {
-                cmd = cmd.arg(format!("--colorBridgePart={}", cli.color_bridge_part.as_ref().unwrap()));
+                cmd = cmd.arg(format!(
+                    "--colorBridgePart={}",
+                    cli.color_bridge_part.as_ref().unwrap()
+                ));
             }
             if !cli.color_bridge_installation.is_none() {
-                cmd = cmd.arg(format!("--colorBridgeInstallation={}", cli.color_bridge_installation.as_ref().unwrap()));
+                cmd = cmd.arg(format!(
+                    "--colorBridgeInstallation={}",
+                    cli.color_bridge_installation.as_ref().unwrap()
+                ));
             }
             if !cli.color_bridge_construction_element.is_none() {
-                cmd = cmd.arg(format!("--colorBridgeConstructionElement={}", cli.color_bridge_construction_element.as_ref().unwrap()));
+                cmd = cmd.arg(format!(
+                    "--colorBridgeConstructionElement={}",
+                    cli.color_bridge_construction_element.as_ref().unwrap()
+                ));
             }
             if !cli.color_tunnel.is_none() {
-                cmd = cmd.arg(format!("--colorTunnel={}", cli.color_tunnel.as_ref().unwrap()));
+                cmd = cmd.arg(format!(
+                    "--colorTunnel={}",
+                    cli.color_tunnel.as_ref().unwrap()
+                ));
             }
             if !cli.color_tunnel_part.is_none() {
-                cmd = cmd.arg(format!("--colorTunnelPart={}", cli.color_tunnel_part.as_ref().unwrap()));
+                cmd = cmd.arg(format!(
+                    "--colorTunnelPart={}",
+                    cli.color_tunnel_part.as_ref().unwrap()
+                ));
             }
             if !cli.color_tunnel_installation.is_none() {
-                cmd = cmd.arg(format!("--colorTunnelInstallation={}", cli.color_tunnel_installation.as_ref().unwrap()));
+                cmd = cmd.arg(format!(
+                    "--colorTunnelInstallation={}",
+                    cli.color_tunnel_installation.as_ref().unwrap()
+                ));
             }
             if !cli.color_generic_city_object.is_none() {
-                cmd = cmd.arg(format!("--colorGenericCityObject={}", cli.color_generic_city_object.as_ref().unwrap()));
+                cmd = cmd.arg(format!(
+                    "--colorGenericCityObject={}",
+                    cli.color_generic_city_object.as_ref().unwrap()
+                ));
             }
 
             if cli.format == Formats::_3DTiles {
@@ -348,9 +410,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         cmd = cmd.arg("--simplify_ratio=1.0").arg("--skip_clip=true");
                     }
                 }
-                // if log_enabled!(Level::Debug) {
-                //     cmd = cmd.arg("--verbose");
-                // }
+                if log_enabled!(Level::Debug) {
+                    cmd = cmd.arg("--verbose");
+                }
             }
             debug!("{}", cmd.to_cmdline_lossy());
             let res_exit_status = cmd

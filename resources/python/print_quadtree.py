@@ -1,7 +1,7 @@
 from pathlib import Path
 import json
 
-tileset_path = Path("/data/work/bdukai/3dbag_v2103_features/3dtiles/tileset.json")
+tileset_path = Path("/data/work/bdukai/3dbag_v2103_features/3dtiles/tileset_explicit.json")
 with tileset_path.open("r") as fo:
     tileset = json.load(fo)
 

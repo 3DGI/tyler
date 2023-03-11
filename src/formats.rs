@@ -10,15 +10,16 @@ pub mod cesium3dtiles {
     use std::fmt::{Display, Formatter};
     use std::fs::File;
     use std::io::{Seek, Write};
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     use bitvec::prelude as bv;
-    use log::{debug, error};
+    use log::{debug, error, info};
     use morton_encoding::morton_encode;
     use serde::{Serialize, Serializer};
     use serde_repr::Serialize_repr;
 
     use crate::proj::Proj;
+    use crate::spatial_structs::{Bbox, CellId, QuadTree, QuadTreeNodeId, SquareGrid};
 
     /// [Tileset](https://github.com/CesiumGS/3d-tiles/tree/main/specification#tileset).
     ///
@@ -121,7 +122,7 @@ pub mod cesium3dtiles {
                 // The geometric error of a tile is its 'size'.
                 // Since we have square tiles, we compute its size as the length of
                 // its side on the x-axis.
-                let d = 1.0/50.0 * (tile_bbox[3] - tile_bbox[0]);
+                let d = 1.0 / 50.0 * (tile_bbox[3] - tile_bbox[0]);
                 if d < 0.0 {
                     debug!("d is negative in parent");
                 }
@@ -416,11 +417,12 @@ pub mod cesium3dtiles {
         /// Expects that explicit tiling is already created.
         pub fn make_implicit(
             &mut self,
-            grid: &crate::spatial_structs::SquareGrid,
-            qtree: &crate::spatial_structs::QuadTree,
-            output_dir: std::path::PathBuf,
-        ) {
-            let subtree_sections: usize = 2;
+            grid: &SquareGrid,
+            qtree: &QuadTree,
+            output_dir: PathBuf,
+        ) -> Vec<(Tile, TileId)> {
+            let mut flat_tiles_with_content: Vec<(Tile, TileId)> = Vec::new();
+            let subtree_sections: usize = 1;
             let subtree_levels =
                 (self.available_levels() as f32 / subtree_sections as f32).ceil() as u16;
             let subtrees = Subtrees::default();
@@ -442,29 +444,49 @@ pub mod cesium3dtiles {
             //  whether that node (tile) is indeed available and whether it has a
             //  content in the explicit tileset.
 
-            let extent_width = grid.bbox[3] - grid.bbox[0];
+            let grid_epsg = grid.epsg;
             let level_subtree_root: u32 = 0;
             let mut subtree_queue = VecDeque::new();
             let rootid = &self.root.id;
-            let cellid: crate::spatial_structs::CellId = rootid.into();
+            let cellid: CellId = rootid.into();
             subtree_queue.push_back((level_subtree_root, cellid, &self.root));
 
             while let Some((level_subtree_root, cellid, tile)) = subtree_queue.pop_front() {
                 let subtree_id = TileId::new(cellid.column, cellid.row, level_subtree_root as u16);
-                debug!("\n\t\t{:=>10}\tprocessing subtree {}", "", &subtree_id);
+                info!("\n\t\t{:=>10}\tprocessing subtree {}", "", &subtree_id);
 
                 let mut buffer_vec: Vec<u64> = Vec::new();
                 let mut tile_availability_bitstream = bv::bitvec![u64, bv::Msb0;];
                 let mut content_availability_bitstream = bv::bitvec![u64, bv::Msb0;];
 
+                let tileid = &tile.id;
+                let qtree_nodeid: QuadTreeNodeId = tileid.into();
+                let tile_bbox = qtree.node(&qtree_nodeid).unwrap().bbox(grid);
+                let extent_width = tile_bbox[3] - tile_bbox[0];
+
                 let mut tiles_queue = VecDeque::new();
                 tiles_queue.push_back(tile);
-                let mut level_current: u32 = 0;
-                for level in 0..subtree_levels as u32 {
-                    level_current = level_subtree_root + level;
-                    let nr_tiles = 4_usize.pow(level_current);
-                    let grid_coordinate_map =
-                        Self::grid_coordinate_map(level_current, extent_width, grid);
+                let mut level_quadtree: u32 = 0;
+                for level_subtree in 0..subtree_levels as u32 {
+                    level_quadtree = level_subtree_root + level_subtree;
+                    // The number of tiles on the current level of the full quadtree
+                    let nr_tiles = 4_usize.pow(level_quadtree);
+                    // The number of tiles on the current level within the subtree. Each subtree
+                    //  with a single root tile, on level 0. Regardless where the subtree is in the
+                    //  full quadtree hierarchy.
+                    let nr_tiles_subtree = 4_usize.pow(level_subtree);
+                    let grid_coordinate_map = Self::grid_coordinate_map(
+                        level_subtree,
+                        extent_width,
+                        &tile_bbox,
+                        grid_epsg,
+                    );
+                    let grid_coordinate_map_global = Self::grid_coordinate_map(
+                        level_quadtree,
+                        extent_width,
+                        &tile_bbox,
+                        grid_epsg,
+                    );
 
                     let mut children_current_level: Vec<&Tile> = Vec::new();
                     for t in tiles_queue.iter() {
@@ -486,9 +508,9 @@ pub mod cesium3dtiles {
                     }
 
                     let mut tile_availability_for_level = bv::bitvec![u64, bv::Msb0;];
-                    tile_availability_for_level.resize(nr_tiles, false);
+                    tile_availability_for_level.resize(nr_tiles_subtree, false);
                     let mut content_availability_for_level = bv::bitvec![u64, bv::Msb0;];
-                    content_availability_for_level.resize(nr_tiles, false);
+                    content_availability_for_level.resize(nr_tiles_subtree, false);
 
                     while let Some(tile) = tiles_queue.pop_front() {
                         debug!("processing tile {}", tile.id);
@@ -497,16 +519,31 @@ pub mod cesium3dtiles {
                         if let Some((cellid_grid_level, i_z_curve)) =
                             grid_coordinate_map.get(&tile_corner_coord)
                         {
-                            debug!(
-                                "tile {} matched grid cell {}, z-curve idx {}",
-                                tile.id, cellid_grid_level, i_z_curve
-                            );
-                            tile_availability_for_level.set(*i_z_curve, true);
-                            if tile.content.is_some() {
-                                content_availability_for_level.set(*i_z_curve, true);
+                            if let Some((cellid_grid_global, ..)) =
+                                grid_coordinate_map_global.get(&tile_corner_coord)
+                            {
+                                debug!(
+                                    "tile {} matched grid cell {}, z-curve idx {}",
+                                    tile.id, cellid_grid_level, i_z_curve
+                                );
+                                tile_availability_for_level.set(*i_z_curve, true);
+                                if tile.content.is_some() {
+                                    content_availability_for_level.set(*i_z_curve, true);
+                                    let tileid_continuous = TileId::new(
+                                        cellid_grid_global.column,
+                                        cellid_grid_global.row,
+                                        level_quadtree as u16,
+                                    );
+                                    flat_tiles_with_content.push((tile.clone(), tileid_continuous));
+                                }
+                            } else {
+                                debug!(
+                                    "could not locate tile {} in grid_coordinate_map_global",
+                                    tile.id
+                                );
                             }
                         } else {
-                            debug!("could not locate tile {} in grid_for_level", tile.id);
+                            debug!("could not locate tile {} in grid_coordinate_map", tile.id);
                         }
                     }
 
@@ -518,7 +555,7 @@ pub mod cesium3dtiles {
                     tiles_queue.extend(children_current_level);
                 }
 
-                let level_child_subtree = level_current + 1;
+                let level_child_subtree = level_quadtree + 1;
                 let nr_tiles_child_level = 4_usize.pow(level_child_subtree);
                 let nr_tiles_total_subtree = (4_usize.pow(subtree_levels as u32) - 1) / 3;
                 assert_eq!(
@@ -528,8 +565,12 @@ pub mod cesium3dtiles {
                     &nr_tiles_total_subtree,
                     &tile_availability_bitstream.len()
                 );
-                let grid_coordinate_map =
-                    Self::grid_coordinate_map(level_child_subtree, extent_width, grid);
+                let grid_coordinate_map = Self::grid_coordinate_map(
+                    level_child_subtree,
+                    extent_width,
+                    &tile_bbox,
+                    grid_epsg,
+                );
 
                 for child in tiles_queue.iter() {
                     let tile_corner_coord = Self::tile_corner_coordinate(grid, qtree, child);
@@ -665,6 +706,7 @@ pub mod cesium3dtiles {
                 uri: "tiles/{level}/{x}/{y}.glb".to_string(),
             });
             self.root.children = None;
+            flat_tiles_with_content
         }
 
         fn add_bitstream(
@@ -708,13 +750,9 @@ pub mod cesium3dtiles {
             }
         }
 
-        fn tile_corner_coordinate(
-            grid: &crate::spatial_structs::SquareGrid,
-            qtree: &crate::spatial_structs::QuadTree,
-            tile: &Tile,
-        ) -> String {
+        fn tile_corner_coordinate(grid: &SquareGrid, qtree: &QuadTree, tile: &Tile) -> String {
             let tileid = &tile.id;
-            let qtree_nodeid: crate::spatial_structs::QuadTreeNodeId = tileid.into();
+            let qtree_nodeid: QuadTreeNodeId = tileid.into();
             let tile_bbox = qtree.node(&qtree_nodeid).unwrap().bbox(grid);
             let [minx, miny, ..] = tile_bbox;
             format!("{:.0},{:.0}", minx, miny)
@@ -726,14 +764,14 @@ pub mod cesium3dtiles {
         fn grid_coordinate_map(
             level_current: u32,
             extent_width: f64,
-            grid: &crate::spatial_structs::SquareGrid,
-        ) -> HashMap<String, (crate::spatial_structs::CellId, usize)> {
+            bbox: &Bbox,
+            epsg: u16,
+        ) -> HashMap<String, (CellId, usize)> {
             let nr_tiles = 4_usize.pow(level_current);
 
             // Grid for the current level
             let tile_width = (extent_width / (nr_tiles as f64).sqrt()) as u16;
-            let grid_for_level =
-                crate::spatial_structs::SquareGrid::new(&grid.bbox, tile_width, grid.epsg, None);
+            let grid_for_level = SquareGrid::new(bbox, tile_width, epsg, None);
 
             // Map of:
             //  - x,y coordinate of the min coordinate of the lower-left cell
@@ -743,7 +781,7 @@ pub mod cesium3dtiles {
                 (crate::spatial_structs::CellId, usize),
             > = HashMap::new();
 
-            let mut mortoncodes: Vec<(u128, crate::spatial_structs::CellId)> = grid_for_level
+            let mut mortoncodes: Vec<(u128, CellId)> = grid_for_level
                 .into_iter()
                 .map(|(cellid, _)| {
                     (
