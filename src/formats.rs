@@ -455,9 +455,10 @@ pub mod cesium3dtiles {
                 let subtree_id = TileId::new(cellid.column, cellid.row, level_subtree_root as u16);
                 info!("\n\t\t{:=>10}\tprocessing subtree {}", "", &subtree_id);
 
-                let mut buffer_vec: Vec<u64> = Vec::new();
-                let mut tile_availability_bitstream = bv::bitvec![u64, bv::Msb0;];
-                let mut content_availability_bitstream = bv::bitvec![u64, bv::Msb0;];
+                let mut buffer_vec: Vec<u8> = Vec::new();
+                let mut tile_availability_bitstream: bv::BitVec<u8, bv::Msb0> = bv::BitVec::new();
+                let mut content_availability_bitstream: bv::BitVec<u8, bv::Msb0> =
+                    bv::BitVec::new();
 
                 let tileid = &tile.id;
                 let qtree_nodeid: QuadTreeNodeId = tileid.into();
@@ -493,8 +494,7 @@ pub mod cesium3dtiles {
                         if let Some(ref ch) = t.children {
                             for c in ch {
                                 let tileid = &c.id;
-                                let qtree_nodeid: crate::spatial_structs::QuadTreeNodeId =
-                                    tileid.into();
+                                let qtree_nodeid: QuadTreeNodeId = tileid.into();
                                 let cell = qtree.node(&qtree_nodeid).unwrap();
                                 if cell.nr_items > 0 {
                                     children_current_level.push(c)
@@ -507,9 +507,11 @@ pub mod cesium3dtiles {
                         }
                     }
 
-                    let mut tile_availability_for_level = bv::bitvec![u64, bv::Msb0;];
+                    let mut tile_availability_for_level: bv::BitVec<u8, bv::Msb0> =
+                        bv::BitVec::new();
                     tile_availability_for_level.resize(nr_tiles_subtree, false);
-                    let mut content_availability_for_level = bv::bitvec![u64, bv::Msb0;];
+                    let mut content_availability_for_level: bv::BitVec<u8, bv::Msb0> =
+                        bv::BitVec::new();
                     content_availability_for_level.resize(nr_tiles_subtree, false);
 
                     while let Some(tile) = tiles_queue.pop_front() {
@@ -593,7 +595,8 @@ pub mod cesium3dtiles {
                 let bf_content_availability = 1;
                 let bf_child_subtree_availability = 2;
 
-                let mut child_subtree_availability_bitstream = bv::bitvec![u64, bv::Msb0;];
+                let mut child_subtree_availability_bitstream: bv::BitVec<u8, bv::Msb0> =
+                    bv::BitVec::new();
                 child_subtree_availability_bitstream.resize(nr_tiles_child_level, false);
 
                 let tile_availability = Self::create_availability(
@@ -625,10 +628,19 @@ pub mod cesium3dtiles {
                     child_subtree_availability_bitstream,
                 );
 
+                let remainder = buffer_vec.len() % 64;
+                let mut padding = 0;
+                if remainder > 0 {
+                    padding = 64 - remainder;
+                }
+                for i in 0..padding {
+                    buffer_vec.push(0);
+                }
+
                 debug!("writing subtree {}", &subtree_id);
                 let buffer = Buffer {
                     name: None,
-                    byte_length: buffer_vec.len() * 8,
+                    byte_length: buffer_vec.len(),
                 };
                 let subtree = Subtree {
                     buffers: Some(vec![buffer]),
@@ -664,7 +676,7 @@ pub mod cesium3dtiles {
                 let magic = 0x74627573u32.to_le_bytes(); // subt
                 let version = 1_u32.to_le_bytes();
                 let json_byte_length = (subtree_json_bytes.len() as u64).to_le_bytes();
-                let buffer_byte_length = ((buffer_vec.len() * 8) as u64).to_le_bytes();
+                let buffer_byte_length = ((buffer_vec.len()) as u64).to_le_bytes();
                 header.extend_from_slice(&magic);
                 header.extend_from_slice(&version);
                 header.extend_from_slice(&json_byte_length);
@@ -710,15 +722,15 @@ pub mod cesium3dtiles {
         }
 
         fn add_bitstream(
-            buffer_vec: &mut Vec<u64>,
+            buffer_vec: &mut Vec<u8>,
             bufferviews: &mut Vec<BufferView>,
-            availability_bitstream: bv::BitVec<u64, bv::Msb0>,
+            availability_bitstream: bv::BitVec<u8, bv::Msb0>,
         ) {
             let availability_vec = availability_bitstream.into_vec();
             bufferviews.push(BufferView {
                 buffer: 0,
-                byte_offset: buffer_vec.len() * 8,
-                byte_length: availability_vec.len() * 8,
+                byte_offset: buffer_vec.len(),
+                byte_length: availability_vec.len(),
                 name: None,
             });
             buffer_vec.extend(availability_vec);
@@ -726,7 +738,7 @@ pub mod cesium3dtiles {
 
         fn create_availability(
             bf_availability: usize,
-            availability_bitstream: &mut bv::BitVec<u64, bv::Msb0>,
+            availability_bitstream: &mut bv::BitVec<u8, bv::Msb0>,
         ) -> Availability {
             availability_bitstream.set_uninitialized(false);
             if availability_bitstream.not_any() {
