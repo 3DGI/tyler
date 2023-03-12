@@ -614,34 +614,30 @@ pub mod cesium3dtiles {
 
                 // RTODO: only write bit stream if bitstreams is not constant
 
-                // RTODO: add padding in buffer_vec to next 8 byte boundary
+                // add padding in buffer_vec to next 8 byte boundary
+                Self::add_padding(&mut buffer_vec, 8);
                 Self::add_bitstream(
                     &mut buffer_vec,
                     &mut bufferviews,
                     tile_availability_bitstream,
                 );
-                // RTODO: add padding in buffer_vec to next 8 byte boundary
+                // add padding in buffer_vec to next 8 byte boundary
+                Self::add_padding(&mut buffer_vec, 8);
                 Self::add_bitstream(
                     &mut buffer_vec,
                     &mut bufferviews,
                     content_availability_bitstream,
                 );
-                // RTODO: add padding in buffer_vec to next 8 byte boundary
+                // add padding in buffer_vec to next 8 byte boundary
+                Self::add_padding(&mut buffer_vec, 8);
                 Self::add_bitstream(
                     &mut buffer_vec,
                     &mut bufferviews,
                     child_subtree_availability_bitstream,
                 );
 
-                // RTODO: why 64 bytes here? should it not be 8? buffer_vec is of type u8, so each element is 1 byte
-                let remainder = buffer_vec.len() % 64;
-                let mut padding = 0;
-                if remainder > 0 {
-                    padding = 64 - remainder;
-                }
-                for i in 0..padding {
-                    buffer_vec.push(0);
-                }
+                // pad our buffer_vec to have a length that is a multiple of 8 bytes
+                Self::add_padding(&mut buffer_vec, 8);
 
                 debug!("writing subtree {}", &subtree_id);
                 let buffer = Buffer {
@@ -658,10 +654,10 @@ pub mod cesium3dtiles {
                 let mut subtree_json = serde_json::to_string(&subtree)
                     .expect("failed to serialize the subtree to json");
                 // RTODO: why 64 bytes here? should it not be 8?
-                let remainder = subtree_json.as_bytes().len() % 64;
+                let remainder = subtree_json.as_bytes().len() % 8;
                 let mut padding = 0;
                 if remainder > 0 {
-                    padding = 64 - remainder;
+                    padding = 8 - remainder;
                 }
                 for i in 0..padding {
                     subtree_json += " ";
@@ -726,6 +722,16 @@ pub mod cesium3dtiles {
             });
             self.root.children = None;
             flat_tiles_with_content
+        }
+
+        fn add_padding(
+            buffer_vec: &mut Vec<u8>,
+            align_by: usize,
+        ) {
+            let padding = (align_by - (buffer_vec.len() % align_by)) % align_by;
+            for i in 0..padding {
+                buffer_vec.push(0);
+            }
         }
 
         fn add_bitstream(

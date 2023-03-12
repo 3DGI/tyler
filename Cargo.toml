@@ -13,9 +13,9 @@ readme = "README.md"
 name = "tyler"
 path = "src/main.rs"
 
-[[bin]]
-name = "test"
-path = "src/test.rs"
+# [[bin]]
+# name = "test"
+# path = "src/test.rs"
 
 [dependencies]
 log = "0.4.17"
