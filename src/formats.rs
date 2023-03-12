@@ -481,12 +481,14 @@ pub mod cesium3dtiles {
                         extent_width,
                         &tile_bbox,
                         grid_epsg,
+                        true,
                     );
                     let grid_coordinate_map_global = Self::grid_coordinate_map(
                         level_quadtree,
                         extent_width,
                         &tile_bbox,
                         grid_epsg,
+                        false,
                     );
 
                     let mut children_current_level: Vec<&Tile> = Vec::new();
@@ -549,6 +551,33 @@ pub mod cesium3dtiles {
                         }
                     }
 
+                    // DEBUG
+                    let nr_tiles = 4_usize.pow(level_subtree);
+
+                    // Grid for the current level
+                    let tile_width = (extent_width / (nr_tiles as f64).sqrt()) as u16;
+                    let grid_for_level = SquareGrid::new(&tile_bbox, tile_width, grid_epsg, None);
+                    let mut file_implicit_tileset_at_level = File::create(format!(
+                        "implicit-level-{}-{}-{}.tsv",
+                        &level_quadtree, &tile.id.x, &tile.id.y
+                    ))
+                    .unwrap();
+                    for (cellid_grid_level, i_z_curve) in grid_coordinate_map.values() {
+                        let wkt = grid_for_level.cell_to_wkt(cellid_grid_level);
+                        let tile_available = tile_availability_for_level.get(*i_z_curve).unwrap();
+                        let content_available =
+                            content_availability_for_level.get(*i_z_curve).unwrap();
+                        writeln!(
+                            file_implicit_tileset_at_level,
+                            "{}\t{}\t{}\t{}",
+                            cellid_grid_level,
+                            tile_available.as_ref(),
+                            content_available.as_ref(),
+                            wkt
+                        )
+                        .unwrap();
+                    }
+
                     tile_availability_for_level.set_uninitialized(false);
                     content_availability_for_level.set_uninitialized(false);
                     tile_availability_bitstream.extend_from_bitslice(&tile_availability_for_level);
@@ -572,6 +601,7 @@ pub mod cesium3dtiles {
                     extent_width,
                     &tile_bbox,
                     grid_epsg,
+                    false,
                 );
 
                 for child in tiles_queue.iter() {
@@ -778,6 +808,7 @@ pub mod cesium3dtiles {
             extent_width: f64,
             bbox: &Bbox,
             epsg: u16,
+            do_export: bool,
         ) -> HashMap<String, (CellId, usize)> {
             let nr_tiles = 4_usize.pow(level_current);
 
@@ -812,7 +843,7 @@ pub mod cesium3dtiles {
                 grid_for_level_corner_coords.insert(corner_coord_string, (*cellid, i));
             }
 
-            {
+            if do_export {
                 // DEBUG
                 let first_cell = grid_for_level.into_iter().next().unwrap();
                 let mut file_grid = File::create(format!(
