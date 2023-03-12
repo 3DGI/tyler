@@ -612,22 +612,28 @@ pub mod cesium3dtiles {
                     &mut child_subtree_availability_bitstream,
                 );
 
+                // RTODO: only write bit stream if bitstreams is not constant
+
+                // RTODO: add padding in buffer_vec to next 8 byte boundary
                 Self::add_bitstream(
                     &mut buffer_vec,
                     &mut bufferviews,
                     tile_availability_bitstream,
                 );
+                // RTODO: add padding in buffer_vec to next 8 byte boundary
                 Self::add_bitstream(
                     &mut buffer_vec,
                     &mut bufferviews,
                     content_availability_bitstream,
                 );
+                // RTODO: add padding in buffer_vec to next 8 byte boundary
                 Self::add_bitstream(
                     &mut buffer_vec,
                     &mut bufferviews,
                     child_subtree_availability_bitstream,
                 );
 
+                // RTODO: why 64 bytes here? should it not be 8? buffer_vec is of type u8, so each element is 1 byte
                 let remainder = buffer_vec.len() % 64;
                 let mut padding = 0;
                 if remainder > 0 {
@@ -651,6 +657,7 @@ pub mod cesium3dtiles {
                 };
                 let mut subtree_json = serde_json::to_string(&subtree)
                     .expect("failed to serialize the subtree to json");
+                // RTODO: why 64 bytes here? should it not be 8?
                 let remainder = subtree_json.as_bytes().len() % 64;
                 let mut padding = 0;
                 if remainder > 0 {
