@@ -420,6 +420,7 @@ pub mod cesium3dtiles {
             grid: &SquareGrid,
             qtree: &QuadTree,
             output_dir: PathBuf,
+            grid_export: bool,
         ) -> Vec<(Tile, TileId)> {
             let mut flat_tiles_with_content: Vec<(Tile, TileId)> = Vec::new();
             let subtree_sections: usize = 1;
@@ -481,7 +482,7 @@ pub mod cesium3dtiles {
                         extent_width,
                         &tile_bbox,
                         grid_epsg,
-                        true,
+                        grid_export,
                     );
                     let grid_coordinate_map_global = Self::grid_coordinate_map(
                         level_quadtree,
