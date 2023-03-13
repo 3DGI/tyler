@@ -25,10 +25,210 @@
       "str",
       "objectid:int,bronhouder:string,bgt_fysiekvoorkomen:string"
     ],
+    "colorBridge": [
+      "colorBridge hex color (eg #AABBCC)",
+      "str",
+      "#4F4A6A"
+    ],
+    "colorBridgeConstructionElement": [
+      "colorBridgeConstructionElement hex color (eg #AABBCC)",
+      "str",
+      "#4F4A6A"
+    ],
+    "colorBridgeInstallation": [
+      "colorBridgeInstallation hex color (eg #AABBCC)",
+      "str",
+      "#4F4A6A"
+    ],
+    "colorBridgePart": [
+      "colorBridgePart hex color (eg #AABBCC)",
+      "str",
+      "#4F4A6A"
+    ],
+    "colorBuilding": [
+      "colorBuilding hex color (eg #AABBCC)",
+      "str",
+      "#EC7658"
+    ],
+    "colorBuildingInstallation": [
+      "colorBuildingInstallation hex color (eg #AABBCC)",
+      "str",
+      "#EC7658"
+    ],
+    "colorBuildingPart": [
+      "colorBuildingPart hex color (eg #AABBCC)",
+      "str",
+      "#EC7658"
+    ],
+    "colorCityFurniture": [
+      "colorCityFurniture hex color (eg #AABBCC)",
+      "str",
+      "#4F4A6A"
+    ],
+    "colorGenericCityObject": [
+      "colorGenericCityObject hex color (eg #AABBCC)",
+      "str",
+      "#4F4A6A"
+    ],
+    "colorLandUse": [
+      "colorLandUse hex color (eg #AABBCC)",
+      "str",
+      "#C3DBB5"
+    ],
+    "colorPlantCover": [
+      "colorPlantCover hex color (eg #AABBCC)",
+      "str",
+      "#A6CD59"
+    ],
+    "colorRailway": [
+      "colorRailway hex color (eg #AABBCC)",
+      "str",
+      "#474447"
+    ],
+    "colorRoad": [
+      "colorRoad hex color (eg #AABBCC)",
+      "str",
+      "#474447"
+    ],
+    "colorSolitaryVegetationObject": [
+      "colorSolitaryVegetationObject hex color (eg #AABBCC)",
+      "str",
+      "#A6CD59"
+    ],
+    "colorTINRelief": [
+      "colorTINRelief hex color (eg #AABBCC)",
+      "str",
+      "#A6CD59"
+    ],
+    "colorTransportSquare": [
+      "colorTransportSquare hex color (eg #AABBCC)",
+      "str",
+      "#474447"
+    ],
+    "colorTunnel": [
+      "colorTunnel hex color (eg #AABBCC)",
+      "str",
+      "#4F4A6A"
+    ],
+    "colorTunnelInstallation": [
+      "colorTunnelInstallation hex color (eg #AABBCC)",
+      "str",
+      "#4F4A6A"
+    ],
+    "colorTunnelPart": [
+      "colorTunnelPart hex color (eg #AABBCC)",
+      "str",
+      "#4F4A6A"
+    ],
+    "colorWaterBody": [
+      "colorWaterBody hex color (eg #AABBCC)",
+      "str",
+      "#293A4A"
+    ],
     "cotypes": [
       "comma separated list of cityobject types. Leave empty for no filter.",
       "str",
       "LandUse,PlantCover,WaterBody,Road,GenericCityObject,Bridge"
+    ],
+    "lodBuilding": [
+      "lod filter for Building features",
+      "str",
+      ""
+    ],
+    "lodBuildingPart": [
+      "lod filter for BuildingPart features",
+      "str",
+      ""
+    ],
+    "lodBuildingInstallation": [
+      "lod filter for BuildingInstallation features",
+      "str",
+      ""
+    ],
+    "lodTINRelief": [
+      "lod filter for TINRelief features",
+      "str",
+      ""
+    ],
+    "lodRoad": [
+      "lod filter for Road features",
+      "str",
+      ""
+    ],
+    "lodRailway": [
+      "lod filter for Railway features",
+      "str",
+      ""
+    ],
+    "lodTransportSquare": [
+      "lod filter for TransportSquare features",
+      "str",
+      ""
+    ],
+    "lodWaterBody": [
+      "lod filter for WaterBody features",
+      "str",
+      ""
+    ],
+    "lodPlantCover": [
+      "lod filter for PlantCover features",
+      "str",
+      ""
+    ],
+    "lodSolitaryVegetationObject": [
+      "lod filter for SolitaryVegetationObject features",
+      "str",
+      ""
+    ],
+    "lodLandUse": [
+      "lod filter for LandUse features",
+      "str",
+      ""
+    ],
+    "lodCityFurniture": [
+      "lod filter for CityFurniture features",
+      "str",
+      ""
+    ],
+    "lodBridge": [
+      "lod filter for Bridge features",
+      "str",
+      ""
+    ],
+    "lodBridgePart": [
+      "lod filter for BridgePart features",
+      "str",
+      ""
+    ],
+    "lodBridgeInstallation": [
+      "lod filter for BridgeInstallation features",
+      "str",
+      ""
+    ],
+    "lodBridgeConstructionElement": [
+      "lod filter for BridgeConstructionElement features",
+      "str",
+      ""
+    ],
+    "lodTunnel": [
+      "lod filter for Tunnel features",
+      "str",
+      ""
+    ],
+    "lodTunnelPart": [
+      "lod filter for TunnelPart features",
+      "str",
+      ""
+    ],
+    "lodTunnelInstallation": [
+      "lod filter for TunnelInstallation features",
+      "str",
+      ""
+    ],
+    "lodGenericCityObject": [
+      "lod filter for GenericCityObject features",
+      "str",
+      ""
     ],
     "max_x": [
       "",
@@ -94,107 +294,7 @@
       "",
       "bool",
       false
-    ],
-    "colorBridge": [
-      "colorBridge hex color (eg #AABBCC)",
-      "str",
-      "#4F4A6A"
-      ],
-    "colorBridgeConstructionElement": [
-      "colorBridgeConstructionElement hex color (eg #AABBCC)",
-      "str",
-      "#4F4A6A"
-      ],
-    "colorBridgeInstallation": [
-      "colorBridgeInstallation hex color (eg #AABBCC)",
-      "str",
-      "#4F4A6A"
-      ],
-    "colorBridgePart": [
-      "colorBridgePart hex color (eg #AABBCC)",
-      "str",
-      "#4F4A6A"
-      ],
-    "colorBuilding": [
-      "colorBuilding hex color (eg #AABBCC)",
-      "str",
-      "#EC7658"
-      ],
-    "colorBuildingInstallation": [
-      "colorBuildingInstallation hex color (eg #AABBCC)",
-      "str",
-      "#EC7658"
-      ],
-    "colorBuildingPart": [
-      "colorBuildingPart hex color (eg #AABBCC)",
-      "str",
-      "#EC7658"
-      ],
-    "colorCityFurniture": [
-      "colorCityFurniture hex color (eg #AABBCC)",
-      "str",
-      "#4F4A6A"
-      ],
-    "colorGenericCityObject": [
-      "colorGenericCityObject hex color (eg #AABBCC)",
-      "str",
-      "#4F4A6A"
-      ],
-    "colorLandUse": [
-      "colorLandUse hex color (eg #AABBCC)",
-      "str",
-      "#C3DBB5"
-      ],
-    "colorPlantCover": [
-      "colorPlantCover hex color (eg #AABBCC)",
-      "str",
-      "#A6CD59"
-      ],
-    "colorRailway": [
-      "colorRailway hex color (eg #AABBCC)",
-      "str",
-      "#474447"
-      ],
-    "colorRoad": [
-      "colorRoad hex color (eg #AABBCC)",
-      "str",
-      "#474447"
-      ],
-    "colorSolitaryVegetationObject": [
-      "colorSolitaryVegetationObject hex color (eg #AABBCC)",
-      "str",
-      "#A6CD59"
-      ],
-    "colorTINRelief": [
-      "colorTINRelief hex color (eg #AABBCC)",
-      "str",
-      "#A6CD59"
-      ],
-    "colorTransportSquare": [
-      "colorTransportSquare hex color (eg #AABBCC)",
-      "str",
-      "#474447"
-      ],
-    "colorTunnel": [
-      "colorTunnel hex color (eg #AABBCC)",
-      "str",
-      "#4F4A6A"
-      ],
-    "colorTunnelInstallation": [
-      "colorTunnelInstallation hex color (eg #AABBCC)",
-      "str",
-      "#4F4A6A"
-      ],
-    "colorTunnelPart": [
-      "colorTunnelPart hex color (eg #AABBCC)",
-      "str",
-      "#4F4A6A"
-      ],
-    "colorWaterBody": [
-      "colorWaterBody hex color (eg #AABBCC)",
-      "str",
-      "#293A4A"
-      ]
+    ]
   },
   "nodes": {
     "Box": {

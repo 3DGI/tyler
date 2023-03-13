@@ -293,6 +293,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .arg(format!("--attribute_spec={}", &attribute_spec))
                 .arg(format!("--geometric_error={}", &tile.geometric_error));
 
+            // colors
             if !cli.color_building.is_none() {
                 cmd = cmd.arg(format!(
                     "--colorBuilding={}",
@@ -318,7 +319,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ));
             }
             if !cli.color_road.is_none() {
-                cmd = cmd.arg(format!("--colorRoad={}", cli.color_road.as_ref().unwrap()));
+                cmd = cmd.arg(format!(
+                    "--colorRoad={}", 
+                    cli.color_road.as_ref().unwrap()));
             }
             if !cli.color_railway.is_none() {
                 cmd = cmd.arg(format!(
@@ -408,6 +411,128 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 cmd = cmd.arg(format!(
                     "--colorGenericCityObject={}",
                     cli.color_generic_city_object.as_ref().unwrap()
+                ));
+            }
+
+            // lod filter
+            if !cli.lod_building.is_none() {
+                cmd = cmd.arg(format!(
+                    "--lodBuilding={}",
+                    cli.lod_building.as_ref().unwrap()
+                ));
+            }
+            if !cli.lod_building_part.is_none() {
+                cmd = cmd.arg(format!(
+                    "--lodBuildingPart={}",
+                    cli.lod_building_part.as_ref().unwrap()
+                ));
+            }
+            if !cli.lod_building_installation.is_none() {
+                cmd = cmd.arg(format!(
+                    "--lodBuildingInstallation={}",
+                    cli.lod_building_installation.as_ref().unwrap()
+                ));
+            }
+            if !cli.lod_tin_relief.is_none() {
+                cmd = cmd.arg(format!(
+                    "--lodTINRelief={}",
+                    cli.lod_tin_relief.as_ref().unwrap()
+                ));
+            }
+            if !cli.lod_road.is_none() {
+                cmd = cmd.arg(format!(
+                    "--lodRoad={}", 
+                    cli.lod_road.as_ref().unwrap()
+                ));
+            }
+            if !cli.lod_railway.is_none() {
+                cmd = cmd.arg(format!(
+                    "--lodRailway={}",
+                    cli.lod_railway.as_ref().unwrap()
+                ));
+            }
+            if !cli.lod_transport_square.is_none() {
+                cmd = cmd.arg(format!(
+                    "--lodTransportSquare={}",
+                    cli.lod_transport_square.as_ref().unwrap()
+                ));
+            }
+            if !cli.lod_water_body.is_none() {
+                cmd = cmd.arg(format!(
+                    "--lodWaterBody={}",
+                    cli.lod_water_body.as_ref().unwrap()
+                ));
+            }
+            if !cli.lod_plant_cover.is_none() {
+                cmd = cmd.arg(format!(
+                    "--lodPlantCover={}",
+                    cli.lod_plant_cover.as_ref().unwrap()
+                ));
+            }
+            if !cli.lod_solitary_vegetation_object.is_none() {
+                cmd = cmd.arg(format!(
+                    "--lodSolitaryVegetationObject={}",
+                    cli.lod_solitary_vegetation_object.as_ref().unwrap()
+                ));
+            }
+            if !cli.lod_land_use.is_none() {
+                cmd = cmd.arg(format!(
+                    "--lodLandUse={}",
+                    cli.lod_land_use.as_ref().unwrap()
+                ));
+            }
+            if !cli.lod_city_furniture.is_none() {
+                cmd = cmd.arg(format!(
+                    "--lodCityFurniture={}",
+                    cli.lod_city_furniture.as_ref().unwrap()
+                ));
+            }
+            if !cli.lod_bridge.is_none() {
+                cmd = cmd.arg(format!(
+                    "--lodBridge={}",
+                    cli.lod_bridge.as_ref().unwrap()
+                ));
+            }
+            if !cli.lod_bridge_part.is_none() {
+                cmd = cmd.arg(format!(
+                    "--lodBridgePart={}",
+                    cli.lod_bridge_part.as_ref().unwrap()
+                ));
+            }
+            if !cli.lod_bridge_installation.is_none() {
+                cmd = cmd.arg(format!(
+                    "--lodBridgeInstallation={}",
+                    cli.lod_bridge_installation.as_ref().unwrap()
+                ));
+            }
+            if !cli.lod_bridge_construction_element.is_none() {
+                cmd = cmd.arg(format!(
+                    "--lodBridgeConstructionElement={}",
+                    cli.lod_bridge_construction_element.as_ref().unwrap()
+                ));
+            }
+            if !cli.lod_tunnel.is_none() {
+                cmd = cmd.arg(format!(
+                    "--lodTunnel={}",
+                    cli.lod_tunnel.as_ref().unwrap()
+                ));
+            }
+            if !cli.lod_tunnel_part.is_none() {
+                cmd = cmd.arg(format!(
+                    "--lodTunnelPart={}",
+                    cli.lod_tunnel_part.as_ref().unwrap()
+                ));
+            }
+            if !cli.lod_tunnel_installation.is_none() {
+                cmd = cmd.arg(format!(
+                    "--lodTunnelInstallation={}",
+                    cli.lod_tunnel_installation.as_ref().unwrap()
+                ));
+            }
+            if !cli.lod_generic_city_object.is_none() {
+                cmd = cmd.arg(format!(
+                    "--lodGenericCityObject={}",
+                    cli.lod_generic_city_object.as_ref().unwrap()
                 ));
             }
 
