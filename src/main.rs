@@ -216,7 +216,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if cli.format == Formats::_3DTiles && cli.exe_gltfpack.is_none() {
         debug!("exe_gltfpack is not set, skipping gltf optimization")
     };
-    let tiles_failed: Vec<Option<Tile>> = tiles
+    let tiles_failed: Vec<Tile> = tiles
         .into_par_iter()
         .map(|(tile, tileid)| {
             let mut tile_failed: Option<Tile> = None;
@@ -500,15 +500,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             tile_failed
         })
+        .filter_map(|failed_tile| failed_tile)
         .collect();
     info!("Done");
     if !log_enabled!(Level::Debug) {
         fs::remove_dir_all(path_features_input_dir)?;
     }
+
     for (i, failed) in tiles_failed.iter().enumerate() {
-        if let Some(ref tile) = failed {
-            debug!("{}, failed: {}", i, tile.id);
-        }
+        debug!("{}, removing failed from the tileset: {}", i, failed.id);
     }
     tileset.to_file(&tileset_path)?;
     Ok(())
