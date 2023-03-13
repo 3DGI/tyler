@@ -131,29 +131,104 @@
       "LandUse,PlantCover,WaterBody,Road,GenericCityObject,Bridge"
     ],
     "lodBuilding": [
-      "",
+      "lod filter for Building features",
       "str",
-      "1.0"
+      ""
     ],
-    "lodLandUse": [
-      "",
+    "lodBuildingPart": [
+      "lod filter for BuildingPart features",
       "str",
-      "1.2"
+      ""
     ],
-    "lodPlantCover": [
-      "",
+    "lodBuildingInstallation": [
+      "lod filter for BuildingInstallation features",
       "str",
-      "1.2"
+      ""
+    ],
+    "lodTINRelief": [
+      "lod filter for TINRelief features",
+      "str",
+      ""
     ],
     "lodRoad": [
-      "",
+      "lod filter for Road features",
       "str",
-      "1.2"
+      ""
+    ],
+    "lodRailway": [
+      "lod filter for Railway features",
+      "str",
+      ""
+    ],
+    "lodTransportSquare": [
+      "lod filter for TransportSquare features",
+      "str",
+      ""
     ],
     "lodWaterBody": [
-      "",
+      "lod filter for WaterBody features",
       "str",
-      "1.2"
+      ""
+    ],
+    "lodPlantCover": [
+      "lod filter for PlantCover features",
+      "str",
+      ""
+    ],
+    "lodSolitaryVegetationObject": [
+      "lod filter for SolitaryVegetationObject features",
+      "str",
+      ""
+    ],
+    "lodLandUse": [
+      "lod filter for LandUse features",
+      "str",
+      ""
+    ],
+    "lodCityFurniture": [
+      "lod filter for CityFurniture features",
+      "str",
+      ""
+    ],
+    "lodBridge": [
+      "lod filter for Bridge features",
+      "str",
+      ""
+    ],
+    "lodBridgePart": [
+      "lod filter for BridgePart features",
+      "str",
+      ""
+    ],
+    "lodBridgeInstallation": [
+      "lod filter for BridgeInstallation features",
+      "str",
+      ""
+    ],
+    "lodBridgeConstructionElement": [
+      "lod filter for BridgeConstructionElement features",
+      "str",
+      ""
+    ],
+    "lodTunnel": [
+      "lod filter for Tunnel features",
+      "str",
+      ""
+    ],
+    "lodTunnelPart": [
+      "lod filter for TunnelPart features",
+      "str",
+      ""
+    ],
+    "lodTunnelInstallation": [
+      "lod filter for TunnelInstallation features",
+      "str",
+      ""
+    ],
+    "lodGenericCityObject": [
+      "lod filter for GenericCityObject features",
+      "str",
+      ""
     ],
     "max_x": [
       "",

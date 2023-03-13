@@ -165,10 +165,25 @@
         "cotypes": "{{cotypes}}",
         "lod_filter": {
           "Building": "{{lodBuilding}}",
-          "LandUse": "{{lodLandUse}}",
-          "PlantCover": "{{lodPlantCover}}",
+          "BuildingPart": "{{lodBuildingPart}}",
+          "BuildingInstallation": "{{lodBuildingInstallation}}",
+          "TINRelief": "{{lodTINRelief}}",
           "Road": "{{lodRoad}}",
-          "WaterBody": "{{lodWaterBody}}"
+          "Railway": "{{lodRailway}}",
+          "TransportSquare": "{{lodTransportSquare}}",
+          "WaterBody": "{{lodWaterBody}}",
+          "PlantCover": "{{lodPlantCover}}",
+          "SolitaryVegetationObject": "{{lodSolitaryVegetationObject}}",
+          "LandUse": "{{lodLandUse}}",
+          "CityFurniture": "{{lodCityFurniture}}",
+          "Bridge": "{{lodBridge}}",
+          "BridgePart": "{{lodBridgePart}}",
+          "BridgeInstallation": "{{lodBridgeInstallation}}",
+          "BridgeConstructionElement": "{{lodBridgeConstructionElement}}",
+          "Tunnel": "{{lodTunnel}}",
+          "TunnelPart": "{{lodTunnelPart}}",
+          "TunnelInstallation": "{{lodTunnelInstallation}}",
+          "GenericCityObject": "{{lodGenericCityObject}}"
         },
         "optimal_lod": false,
         "optimal_lod_value": "2.2"
