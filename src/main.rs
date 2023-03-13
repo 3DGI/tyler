@@ -515,8 +515,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (i, failed) in tiles_failed.iter().enumerate() {
         debug!("{}, removing failed from the tileset: {}", i, failed.id);
     }
+    info!("Pruning tileset of empty tiles");
     // Remove tiles that failed the gltf conversion
-    tileset.prune(&tiles_failed);
+    tileset.prune(&tiles_failed, &quadtree);
     tileset.to_file(&tileset_path)?;
     Ok(())
 }

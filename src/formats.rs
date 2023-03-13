@@ -885,8 +885,10 @@ pub mod cesium3dtiles {
             grid_for_level_corner_coords
         }
 
-        pub fn prune(&mut self, tiles_to_remove: &Vec<Tile>) {
-            self.root.prune(tiles_to_remove);
+        /// Prune the tileset by removing the tiles in `tiles_to_remove`.
+        /// In addition, it also removes that with `nr_items == 0`.
+        pub fn prune(&mut self, tiles_to_remove: &Vec<Tile>, qtree: &QuadTree) {
+            self.root.prune(tiles_to_remove, qtree);
         }
     }
 
@@ -1077,13 +1079,21 @@ pub mod cesium3dtiles {
             })
         }
 
-        fn prune(&mut self, tiles_to_remove: &Vec<Tile>) {
+        fn prune(&mut self, tiles_to_remove: &Vec<Tile>, qtree: &QuadTree) {
             if let Some(mut children) = self.children.take() {
                 let mut children_new: Vec<Tile> = Vec::with_capacity(4);
                 for child in children.iter_mut() {
-                    if !tiles_to_remove.contains(&&*child) {
-                        child.prune(tiles_to_remove);
-                        children_new.push(child.clone());
+                    if !tiles_to_remove.contains(&*child) {
+                        let tileid: &TileId = &child.id;
+                        let qtree_nodeid: QuadTreeNodeId = tileid.into();
+                        if let Some(qtree_node) = qtree.node(&qtree_nodeid) {
+                            if qtree_node.nr_items > 0 {
+                                child.prune(tiles_to_remove, qtree);
+                                children_new.push(child.clone());
+                            }
+                        } else {
+                            error!("Did not find matching QuadTree node for TileId {}", tileid);
+                        }
                     }
                 }
                 self.children = Some(children_new);
