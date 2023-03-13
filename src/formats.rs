@@ -456,8 +456,8 @@ pub mod cesium3dtiles {
                 info!("\n\t\t{:=>10}\tprocessing subtree {}", "", &subtree_id);
 
                 let mut buffer_vec: Vec<u8> = Vec::new();
-                let mut tile_availability_bitstream: bv::BitVec<u8, bv::Msb0> = bv::BitVec::new();
-                let mut content_availability_bitstream: bv::BitVec<u8, bv::Msb0> =
+                let mut tile_availability_bitstream: bv::BitVec<u8, bv::Lsb0> = bv::BitVec::new();
+                let mut content_availability_bitstream: bv::BitVec<u8, bv::Lsb0> =
                     bv::BitVec::new();
 
                 let tileid = &tile.id;
@@ -509,10 +509,10 @@ pub mod cesium3dtiles {
                         }
                     }
 
-                    let mut tile_availability_for_level: bv::BitVec<u8, bv::Msb0> =
+                    let mut tile_availability_for_level: bv::BitVec<u8, bv::Lsb0> =
                         bv::BitVec::new();
                     tile_availability_for_level.resize(nr_tiles_subtree, false);
-                    let mut content_availability_for_level: bv::BitVec<u8, bv::Msb0> =
+                    let mut content_availability_for_level: bv::BitVec<u8, bv::Lsb0> =
                         bv::BitVec::new();
                     content_availability_for_level.resize(nr_tiles_subtree, false);
 
@@ -625,7 +625,7 @@ pub mod cesium3dtiles {
                 let bf_content_availability = 1;
                 let bf_child_subtree_availability = 2;
 
-                let mut child_subtree_availability_bitstream: bv::BitVec<u8, bv::Msb0> =
+                let mut child_subtree_availability_bitstream: bv::BitVec<u8, bv::Lsb0> =
                     bv::BitVec::new();
                 child_subtree_availability_bitstream.resize(nr_tiles_child_level, false);
 
@@ -754,10 +754,7 @@ pub mod cesium3dtiles {
             flat_tiles_with_content
         }
 
-        fn add_padding(
-            buffer_vec: &mut Vec<u8>,
-            align_by: usize,
-        ) {
+        fn add_padding(buffer_vec: &mut Vec<u8>, align_by: usize) {
             let padding = (align_by - (buffer_vec.len() % align_by)) % align_by;
             for i in 0..padding {
                 buffer_vec.push(0);
@@ -767,7 +764,7 @@ pub mod cesium3dtiles {
         fn add_bitstream(
             buffer_vec: &mut Vec<u8>,
             bufferviews: &mut Vec<BufferView>,
-            availability_bitstream: bv::BitVec<u8, bv::Msb0>,
+            availability_bitstream: bv::BitVec<u8, bv::Lsb0>,
         ) {
             let availability_vec = availability_bitstream.into_vec();
             bufferviews.push(BufferView {
@@ -781,7 +778,7 @@ pub mod cesium3dtiles {
 
         fn create_availability(
             bf_availability: usize,
-            availability_bitstream: &mut bv::BitVec<u8, bv::Msb0>,
+            availability_bitstream: &mut bv::BitVec<u8, bv::Lsb0>,
         ) -> Availability {
             availability_bitstream.set_uninitialized(false);
             if availability_bitstream.not_any() {

@@ -173,7 +173,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tiles = tileset_implicit.make_implicit(&world.grid, &quadtree, subtrees_path);
     tileset_implicit.to_file(&tileset_path_implicit)?;
 
-    return Ok(());
+    // return Ok(());
 
     // Export by calling a subprocess to merge the .jsonl files and convert them to the
     // target format
