@@ -39,6 +39,66 @@ pub struct Cli {
     /// 3D Tiles (https://github.com/CesiumGS/glTF/tree/3d-tiles-next/extensions/2.0/Vendor/EXT_structural_metadata#class).
     #[arg(long)]
     pub metadata_class: Option<String>,
+    /// LoD to use in output for Building features
+    #[arg(long)]
+    pub lod_building: Option<String>,
+    /// LoD to use in output for building_part features
+    #[arg(long)]
+    pub lod_building_part: Option<String>,
+    /// LoD to use in output for building_installation features
+    #[arg(long)]
+    pub lod_building_installation: Option<String>,
+    /// LoD to use in output for tin_relief features
+    #[arg(long)]
+    pub lod_tin_relief: Option<String>,
+    /// LoD to use in output for road features
+    #[arg(long)]
+    pub lod_road: Option<String>,
+    /// LoD to use in output for railway features
+    #[arg(long)]
+    pub lod_railway: Option<String>,
+    /// LoD to use in output for transport_square features
+    #[arg(long)]
+    pub lod_transport_square: Option<String>,
+    /// LoD to use in output for water_body features
+    #[arg(long)]
+    pub lod_water_body: Option<String>,
+    /// LoD to use in output for plant_cover features
+    #[arg(long)]
+    pub lod_plant_cover: Option<String>,
+    /// LoD to use in output for solitary_vegetation_object features
+    #[arg(long)]
+    pub lod_solitary_vegetation_object: Option<String>,
+    /// LoD to use in output for land_use features
+    #[arg(long)]
+    pub lod_land_use: Option<String>,
+    /// LoD to use in output for city_furniture features
+    #[arg(long)]
+    pub lod_city_furniture: Option<String>,
+    /// LoD to use in output for bridge features
+    #[arg(long)]
+    pub lod_bridge: Option<String>,
+    /// LoD to use in output for bridge_part features
+    #[arg(long)]
+    pub lod_bridge_part: Option<String>,
+    /// LoD to use in output for bridge_installation features
+    #[arg(long)]
+    pub lod_bridge_installation: Option<String>,
+    /// LoD to use in output for bridge_construction_element features
+    #[arg(long)]
+    pub lod_bridge_construction_element: Option<String>,
+    /// LoD to use in output for tunnel features
+    #[arg(long)]
+    pub lod_tunnel: Option<String>,
+    /// LoD to use in output for tunnel_part features
+    #[arg(long)]
+    pub lod_tunnel_part: Option<String>,
+    /// LoD to use in output for tunnel_installation features
+    #[arg(long)]
+    pub lod_tunnel_installation: Option<String>,
+    /// LoD to use in output for lod_generic_city_object features
+    #[arg(long)]
+    pub lod_generic_city_object: Option<String>,
     /// Color for Building features specified as a hex rgb-color value, eg. #FF0000 is red.
     #[arg(long, value_parser = hex_color)]
     pub color_building: Option<String>,
