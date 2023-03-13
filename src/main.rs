@@ -171,7 +171,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // FIXME: here we have a Vec<(Tile, TileId)> in 'tiles' instead of Vec<&Tile>, because of the
             //  mess with the implicit/explicit tile id-s.
             info!("Converting to implicit tiling");
-            let tiles = tileset_implicit.make_implicit(&world.grid, &quadtree, subtrees_path);
+            let tiles = tileset_implicit.make_implicit(
+                &world.grid,
+                &quadtree,
+                subtrees_path,
+                cli.grid_export,
+            );
             tileset = tileset_implicit;
             tiles
         }
