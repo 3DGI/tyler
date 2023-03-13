@@ -60,8 +60,7 @@ docker run --rm -v /data:/data -e RUST_LOG=debug balazsdukai/tyler:latest \
   --quadtree-criteria vertices \
   --quadtree-limit 5000 \
   --object-type building \
-  --object-type building-part \
-  --gltfpack-bin /usr/local/bin/gltfpack
+  --object-type building-part
 ```
 
 ### Python
