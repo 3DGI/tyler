@@ -49,6 +49,7 @@ impl World {
         let crs = cm.metadata.reference_system;
         let transform = cm.transform;
 
+        // FIXME: if cityobject_types is None, then all cityobject are ignored, instead of included
         // Compute the extent of the features and the number of features.
         // We don't store the computed extent explicitly, because the grid contains that info.
         let (extent_qc, nr_features, cityobject_types_ignored) =

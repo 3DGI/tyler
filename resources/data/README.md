@@ -26,3 +26,8 @@ Point(3923160.3138962006 299941.4082726164 5003058.505677583),
 3923223.496401593 299941.4082726164 5003151.744253726
 
 What's this? Polygon((171800.0 472700.0, 173198.235 472700.0, 173198.235 473956.134, 171800.0 473956.134, 171800.0 472700.0))
+
+```shell
+mkdir "resources/data/features_3dbag_5909"
+python resources/python/split_to_features.py resources/data/3dbag_v21031_7425c21b_5909_subset.city.json resources/data/features_3dbag_5909 1
+```

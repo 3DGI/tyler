@@ -19,6 +19,10 @@ pub struct Cli {
     /// Output format.
     #[arg(long, value_enum)]
     pub format: crate::Formats,
+    /// Create implicit tiling when the output format is 3D Tiles (https://docs.ogc.org/cs/22-025r4/22-025r4.html#toc31).
+    /// By default, explicit tiling is created for the 3D Tiles output.
+    #[arg(long = "3d-tiles-implicit")]
+    pub cesium3dtiles_implicit: bool,
     /// The CityObject type to use for the 3D Tiles
     /// (https://www.cityjson.org/specs/1.1.3/#the-different-city-objects).
     /// You can specify it multiple times.
@@ -164,11 +168,15 @@ fn existing_path(s: &str) -> Result<PathBuf, String> {
 /// Checks is `s` constains a 6 digit hexadecimal value preceded by a '#', eg. #FF0000
 fn hex_color(s: &str) -> Result<String, String> {
     if s.len() != 7 || !s.starts_with('#') {
-        return Err(String::from("Input must be a 6-digit hexadecimal value preceded by a '#'"));
+        return Err(String::from(
+            "Input must be a 6-digit hexadecimal value preceded by a '#'",
+        ));
     }
     let hex_digits = &s[1..];
     if !hex_digits.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Err(String::from("Input must be a 6-digit hexadecimal value preceded by a '#'"));
+        return Err(String::from(
+            "Input must be a 6-digit hexadecimal value preceded by a '#'",
+        ));
     }
     Ok(String::from(s))
 }

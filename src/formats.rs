@@ -9,17 +9,22 @@ pub mod cesium3dtiles {
     use std::collections::VecDeque;
     use std::fmt::{Display, Formatter};
     use std::fs::File;
-    use std::path::Path;
+    use std::io::{Seek, Write};
+    use std::path::{Path, PathBuf};
 
-    use log::{debug, error};
-    use serde::Serialize;
+    use bitvec::prelude as bv;
+    use log::{debug, error, info};
+    use morton_encoding::morton_encode;
+    use serde::{Serialize, Serializer};
+    use serde_repr::Serialize_repr;
 
     use crate::proj::Proj;
+    use crate::spatial_structs::{Bbox, CellId, QuadTree, QuadTreeNodeId, SquareGrid};
 
     /// [Tileset](https://github.com/CesiumGS/3d-tiles/tree/main/specification#tileset).
     ///
     /// Not supported: `extras`.
-    #[derive(Serialize, Default, Debug)]
+    #[derive(Serialize, Default, Debug, Clone)]
     #[serde(rename_all = "camelCase")]
     pub struct Tileset {
         asset: Asset,
@@ -117,7 +122,7 @@ pub mod cesium3dtiles {
                 // The geometric error of a tile is its 'size'.
                 // Since we have square tiles, we compute its size as the length of
                 // its side on the x-axis.
-                let d = 1.0/50.0 * (tile_bbox[3] - tile_bbox[0]);
+                let d = 1.0 / 50.0 * (tile_bbox[3] - tile_bbox[0]);
                 if d < 0.0 {
                     debug!("d is negative in parent");
                 }
@@ -131,7 +136,6 @@ pub mod cesium3dtiles {
                         arg_maxz,
                     ));
                 }
-
                 Tile {
                     id: TileId::from(&quadtree.id),
                     bounding_volume,
@@ -141,6 +145,7 @@ pub mod cesium3dtiles {
                     transform: None,
                     content: None,
                     children: Some(tile_children),
+                    implicit_tiling: None,
                 }
             } else {
                 // Compute the tile content bounding box <-- the bbox of all the cells in a tile
@@ -253,6 +258,7 @@ pub mod cesium3dtiles {
                         uri: format!("tiles/{}.glb", quadtree.id),
                     }),
                     children: None,
+                    implicit_tiling: None,
                 }
             }
         }
@@ -316,6 +322,7 @@ pub mod cesium3dtiles {
                         uri: format!("tiles/{}-0-0.glb", cellid),
                     }),
                     children: None,
+                    implicit_tiling: None,
                 };
 
                 // LoD 1.3
@@ -331,6 +338,7 @@ pub mod cesium3dtiles {
                         uri: format!("tiles/{}-0.glb", cellid),
                     }),
                     children: Some(vec![tile_lod22]),
+                    implicit_tiling: None,
                 };
 
                 // LoD 1.2
@@ -347,6 +355,7 @@ pub mod cesium3dtiles {
                         uri: format!("tiles/{}.glb", cellid),
                     }),
                     children: Some(vec![tile_lod13]),
+                    implicit_tiling: None,
                 });
             }
 
@@ -364,6 +373,7 @@ pub mod cesium3dtiles {
                 transform: None,
                 content: None,
                 children: Some(root_children),
+                implicit_tiling: None,
             };
 
             // Using gltf tile content
@@ -396,12 +406,490 @@ pub mod cesium3dtiles {
         pub fn add_content(&mut self, levels_up: Option<u16>) {
             self.root.add_content_from_level(levels_up);
         }
+
+        /// The number of levels in the quadtree, which is `max_level + 1`.
+        pub fn available_levels(&self) -> u16 {
+            self.root.max_level() + 1
+        }
+
+        /// Convert to implicit tiling.
+        /// It modifies the tileset and deletes the explicit tiles.
+        /// Expects that explicit tiling is already created.
+        pub fn make_implicit(
+            &mut self,
+            grid: &SquareGrid,
+            qtree: &QuadTree,
+            output_dir: PathBuf,
+        ) -> Vec<(Tile, TileId)> {
+            let mut flat_tiles_with_content: Vec<(Tile, TileId)> = Vec::new();
+            let subtree_sections: usize = 1;
+            let subtree_levels =
+                (self.available_levels() as f32 / subtree_sections as f32).ceil() as u16;
+            let subtrees = Subtrees::default();
+            let implicittiling = ImplicitTiling {
+                subdivision_scheme: SubdivisionScheme::Quadtree,
+                subtree_levels,
+                available_levels: self.available_levels(),
+                subtrees,
+            };
+            debug!("{:?}", &implicittiling);
+            self.root.implicit_tiling = Some(implicittiling);
+
+            // We want to have a sparse implicit tileset, which stores the availability
+            //  of each tile. We do not have a full quadtree, because of the node
+            //  capacity that is set.
+            // In order to create this sparse implicit tileset, we need to have a full
+            //  theoretical quadtree of the same height as the explicit quadtree
+            //  (tileset), and for each node in the theoretical tree, we need to mark
+            //  whether that node (tile) is indeed available and whether it has a
+            //  content in the explicit tileset.
+
+            let grid_epsg = grid.epsg;
+            let level_subtree_root: u32 = 0;
+            let mut subtree_queue = VecDeque::new();
+            let rootid = &self.root.id;
+            let cellid: CellId = rootid.into();
+            subtree_queue.push_back((level_subtree_root, cellid, &self.root));
+
+            while let Some((level_subtree_root, cellid, tile)) = subtree_queue.pop_front() {
+                let subtree_id = TileId::new(cellid.column, cellid.row, level_subtree_root as u16);
+                info!("\n\t\t{:=>10}\tprocessing subtree {}", "", &subtree_id);
+
+                let mut buffer_vec: Vec<u8> = Vec::new();
+                let mut tile_availability_bitstream: bv::BitVec<u8, bv::Lsb0> = bv::BitVec::new();
+                let mut content_availability_bitstream: bv::BitVec<u8, bv::Lsb0> =
+                    bv::BitVec::new();
+
+                let tileid = &tile.id;
+                let qtree_nodeid: QuadTreeNodeId = tileid.into();
+                let tile_bbox = qtree.node(&qtree_nodeid).unwrap().bbox(grid);
+                let extent_width = tile_bbox[3] - tile_bbox[0];
+
+                let mut tiles_queue = VecDeque::new();
+                tiles_queue.push_back(tile);
+                let mut level_quadtree: u32 = 0;
+                for level_subtree in 0..subtree_levels as u32 {
+                    level_quadtree = level_subtree_root + level_subtree;
+                    // The number of tiles on the current level of the full quadtree
+                    let nr_tiles = 4_usize.pow(level_quadtree);
+                    // The number of tiles on the current level within the subtree. Each subtree
+                    //  with a single root tile, on level 0. Regardless where the subtree is in the
+                    //  full quadtree hierarchy.
+                    let nr_tiles_subtree = 4_usize.pow(level_subtree);
+                    let grid_coordinate_map = Self::grid_coordinate_map(
+                        level_subtree,
+                        extent_width,
+                        &tile_bbox,
+                        grid_epsg,
+                        true,
+                    );
+                    let grid_coordinate_map_global = Self::grid_coordinate_map(
+                        level_quadtree,
+                        extent_width,
+                        &tile_bbox,
+                        grid_epsg,
+                        false,
+                    );
+
+                    let mut children_current_level: Vec<&Tile> = Vec::new();
+                    for t in tiles_queue.iter() {
+                        if let Some(ref ch) = t.children {
+                            for c in ch {
+                                let tileid = &c.id;
+                                let qtree_nodeid: QuadTreeNodeId = tileid.into();
+                                let cell = qtree.node(&qtree_nodeid).unwrap();
+                                if cell.nr_items > 0 {
+                                    children_current_level.push(c)
+                                } else {
+                                    debug!("found empty tile {}", tileid);
+                                }
+                            }
+                        } else {
+                            debug!("tile {} has no children", t.id);
+                        }
+                    }
+
+                    let mut tile_availability_for_level: bv::BitVec<u8, bv::Lsb0> =
+                        bv::BitVec::new();
+                    tile_availability_for_level.resize(nr_tiles_subtree, false);
+                    let mut content_availability_for_level: bv::BitVec<u8, bv::Lsb0> =
+                        bv::BitVec::new();
+                    content_availability_for_level.resize(nr_tiles_subtree, false);
+
+                    while let Some(tile) = tiles_queue.pop_front() {
+                        debug!("processing tile {}", tile.id);
+                        let tile_corner_coord = Self::tile_corner_coordinate(grid, qtree, tile);
+                        // Set the tile and content available
+                        if let Some((cellid_grid_level, i_z_curve)) =
+                            grid_coordinate_map.get(&tile_corner_coord)
+                        {
+                            if let Some((cellid_grid_global, ..)) =
+                                grid_coordinate_map_global.get(&tile_corner_coord)
+                            {
+                                debug!(
+                                    "tile {} matched grid cell {}, z-curve idx {}",
+                                    tile.id, cellid_grid_level, i_z_curve
+                                );
+                                tile_availability_for_level.set(*i_z_curve, true);
+                                if tile.content.is_some() {
+                                    content_availability_for_level.set(*i_z_curve, true);
+                                    let tileid_continuous = TileId::new(
+                                        cellid_grid_global.column,
+                                        cellid_grid_global.row,
+                                        level_quadtree as u16,
+                                    );
+                                    flat_tiles_with_content.push((tile.clone(), tileid_continuous));
+                                }
+                            } else {
+                                debug!(
+                                    "could not locate tile {} in grid_coordinate_map_global",
+                                    tile.id
+                                );
+                            }
+                        } else {
+                            debug!("could not locate tile {} in grid_coordinate_map", tile.id);
+                        }
+                    }
+
+                    // DEBUG
+                    let nr_tiles = 4_usize.pow(level_subtree);
+
+                    // Grid for the current level
+                    let tile_width = (extent_width / (nr_tiles as f64).sqrt()) as u16;
+                    let grid_for_level = SquareGrid::new(&tile_bbox, tile_width, grid_epsg, None);
+                    let mut file_implicit_tileset_at_level = File::create(format!(
+                        "implicit-level-{}-{}-{}.tsv",
+                        &level_quadtree, &tile.id.x, &tile.id.y
+                    ))
+                    .unwrap();
+                    for (cellid_grid_level, i_z_curve) in grid_coordinate_map.values() {
+                        let wkt = grid_for_level.cell_to_wkt(cellid_grid_level);
+                        let tile_available = tile_availability_for_level.get(*i_z_curve).unwrap();
+                        let content_available =
+                            content_availability_for_level.get(*i_z_curve).unwrap();
+                        writeln!(
+                            file_implicit_tileset_at_level,
+                            "{}\t{}\t{}\t{}",
+                            cellid_grid_level,
+                            tile_available.as_ref(),
+                            content_available.as_ref(),
+                            wkt
+                        )
+                        .unwrap();
+                    }
+
+                    tile_availability_for_level.set_uninitialized(false);
+                    content_availability_for_level.set_uninitialized(false);
+                    tile_availability_bitstream.extend_from_bitslice(&tile_availability_for_level);
+                    content_availability_bitstream
+                        .extend_from_bitslice(&content_availability_for_level);
+                    tiles_queue.extend(children_current_level);
+                }
+
+                let level_child_subtree = level_quadtree + 1;
+                let nr_tiles_child_level = 4_usize.pow(level_child_subtree);
+                let nr_tiles_total_subtree = (4_usize.pow(subtree_levels as u32) - 1) / 3;
+                assert_eq!(
+                    tile_availability_bitstream.len(),
+                    nr_tiles_total_subtree,
+                    "tileAvailability bitstream must have {} elements, but it has {}",
+                    &nr_tiles_total_subtree,
+                    &tile_availability_bitstream.len()
+                );
+                let grid_coordinate_map = Self::grid_coordinate_map(
+                    level_child_subtree,
+                    extent_width,
+                    &tile_bbox,
+                    grid_epsg,
+                    false,
+                );
+
+                for child in tiles_queue.iter() {
+                    let tile_corner_coord = Self::tile_corner_coordinate(grid, qtree, child);
+                    if let Some((cellid_grid_level, i_z_curve)) =
+                        grid_coordinate_map.get(&tile_corner_coord)
+                    {
+                        subtree_queue.push_back((level_child_subtree, *cellid_grid_level, child));
+                    } else {
+                        debug!(
+                            "could not locate tile {} in grid_for_child_subtree",
+                            child.id
+                        );
+                    }
+                }
+
+                // Bufferviews
+                let mut bufferviews: Vec<BufferView> = Vec::with_capacity(3);
+                // bufferview indices
+                let bf_tile_availability = 0;
+                let bf_content_availability = 1;
+                let bf_child_subtree_availability = 2;
+
+                let mut child_subtree_availability_bitstream: bv::BitVec<u8, bv::Lsb0> =
+                    bv::BitVec::new();
+                child_subtree_availability_bitstream.resize(nr_tiles_child_level, false);
+
+                let tile_availability = Self::create_availability(
+                    bf_tile_availability,
+                    &mut tile_availability_bitstream,
+                );
+                let content_availability = Self::create_availability(
+                    bf_content_availability,
+                    &mut content_availability_bitstream,
+                );
+                let child_subtree_availability = Self::create_availability(
+                    bf_child_subtree_availability,
+                    &mut child_subtree_availability_bitstream,
+                );
+
+                // RTODO: only write bit stream if bitstreams is not constant
+
+                // add padding in buffer_vec to next 8 byte boundary
+                Self::add_padding(&mut buffer_vec, 8);
+                Self::add_bitstream(
+                    &mut buffer_vec,
+                    &mut bufferviews,
+                    tile_availability_bitstream,
+                );
+                // add padding in buffer_vec to next 8 byte boundary
+                Self::add_padding(&mut buffer_vec, 8);
+                Self::add_bitstream(
+                    &mut buffer_vec,
+                    &mut bufferviews,
+                    content_availability_bitstream,
+                );
+                // add padding in buffer_vec to next 8 byte boundary
+                Self::add_padding(&mut buffer_vec, 8);
+                Self::add_bitstream(
+                    &mut buffer_vec,
+                    &mut bufferviews,
+                    child_subtree_availability_bitstream,
+                );
+
+                // pad our buffer_vec to have a length that is a multiple of 8 bytes
+                Self::add_padding(&mut buffer_vec, 8);
+
+                debug!("writing subtree {}", &subtree_id);
+                let buffer = Buffer {
+                    name: None,
+                    byte_length: buffer_vec.len(),
+                };
+                let subtree = Subtree {
+                    buffers: Some(vec![buffer]),
+                    buffer_views: Some(bufferviews),
+                    tile_availability,
+                    content_availability: Some(vec![content_availability]),
+                    child_subtree_availability,
+                };
+                let mut subtree_json = serde_json::to_string(&subtree)
+                    .expect("failed to serialize the subtree to json");
+                // RTODO: why 64 bytes here? should it not be 8?
+                let remainder = subtree_json.as_bytes().len() % 8;
+                let mut padding = 0;
+                if remainder > 0 {
+                    padding = 8 - remainder;
+                }
+                for i in 0..padding {
+                    subtree_json += " ";
+                }
+                let subtree_json_bytes = subtree_json.as_bytes();
+
+                std::fs::create_dir_all(
+                    output_dir.join(format!("{}/{}", subtree_id.level, subtree_id.x)),
+                )
+                .unwrap();
+                let out_path = output_dir
+                    .join(&subtree_id.to_string())
+                    .with_extension("subtree");
+                let mut subtree_file = File::create(&out_path)
+                    .unwrap_or_else(|_| panic!("could not create {:?} for writing", &out_path));
+
+                // Header
+                let mut header: Vec<u8> = Vec::new();
+                let magic = 0x74627573u32.to_le_bytes(); // subt
+                let version = 1_u32.to_le_bytes();
+                let json_byte_length = (subtree_json_bytes.len() as u64).to_le_bytes();
+                let buffer_byte_length = ((buffer_vec.len()) as u64).to_le_bytes();
+                header.extend_from_slice(&magic);
+                header.extend_from_slice(&version);
+                header.extend_from_slice(&json_byte_length);
+                header.extend_from_slice(&buffer_byte_length);
+                if header.len() != 24 {
+                    error!(
+                        "subtree {} binary header must be 24 bytes long, it is {}",
+                        &subtree_id,
+                        header.len()
+                    );
+                }
+
+                if let Err(e) = subtree_file.write_all(&header) {
+                    error!("failed to header to subtree {}, error:\n{}", subtree_id, e);
+                };
+
+                // Content
+                if let Err(e) = subtree_file.write_all(subtree_json_bytes) {
+                    error!(
+                        "failed to write json content to subtree {}, error:\n{}",
+                        subtree_id, e
+                    );
+                };
+                let buffer_bytes: Vec<u8> = buffer_vec
+                    .iter()
+                    .map(|i| i.to_le_bytes())
+                    .flat_map(|bytearray| bytearray.to_vec())
+                    .collect();
+                if let Err(e) = subtree_file.write_all(buffer_bytes.as_slice()) {
+                    error!(
+                        "failed to write binary buffer to subtree {}, error:\n{}",
+                        subtree_id, e
+                    );
+                };
+            }
+
+            self.root.content = Some(Content {
+                bounding_volume: None,
+                uri: "tiles/{level}/{x}/{y}.glb".to_string(),
+            });
+            self.root.children = None;
+            flat_tiles_with_content
+        }
+
+        fn add_padding(buffer_vec: &mut Vec<u8>, align_by: usize) {
+            let padding = (align_by - (buffer_vec.len() % align_by)) % align_by;
+            for i in 0..padding {
+                buffer_vec.push(0);
+            }
+        }
+
+        fn add_bitstream(
+            buffer_vec: &mut Vec<u8>,
+            bufferviews: &mut Vec<BufferView>,
+            availability_bitstream: bv::BitVec<u8, bv::Lsb0>,
+        ) {
+            let availability_vec = availability_bitstream.into_vec();
+            bufferviews.push(BufferView {
+                buffer: 0,
+                byte_offset: buffer_vec.len(),
+                byte_length: availability_vec.len(),
+                name: None,
+            });
+            buffer_vec.extend(availability_vec);
+        }
+
+        fn create_availability(
+            bf_availability: usize,
+            availability_bitstream: &mut bv::BitVec<u8, bv::Lsb0>,
+        ) -> Availability {
+            availability_bitstream.set_uninitialized(false);
+            if availability_bitstream.not_any() {
+                Availability {
+                    bitstream: None,
+                    available_count: None,
+                    constant: Some(AvailabilityConstant::Unavailable),
+                }
+            } else if availability_bitstream.all() {
+                Availability {
+                    bitstream: None,
+                    available_count: None,
+                    constant: Some(AvailabilityConstant::Available),
+                }
+            } else {
+                Availability {
+                    bitstream: Some(bf_availability),
+                    available_count: Some(availability_bitstream.count_ones()),
+                    constant: None,
+                }
+            }
+        }
+
+        fn tile_corner_coordinate(grid: &SquareGrid, qtree: &QuadTree, tile: &Tile) -> String {
+            let tileid = &tile.id;
+            let qtree_nodeid: QuadTreeNodeId = tileid.into();
+            let tile_bbox = qtree.node(&qtree_nodeid).unwrap().bbox(grid);
+            let [minx, miny, ..] = tile_bbox;
+            format!("{:.0},{:.0}", minx, miny)
+        }
+
+        /// Build a map of grid-cell-corner-coorinates and cell ID-s.
+        /// It is used for matching the "theoretical grid" to the quadtree nodes, based
+        /// on the coordinates.
+        fn grid_coordinate_map(
+            level_current: u32,
+            extent_width: f64,
+            bbox: &Bbox,
+            epsg: u16,
+            do_export: bool,
+        ) -> HashMap<String, (CellId, usize)> {
+            let nr_tiles = 4_usize.pow(level_current);
+
+            // Grid for the current level
+            let tile_width = (extent_width / (nr_tiles as f64).sqrt()) as u16;
+            let grid_for_level = SquareGrid::new(bbox, tile_width, epsg, None);
+
+            // Map of:
+            //  - x,y coordinate of the min coordinate of the lower-left cell
+            //  - (cell ID, index in the z-order array)
+            let mut grid_for_level_corner_coords: HashMap<
+                String,
+                (crate::spatial_structs::CellId, usize),
+            > = HashMap::new();
+
+            let mut mortoncodes: Vec<(u128, CellId)> = grid_for_level
+                .into_iter()
+                .map(|(cellid, _)| {
+                    (
+                        morton_encode([cellid.row as u64, cellid.column as u64]),
+                        cellid,
+                    )
+                })
+                .collect();
+            mortoncodes.sort_by_key(|k| k.0);
+
+            for (i, (mc, cellid)) in mortoncodes.iter().enumerate() {
+                let [minx, miny, ..] = grid_for_level.cell_bbox(&cellid);
+                // Since the input for grid_cellsize is u16 and expected to be in the range
+                //  of several (hundreds) of meters, we don't care about decimal precision.
+                let corner_coord_string = format!("{:.0},{:.0}", minx, miny);
+                grid_for_level_corner_coords.insert(corner_coord_string, (*cellid, i));
+            }
+
+            if do_export {
+                // DEBUG
+                let first_cell = grid_for_level.into_iter().next().unwrap();
+                let mut file_grid = File::create(format!(
+                    "grid_for_level-{}-{}.tsv",
+                    &grid_for_level.length, &first_cell.0
+                ))
+                .unwrap();
+                for (cellid, _) in &grid_for_level {
+                    let wkt = grid_for_level.cell_to_wkt(&cellid);
+                    writeln!(file_grid, "{}\t{}", &cellid, wkt).unwrap();
+                }
+
+                let mut file_grid_morton = File::create(format!(
+                    "grid_for_level_morton-{}-{}.tsv",
+                    &grid_for_level.length, &first_cell.0
+                ))
+                .unwrap();
+                for (i, (mc, cellid)) in mortoncodes.iter().enumerate() {
+                    let [minx, miny, ..] = grid_for_level.cell_bbox(&cellid);
+                    writeln!(
+                        file_grid_morton,
+                        "{}\t{}\tPOINT({} {})",
+                        i, &cellid, minx, miny
+                    )
+                    .unwrap();
+                }
+            }
+
+            grid_for_level_corner_coords
+        }
     }
 
     /// [Asset](https://github.com/CesiumGS/3d-tiles/tree/main/specification#asset).
     ///
     /// Not supported: `extensions, extras`.
-    #[derive(Serialize, Debug)]
+    #[derive(Serialize, Debug, Clone)]
     #[serde(rename_all = "camelCase")]
     struct Asset {
         version: String,
@@ -425,7 +913,7 @@ pub mod cesium3dtiles {
     /// [Properties](https://github.com/CesiumGS/3d-tiles/tree/main/specification#properties).
     ///
     /// Not supported: `extras`.
-    #[derive(Serialize, Default, Debug)]
+    #[derive(Serialize, Default, Debug, Clone)]
     #[serde(rename_all = "camelCase")]
     struct Properties {
         maximum: f64,
@@ -434,7 +922,7 @@ pub mod cesium3dtiles {
 
     type Extensions = HashMap<ExtensionName, Extension>;
 
-    #[derive(Serialize, Default, Debug)]
+    #[derive(Serialize, Default, Debug, Clone)]
     #[serde(untagged)]
     enum Extension {
         #[default]
@@ -451,7 +939,7 @@ pub mod cesium3dtiles {
     }
 
     #[allow(dead_code)]
-    #[derive(Serialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(Serialize, Default, Debug, Clone, PartialEq, Eq, Hash)]
     enum ExtensionName {
         #[default]
         None,
@@ -466,7 +954,7 @@ pub mod cesium3dtiles {
     }
 
     /// [Tile](https://github.com/CesiumGS/3d-tiles/tree/main/specification#tile).
-    #[derive(Serialize, Default, Debug)]
+    #[derive(Serialize, Default, Debug, Clone)]
     #[serde(rename_all = "camelCase")]
     pub struct Tile {
         #[serde(skip)]
@@ -483,6 +971,8 @@ pub mod cesium3dtiles {
         content: Option<Content>,
         #[serde(skip_serializing_if = "Option::is_none")]
         pub children: Option<Vec<Tile>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        implicit_tiling: Option<ImplicitTiling>,
     }
 
     impl Tile {
@@ -491,8 +981,9 @@ pub mod cesium3dtiles {
             nodes: &mut Vec<&'collect Tile>,
             limit_upwards: &u16,
         ) {
-            if self.id.z < *limit_upwards {
+            if self.id.level < *limit_upwards {
                 if let Some(ref children) = self.children {
+                    debug!("nr of children {}", children.len());
                     for child in children {
                         child.flatten_recurse(nodes, limit_upwards);
                     }
@@ -500,6 +991,7 @@ pub mod cesium3dtiles {
             } else {
                 nodes.push(self);
                 if let Some(ref children) = self.children {
+                    debug!("nr of children {}", children.len());
                     for child in children {
                         child.flatten_recurse(nodes, limit_upwards);
                     }
@@ -535,7 +1027,7 @@ pub mod cesium3dtiles {
             let mut q = VecDeque::new();
             q.push_back(self);
             while let Some(node) = q.pop_front() {
-                if node.id.z >= lower_limit {
+                if node.id.level >= lower_limit {
                     node.add_content();
                 }
                 if let Some(ref mut children) = node.children {
@@ -557,8 +1049,8 @@ pub mod cesium3dtiles {
                 for child in children {
                     child.max_level_recurse(current_level);
                 }
-            } else if self.id.z > *current_level {
-                *current_level = self.id.z;
+            } else if self.id.level > *current_level {
+                *current_level = self.id.level;
             }
         }
 
@@ -572,28 +1064,22 @@ pub mod cesium3dtiles {
         }
     }
 
-    #[derive(Clone, Debug, Eq, PartialEq)]
+    #[derive(Clone, Debug, Default, Eq, PartialEq)]
     pub struct TileId {
         x: usize,
         y: usize,
-        z: u16,
-    }
-
-    impl Default for TileId {
-        fn default() -> Self {
-            Self { x: 0, y: 0, z: 0 }
-        }
+        level: u16,
     }
 
     impl TileId {
-        pub fn new(x: usize, y: usize, z: u16) -> Self {
-            Self { x, y, z }
+        pub fn new(x: usize, y: usize, level: u16) -> Self {
+            Self { x, y, level }
         }
     }
 
     impl Display for TileId {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{}/{}/{}", self.z, self.x, self.y)
+            write!(f, "{}/{}/{}", self.level, self.x, self.y)
         }
     }
 
@@ -602,14 +1088,23 @@ pub mod cesium3dtiles {
             Self {
                 x: value.x,
                 y: value.y,
-                z: value.z,
+                level: value.level,
             }
         }
     }
 
     impl Into<crate::spatial_structs::QuadTreeNodeId> for &TileId {
         fn into(self) -> crate::spatial_structs::QuadTreeNodeId {
-            crate::spatial_structs::QuadTreeNodeId::new(self.x, self.y, self.z)
+            crate::spatial_structs::QuadTreeNodeId::new(self.x, self.y, self.level)
+        }
+    }
+
+    impl Into<crate::spatial_structs::CellId> for &TileId {
+        fn into(self) -> crate::spatial_structs::CellId {
+            crate::spatial_structs::CellId {
+                column: self.x,
+                row: self.y,
+            }
         }
     }
 
@@ -741,7 +1236,7 @@ pub mod cesium3dtiles {
 
     /// [Tile.refine](https://github.com/CesiumGS/3d-tiles/tree/main/specification#tilerefine).
     #[allow(dead_code)]
-    #[derive(Serialize, Debug)]
+    #[derive(Serialize, Debug, Clone)]
     #[serde(rename_all = "UPPERCASE")]
     enum Refinement {
         Add,
@@ -765,7 +1260,7 @@ pub mod cesium3dtiles {
     }
 
     /// [Tile.content](https://github.com/CesiumGS/3d-tiles/tree/main/specification#content).
-    #[derive(Serialize, Default, Debug)]
+    #[derive(Serialize, Default, Debug, Clone)]
     #[serde(rename_all = "camelCase")]
     struct Content {
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -773,10 +1268,161 @@ pub mod cesium3dtiles {
         uri: String,
     }
 
+    /// Implicit tiling object.
+    /// https://github.com/CesiumGS/3d-tiles/tree/1.1/specification/ImplicitTiling#implicit-root-tile
+    /// https://github.com/CesiumGS/3d-tiles/blob/1.1/specification/schema/tile.implicitTiling.schema.json
+    #[derive(Serialize, Default, Debug, Clone)]
+    #[serde(rename_all = "camelCase")]
+    struct ImplicitTiling {
+        subdivision_scheme: SubdivisionScheme,
+        subtree_levels: u16,
+        available_levels: u16,
+        subtrees: Subtrees,
+    }
+
+    /// Implicit tiling subtree subdivision scheme.
+    /// https://github.com/CesiumGS/3d-tiles/tree/1.1/specification/ImplicitTiling#subdivision-scheme
+    #[allow(dead_code)]
+    #[derive(Serialize, Debug, Default, Clone)]
+    #[serde(rename_all = "UPPERCASE")]
+    enum SubdivisionScheme {
+        #[default]
+        Quadtree,
+        Octree,
+    }
+
+    /// Implicit tiling subtrees.
+    /// https://github.com/CesiumGS/3d-tiles/tree/1.1/specification/ImplicitTiling#subtrees
+    #[derive(Serialize, Debug, Clone)]
+    struct Subtrees {
+        uri: String,
+    }
+
+    impl Default for Subtrees {
+        fn default() -> Self {
+            Self {
+                uri: String::from("subtrees/{level}/{x}/{y}.subtree"),
+            }
+        }
+    }
+
+    /// Implicit tiling subtree object.
+    /// Metadata is not supported.
+    /// https://github.com/CesiumGS/3d-tiles/blob/1.1/specification/schema/Subtree/subtree.schema.json
+    #[derive(Serialize, Debug, Default)]
+    #[serde(rename_all = "camelCase")]
+    struct Subtree {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        buffers: Option<Vec<Buffer>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        buffer_views: Option<Vec<BufferView>>,
+        tile_availability: Availability,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        content_availability: Option<Vec<Availability>>,
+        child_subtree_availability: Availability,
+    }
+
+    #[derive(Serialize, Debug, Default)]
+    #[serde(rename_all = "camelCase")]
+    struct Buffer {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        byte_length: usize,
+    }
+
+    #[derive(Serialize, Debug, Default)]
+    #[serde(rename_all = "camelCase")]
+    struct BufferView {
+        buffer: u8,
+        byte_offset: usize,
+        byte_length: usize,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+    }
+
+    /// Implicit tiling subtree availability.
+    /// https://github.com/CesiumGS/3d-tiles/tree/1.1/specification/ImplicitTiling#availability-1
+    /// https://github.com/CesiumGS/3d-tiles/blob/1.1/specification/schema/Subtree/availability.schema.json
+    #[derive(Serialize, Debug, Default)]
+    #[serde(rename_all = "camelCase")]
+    struct Availability {
+        /// An integer index that identifies the buffer view containing the availability bitstream.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        bitstream: Option<usize>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        available_count: Option<usize>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        constant: Option<AvailabilityConstant>,
+    }
+
+    /// Integer indicating whether all of the elements are Available (1) or all are Unavailable (0).
+    #[allow(dead_code)]
+    #[derive(Debug, Default, Serialize_repr)]
+    #[repr(u8)]
+    enum AvailabilityConstant {
+        #[default]
+        Unavailable = 0,
+        Available = 1,
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
         use serde_json::to_string_pretty;
+        use std::path::PathBuf;
+
+        fn test_data_dir() -> PathBuf {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("resources")
+                .join("data")
+        }
+
+        #[test]
+        fn test_implicittiling() {
+            // 85162.9 447106.8 85562.9 447706.8
+            // let bbox: crate::spatial_structs::Bbox =
+            //     [85162.9, 447106.8, -10.7, 85962.9, 447906.8, 320.5];
+            // let grid = crate::spatial_structs::SquareGrid::new(&bbox, 200, 7415, Some(10.0));
+
+            let mut world = crate::parser::World::new(
+                test_data_dir()
+                    .join("features_3dbag_5909")
+                    .join("metadata.city.json"),
+                test_data_dir()
+                    .join("features_3dbag_5909")
+                    .join("3dbag_v21031_7425c21b_5909_subset"),
+                200,
+                Some(vec![
+                    crate::parser::CityObjectType::Building,
+                    crate::parser::CityObjectType::BuildingPart,
+                ]),
+                None,
+                None,
+            )
+            .unwrap();
+            world.index_with_grid();
+
+            world.export_grid();
+
+            let quadtree = crate::spatial_structs::QuadTree::from_world(
+                &world,
+                crate::spatial_structs::QuadTreeCapacity::Vertices(15000),
+            );
+            quadtree.export(&world.grid).unwrap();
+
+            let mut tileset = Tileset::from_quadtree(&quadtree, &world, None, None);
+
+            // tileset.make_implicit(&world.grid, &quadtree, );
+
+            let mut i = ImplicitTiling::default();
+            println!("{}", serde_json::to_string(&i).unwrap());
+        }
+
+        #[test]
+        fn test_availability() {
+            let a = AvailabilityConstant::Available;
+            assert_eq!("1", serde_json::to_string(&a).unwrap());
+        }
 
         #[test]
         fn test_refinement() {
