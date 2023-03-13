@@ -9,6 +9,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 
+use crate::formats::cesium3dtiles::{Tile, TileId};
 use clap::Parser;
 use log::{debug, error, info, log_enabled, Level};
 use rayon::prelude::*;
@@ -150,8 +151,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // }
     // 3D Tiles
     info!("Generating 3D Tiles tileset");
-    let tileset_path = cli.output.join("tileset_explicit.json");
-    let tileset_path_implicit = cli.output.join("tileset.json");
+    let tileset_path = cli.output.join("tileset.json");
     let mut tileset = formats::cesium3dtiles::Tileset::from_quadtree(
         &quadtree,
         &world,
@@ -161,19 +161,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Select how many levels of tiles from the hierarchy do we want to export with
     // content.
-    // tileset.add_content(cli.qtree_export_levels);
-    // let tiles = tileset.flatten(cli.qtree_export_levels);
+    tileset.add_content(cli.qtree_export_levels);
+
+    let tiles = match cli.cesium3dtiles_implicit {
+        true => {
+            let subtrees_path = cli.output.join("subtrees");
+            fs::create_dir_all(&subtrees_path)?;
+            let mut tileset_implicit = tileset.clone();
+            // FIXME: here we have a Vec<(Tile, TileId)> in 'tiles' instead of Vec<&Tile>, because of the
+            //  mess with the implicit/explicit tile id-s.
+            info!("Converting to implicit tiling");
+            let tiles = tileset_implicit.make_implicit(&world.grid, &quadtree, subtrees_path);
+            tileset = tileset_implicit;
+            tiles
+        }
+        false => {
+            let just_tiles = tileset.flatten(cli.qtree_export_levels);
+            // FIXME: here we need Vec<(Tile, TileId)> instead of Vec<&Tile>, for the same reason
+            //  as above
+            let tiles: Vec<(Tile, TileId)> = just_tiles
+                .into_iter()
+                .map(|tile_ref| (tile_ref.clone(), tile_ref.id.clone()))
+                .collect();
+            tiles
+        }
+    };
     tileset.to_file(&tileset_path)?;
-
-    let subtrees_path = cli.output.join("subtrees");
-    fs::create_dir_all(&subtrees_path)?;
-    let mut tileset_implicit = tileset.clone();
-    // FIXME: here we have a Vec<(Tile, TileId)> in 'tiles' instead of Vec<&Tile>, because of the
-    //  mess with the implicit/explicit tile id-s.
-    let tiles = tileset_implicit.make_implicit(&world.grid, &quadtree, subtrees_path);
-    tileset_implicit.to_file(&tileset_path_implicit)?;
-
-    // return Ok(());
 
     // Export by calling a subprocess to merge the .jsonl files and convert them to the
     // target format
@@ -204,16 +217,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if cli.format == Formats::_3DTiles && cli.exe_gltfpack.is_none() {
         debug!("exe_gltfpack is not set, skipping gltf optimization")
     };
-    tiles.into_par_iter().for_each(|(tile, tileid_continuous)| {
-        let tileid = tileid_continuous;
+    tiles.into_par_iter().for_each(|(tile, tileid)| {
         let tileid_grid = &tile.id;
         let qtree_nodeid: spatial_structs::QuadTreeNodeId = tileid_grid.into();
         let qtree_node = quadtree
             .node(&qtree_nodeid)
             .unwrap_or_else(|| panic!("did not find tile {} in quadtree", tileid_grid));
         if qtree_node.nr_items > 0 {
-            // FIXME: in case of explicit tiles, the Tile.Content.uri won't match the tileid_string,
-            //  but we need this continous id for the implicit tiles
             let tileid_string = tileid.to_string();
             let file_name = tileid_string;
             let output_file = path_output_tiles
