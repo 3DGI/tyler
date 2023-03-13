@@ -21,7 +21,7 @@ pub struct Cli {
     pub format: crate::Formats,
     /// Create implicit tiling when the output format is 3D Tiles (https://docs.ogc.org/cs/22-025r4/22-025r4.html#toc31).
     /// By default, explicit tiling is created for the 3D Tiles output.
-    #[arg(long = "3d-tiles-implicit")]
+    #[arg(long = "3dtiles-implicit")]
     pub cesium3dtiles_implicit: bool,
     /// The CityObject type to use for the 3D Tiles
     /// (https://www.cityjson.org/specs/1.1.3/#the-different-city-objects).
