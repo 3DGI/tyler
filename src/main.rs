@@ -502,7 +502,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             } else {
-                debug!("tile {} is empty", &tile.id)
+                debug!("tile {} is empty", &tile.id);
+                tile_failed = Some(tile);
             }
             tile_failed
         })
