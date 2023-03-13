@@ -161,7 +161,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Select how many levels of tiles from the hierarchy do we want to export with
     // content.
-    tileset.add_content(cli.qtree_export_levels);
+    // tileset.add_content(cli.qtree_export_levels);
 
     let tiles = match cli.cesium3dtiles_implicit {
         true => {
@@ -216,7 +216,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if cli.format == Formats::_3DTiles && cli.exe_gltfpack.is_none() {
         debug!("exe_gltfpack is not set, skipping gltf optimization")
     };
-    let tiles_failed: Vec<Tile> = tiles
+    // TODO: could be enough to only collect the failed TileId instead of Tile
+    let mut tiles_failed: Vec<Tile> = tiles
         .into_par_iter()
         .map(|(tile, tileid)| {
             let mut tile_failed: Option<Tile> = None;
@@ -456,6 +457,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             &tileid, &output_file
                         );
                         tile_failed = Some(tile);
+                    } else if vec!["3/4/4", "3/4/5", "3/5/4", "3/5/5"]
+                        .contains(&tileid.to_string().as_str())
+                    {
+                        // FIXME: !!! DEBUG !!!
+                        tile_failed = Some(tile);
                     }
                 } else if let Err(popen_error) = res_exit_status {
                     error!("{}", popen_error);
@@ -506,10 +512,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !log_enabled!(Level::Debug) {
         fs::remove_dir_all(path_features_input_dir)?;
     }
-
     for (i, failed) in tiles_failed.iter().enumerate() {
         debug!("{}, removing failed from the tileset: {}", i, failed.id);
     }
+    // Remove tiles that failed the gltf conversion
+    tileset.prune(&tiles_failed);
     tileset.to_file(&tileset_path)?;
     Ok(())
 }

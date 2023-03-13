@@ -884,6 +884,10 @@ pub mod cesium3dtiles {
 
             grid_for_level_corner_coords
         }
+
+        pub fn prune(&mut self, tiles_to_remove: &Vec<Tile>) {
+            self.root.prune(tiles_to_remove);
+        }
     }
 
     /// [Asset](https://github.com/CesiumGS/3d-tiles/tree/main/specification#asset).
@@ -975,6 +979,16 @@ pub mod cesium3dtiles {
         implicit_tiling: Option<ImplicitTiling>,
     }
 
+    /// Tile equality is evaluated on the tile ID.
+    impl PartialEq for Tile {
+        fn eq(&self, other: &Self) -> bool {
+            self.id == other.id
+        }
+    }
+
+    /// Tile equality is evaluated on the tile ID.
+    impl Eq for Tile {}
+
     impl Tile {
         fn flatten_recurse<'collect>(
             &'collect self,
@@ -1061,6 +1075,19 @@ pub mod cesium3dtiles {
                 bounding_volume: Some(self.bounding_volume),
                 uri: format!("tiles/{}.glb", self.id),
             })
+        }
+
+        fn prune(&mut self, tiles_to_remove: &Vec<Tile>) {
+            if let Some(mut children) = self.children.take() {
+                let mut children_new: Vec<Tile> = Vec::with_capacity(4);
+                for child in children.iter_mut() {
+                    if !tiles_to_remove.contains(&&*child) {
+                        child.prune(tiles_to_remove);
+                        children_new.push(child.clone());
+                    }
+                }
+                self.children = Some(children_new);
+            }
         }
     }
 
