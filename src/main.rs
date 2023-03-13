@@ -214,9 +214,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // TODO: need to refactor this parallel loop somehow that it does not only read the
     //  3d tiles tiles, but also works with cityjson output
     info!("Exporting and optimizing {} tiles", tiles.len());
-    if cli.format == Formats::_3DTiles && cli.exe_gltfpack.is_none() {
-        debug!("exe_gltfpack is not set, skipping gltf optimization")
-    };
     tiles.into_par_iter().for_each(|(tile, tileid)| {
         let tileid_grid = &tile.id;
         let qtree_nodeid: spatial_structs::QuadTreeNodeId = tileid_grid.into();
@@ -319,9 +316,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ));
             }
             if !cli.color_road.is_none() {
-                cmd = cmd.arg(format!(
-                    "--colorRoad={}", 
-                    cli.color_road.as_ref().unwrap()));
+                cmd = cmd.arg(format!("--colorRoad={}", cli.color_road.as_ref().unwrap()));
             }
             if !cli.color_railway.is_none() {
                 cmd = cmd.arg(format!(
@@ -440,10 +435,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ));
             }
             if !cli.lod_road.is_none() {
-                cmd = cmd.arg(format!(
-                    "--lodRoad={}", 
-                    cli.lod_road.as_ref().unwrap()
-                ));
+                cmd = cmd.arg(format!("--lodRoad={}", cli.lod_road.as_ref().unwrap()));
             }
             if !cli.lod_railway.is_none() {
                 cmd = cmd.arg(format!(
@@ -488,10 +480,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ));
             }
             if !cli.lod_bridge.is_none() {
-                cmd = cmd.arg(format!(
-                    "--lodBridge={}",
-                    cli.lod_bridge.as_ref().unwrap()
-                ));
+                cmd = cmd.arg(format!("--lodBridge={}", cli.lod_bridge.as_ref().unwrap()));
             }
             if !cli.lod_bridge_part.is_none() {
                 cmd = cmd.arg(format!(
@@ -512,10 +501,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ));
             }
             if !cli.lod_tunnel.is_none() {
-                cmd = cmd.arg(format!(
-                    "--lodTunnel={}",
-                    cli.lod_tunnel.as_ref().unwrap()
-                ));
+                cmd = cmd.arg(format!("--lodTunnel={}", cli.lod_tunnel.as_ref().unwrap()));
             }
             if !cli.lod_tunnel_part.is_none() {
                 cmd = cmd.arg(format!(
@@ -578,40 +564,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             } else if let Err(popen_error) = res_exit_status {
                 error!("{}", popen_error);
-            }
-            // Run gltfpack on the produced glb
-            if cli.format == Formats::_3DTiles {
-                if let Some(ref gltfpack) = cli.exe_gltfpack {
-                    let res_exit_status = Exec::cmd(gltfpack)
-                        .arg("-cc")
-                        .arg("-kn")
-                        .arg("-i")
-                        .arg(&output_file)
-                        .arg("-o")
-                        .arg(&output_file)
-                        .stdout(Redirection::Pipe)
-                        .stderr(Redirection::Merge)
-                        .capture();
-                    if let Ok(capturedata) = res_exit_status {
-                        let stdout = capturedata.stdout_str();
-                        if !capturedata.success() {
-                            error!("{} gltfpack subprocess stdout: {}", &tileid, stdout);
-                            error!(
-                                "{} gltfpack subprocess stderr: {}",
-                                &tileid,
-                                capturedata.stderr_str()
-                            );
-                        } else if !stdout.is_empty() && stdout != "\n" {
-                            debug!(
-                                "{} gltfpack subproces stdout {}",
-                                &tileid,
-                                capturedata.stdout_str()
-                            );
-                        }
-                    } else if let Err(popen_error) = res_exit_status {
-                        error!("{}", popen_error);
-                    }
-                }
             }
         } else {
             debug!("tile {} is empty", &tile.id)

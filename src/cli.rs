@@ -187,9 +187,6 @@ pub struct Cli {
     /// Counted from the leaves.
     #[arg(long, default_value = "4")]
     pub qtree_export_levels: Option<u16>,
-    /// Path to the gltfpack executable (https://meshoptimizer.org/gltf/).
-    #[arg(long, value_parser = existing_path)]
-    pub exe_gltfpack: Option<PathBuf>,
     /// Path to the geoflow executable for clipping and exporting the gltf files.
     #[arg(long, value_parser = existing_path)]
     pub exe_geof: Option<PathBuf>,
