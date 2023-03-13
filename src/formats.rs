@@ -621,51 +621,51 @@ pub mod cesium3dtiles {
 
                 // Bufferviews
                 let mut bufferviews: Vec<BufferView> = Vec::with_capacity(3);
-                // bufferview indices
-                let bf_tile_availability = 0;
-                let bf_content_availability = 1;
-                let bf_child_subtree_availability = 2;
+                let mut bufferview_idx: usize = 0;
 
                 let mut child_subtree_availability_bitstream: bv::BitVec<u8, bv::Lsb0> =
                     bv::BitVec::new();
                 child_subtree_availability_bitstream.resize(nr_tiles_child_level, false);
 
-                let tile_availability = Self::create_availability(
-                    bf_tile_availability,
-                    &mut tile_availability_bitstream,
-                );
-                let content_availability = Self::create_availability(
-                    bf_content_availability,
-                    &mut content_availability_bitstream,
-                );
+                let tile_availability =
+                    Self::create_availability(bufferview_idx, &mut tile_availability_bitstream);
+                if tile_availability.constant.is_none() {
+                    // add padding in buffer_vec to next 8 byte boundary
+                    Self::add_padding(&mut buffer_vec, 8);
+                    Self::add_bitstream(
+                        &mut buffer_vec,
+                        &mut bufferviews,
+                        tile_availability_bitstream,
+                    );
+                    bufferview_idx += 1;
+                }
+
+                let content_availability =
+                    Self::create_availability(bufferview_idx, &mut content_availability_bitstream);
+                if content_availability.constant.is_none() {
+                    // add padding in buffer_vec to next 8 byte boundary
+                    Self::add_padding(&mut buffer_vec, 8);
+                    Self::add_bitstream(
+                        &mut buffer_vec,
+                        &mut bufferviews,
+                        content_availability_bitstream,
+                    );
+                    bufferview_idx += 1;
+                }
+
                 let child_subtree_availability = Self::create_availability(
-                    bf_child_subtree_availability,
+                    bufferview_idx,
                     &mut child_subtree_availability_bitstream,
                 );
-
-                // RTODO: only write bit stream if bitstreams is not constant
-
-                // add padding in buffer_vec to next 8 byte boundary
-                Self::add_padding(&mut buffer_vec, 8);
-                Self::add_bitstream(
-                    &mut buffer_vec,
-                    &mut bufferviews,
-                    tile_availability_bitstream,
-                );
-                // add padding in buffer_vec to next 8 byte boundary
-                Self::add_padding(&mut buffer_vec, 8);
-                Self::add_bitstream(
-                    &mut buffer_vec,
-                    &mut bufferviews,
-                    content_availability_bitstream,
-                );
-                // add padding in buffer_vec to next 8 byte boundary
-                Self::add_padding(&mut buffer_vec, 8);
-                Self::add_bitstream(
-                    &mut buffer_vec,
-                    &mut bufferviews,
-                    child_subtree_availability_bitstream,
-                );
+                if child_subtree_availability.constant.is_none() {
+                    // add padding in buffer_vec to next 8 byte boundary
+                    Self::add_padding(&mut buffer_vec, 8);
+                    Self::add_bitstream(
+                        &mut buffer_vec,
+                        &mut bufferviews,
+                        child_subtree_availability_bitstream,
+                    );
+                }
 
                 // pad our buffer_vec to have a length that is a multiple of 8 bytes
                 Self::add_padding(&mut buffer_vec, 8);
@@ -684,7 +684,6 @@ pub mod cesium3dtiles {
                 };
                 let mut subtree_json = serde_json::to_string(&subtree)
                     .expect("failed to serialize the subtree to json");
-                // RTODO: why 64 bytes here? should it not be 8?
                 let remainder = subtree_json.as_bytes().len() % 8;
                 let mut padding = 0;
                 if remainder > 0 {
