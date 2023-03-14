@@ -163,22 +163,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // content.
     tileset.add_content(cli.qtree_export_levels);
 
-    let tiles = match cli.cesium3dtiles_implicit {
+    let (tiles, subtrees) = match cli.cesium3dtiles_implicit {
         true => {
-            let subtrees_path = cli.output.join("subtrees");
-            fs::create_dir_all(&subtrees_path)?;
             let mut tileset_implicit = tileset.clone();
             // FIXME: here we have a Vec<(Tile, TileId)> in 'tiles' instead of Vec<&Tile>, because of the
             //  mess with the implicit/explicit tile id-s.
             info!("Converting to implicit tiling");
-            let tiles = tileset_implicit.make_implicit(
-                &world.grid,
-                &quadtree,
-                subtrees_path,
-                cli.grid_export,
-            );
+            let tiles_subtrees =
+                tileset_implicit.make_implicit(&world.grid, &quadtree, cli.grid_export);
             tileset = tileset_implicit;
-            tiles
+            tiles_subtrees
         }
         false => {
             let just_tiles = tileset.flatten(cli.qtree_export_levels);
@@ -188,7 +182,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .into_iter()
                 .map(|tile_ref| (tile_ref.clone(), tile_ref.id.clone()))
                 .collect();
-            tiles
+            (tiles, vec![])
         }
     };
     tileset.to_file(&tileset_path)?;
@@ -219,371 +213,412 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // TODO: need to refactor this parallel loop somehow that it does not only read the
     //  3d tiles tiles, but also works with cityjson output
     info!("Exporting and optimizing {} tiles", tiles.len());
-    tiles.into_par_iter().for_each(|(tile, tileid)| {
-        let tileid_grid = &tile.id;
-        let qtree_nodeid: spatial_structs::QuadTreeNodeId = tileid_grid.into();
-        let qtree_node = quadtree
-            .node(&qtree_nodeid)
-            .unwrap_or_else(|| panic!("did not find tile {} in quadtree", tileid_grid));
-        if qtree_node.nr_items > 0 {
-            let tileid_string = tileid.to_string();
-            let file_name = tileid_string;
-            let output_file = path_output_tiles
-                .join(&file_name)
-                .with_extension(&subprocess_config.output_extension);
-            // We write the list of feature paths for a tile into a text file, instead of passing
-            // super long paths-string to the subprocess, because with very long arguments we can
-            // get an 'Argument list too long' error.
-            let path_features_input_file = path_features_input_dir
-                .join(&file_name)
-                .with_extension("input");
-            fs::create_dir_all(path_features_input_file.parent().unwrap()).unwrap_or_else(|_| {
-                panic!(
-                    "should be able to create the directory {:?}",
-                    path_features_input_file.parent().unwrap()
-                )
-            });
-            let mut feature_input = File::create(&path_features_input_file).unwrap_or_else(|_| {
-                panic!(
-                    "should be able to create a file {:?}",
-                    &path_features_input_file
-                )
-            });
-            for cellid in qtree_node.cells() {
-                let cell = world.grid.cell(cellid);
-                for fid in cell.feature_ids.iter() {
-                    let fp = world.features[*fid]
-                        .path_jsonl
-                        .clone()
-                        .into_os_string()
-                        .into_string()
-                        .unwrap();
-                    writeln!(feature_input, "{}", fp)
-                        .expect("should be able to write feature path to the input file");
-                }
-            }
-
-            // We use the quadtree node bbox here instead of the Tileset.Tile bounding
-            // volume, because the Tile is in EPSG:4979 and we need the input data CRS
-            let b = qtree_node.bbox(&world.grid);
-            // We need to string-format all the arguments with an = separator, because that's what
-            // geof can accept.
-            // TODO: maybe replace the subprocess carte with std::process to remove the dependency
-            let mut cmd = Exec::cmd(&subprocess_config.exe)
-                .arg(&subprocess_config.script)
-                .arg(format!(
-                    "--output_format={}",
-                    &cli.format.to_string().to_lowercase()
-                ))
-                .arg(format!("--output_file={}", &output_file.to_str().unwrap()))
-                .arg(format!(
-                    "--path_metadata={}",
-                    &world.path_metadata.to_str().unwrap()
-                ))
-                .arg(format!(
-                    "--path_features_input_file={}",
-                    &path_features_input_file.to_str().unwrap()
-                ))
-                .arg(format!("--min_x={}", b[0]))
-                .arg(format!("--min_y={}", b[1]))
-                .arg(format!("--min_z={}", b[2]))
-                .arg(format!("--max_x={}", b[3]))
-                .arg(format!("--max_y={}", b[4]))
-                .arg(format!("--max_z={}", b[5]))
-                .arg(format!("--cotypes={}", &cotypes_arg))
-                .arg(format!("--metadata_class={}", &metadata_class))
-                .arg(format!("--attribute_spec={}", &attribute_spec))
-                .arg(format!("--geometric_error={}", &tile.geometric_error));
-
-            // colors
-            if !cli.color_building.is_none() {
-                cmd = cmd.arg(format!(
-                    "--colorBuilding={}",
-                    cli.color_building.as_ref().unwrap()
-                ));
-            }
-            if !cli.color_building_part.is_none() {
-                cmd = cmd.arg(format!(
-                    "--colorBuildingPart={}",
-                    cli.color_building_part.as_ref().unwrap()
-                ));
-            }
-            if !cli.color_building_installation.is_none() {
-                cmd = cmd.arg(format!(
-                    "--colorBuildingInstallation={}",
-                    cli.color_building_installation.as_ref().unwrap()
-                ));
-            }
-            if !cli.color_tin_relief.is_none() {
-                cmd = cmd.arg(format!(
-                    "--colorTINRelief={}",
-                    cli.color_tin_relief.as_ref().unwrap()
-                ));
-            }
-            if !cli.color_road.is_none() {
-                cmd = cmd.arg(format!("--colorRoad={}", cli.color_road.as_ref().unwrap()));
-            }
-            if !cli.color_railway.is_none() {
-                cmd = cmd.arg(format!(
-                    "--colorRailway={}",
-                    cli.color_railway.as_ref().unwrap()
-                ));
-            }
-            if !cli.color_transport_square.is_none() {
-                cmd = cmd.arg(format!(
-                    "--colorTransportSquare={}",
-                    cli.color_transport_square.as_ref().unwrap()
-                ));
-            }
-            if !cli.color_water_body.is_none() {
-                cmd = cmd.arg(format!(
-                    "--colorWaterBody={}",
-                    cli.color_water_body.as_ref().unwrap()
-                ));
-            }
-            if !cli.color_plant_cover.is_none() {
-                cmd = cmd.arg(format!(
-                    "--colorPlantCover={}",
-                    cli.color_plant_cover.as_ref().unwrap()
-                ));
-            }
-            if !cli.color_solitary_vegetation_object.is_none() {
-                cmd = cmd.arg(format!(
-                    "--colorSolitaryVegetationObject={}",
-                    cli.color_solitary_vegetation_object.as_ref().unwrap()
-                ));
-            }
-            if !cli.color_land_use.is_none() {
-                cmd = cmd.arg(format!(
-                    "--colorLandUse={}",
-                    cli.color_land_use.as_ref().unwrap()
-                ));
-            }
-            if !cli.color_city_furniture.is_none() {
-                cmd = cmd.arg(format!(
-                    "--colorCityFurniture={}",
-                    cli.color_city_furniture.as_ref().unwrap()
-                ));
-            }
-            if !cli.color_bridge.is_none() {
-                cmd = cmd.arg(format!(
-                    "--colorBridge={}",
-                    cli.color_bridge.as_ref().unwrap()
-                ));
-            }
-            if !cli.color_bridge_part.is_none() {
-                cmd = cmd.arg(format!(
-                    "--colorBridgePart={}",
-                    cli.color_bridge_part.as_ref().unwrap()
-                ));
-            }
-            if !cli.color_bridge_installation.is_none() {
-                cmd = cmd.arg(format!(
-                    "--colorBridgeInstallation={}",
-                    cli.color_bridge_installation.as_ref().unwrap()
-                ));
-            }
-            if !cli.color_bridge_construction_element.is_none() {
-                cmd = cmd.arg(format!(
-                    "--colorBridgeConstructionElement={}",
-                    cli.color_bridge_construction_element.as_ref().unwrap()
-                ));
-            }
-            if !cli.color_tunnel.is_none() {
-                cmd = cmd.arg(format!(
-                    "--colorTunnel={}",
-                    cli.color_tunnel.as_ref().unwrap()
-                ));
-            }
-            if !cli.color_tunnel_part.is_none() {
-                cmd = cmd.arg(format!(
-                    "--colorTunnelPart={}",
-                    cli.color_tunnel_part.as_ref().unwrap()
-                ));
-            }
-            if !cli.color_tunnel_installation.is_none() {
-                cmd = cmd.arg(format!(
-                    "--colorTunnelInstallation={}",
-                    cli.color_tunnel_installation.as_ref().unwrap()
-                ));
-            }
-            if !cli.color_generic_city_object.is_none() {
-                cmd = cmd.arg(format!(
-                    "--colorGenericCityObject={}",
-                    cli.color_generic_city_object.as_ref().unwrap()
-                ));
-            }
-
-            // lod filter
-            if !cli.lod_building.is_none() {
-                cmd = cmd.arg(format!(
-                    "--lodBuilding={}",
-                    cli.lod_building.as_ref().unwrap()
-                ));
-            }
-            if !cli.lod_building_part.is_none() {
-                cmd = cmd.arg(format!(
-                    "--lodBuildingPart={}",
-                    cli.lod_building_part.as_ref().unwrap()
-                ));
-            }
-            if !cli.lod_building_installation.is_none() {
-                cmd = cmd.arg(format!(
-                    "--lodBuildingInstallation={}",
-                    cli.lod_building_installation.as_ref().unwrap()
-                ));
-            }
-            if !cli.lod_tin_relief.is_none() {
-                cmd = cmd.arg(format!(
-                    "--lodTINRelief={}",
-                    cli.lod_tin_relief.as_ref().unwrap()
-                ));
-            }
-            if !cli.lod_road.is_none() {
-                cmd = cmd.arg(format!("--lodRoad={}", cli.lod_road.as_ref().unwrap()));
-            }
-            if !cli.lod_railway.is_none() {
-                cmd = cmd.arg(format!(
-                    "--lodRailway={}",
-                    cli.lod_railway.as_ref().unwrap()
-                ));
-            }
-            if !cli.lod_transport_square.is_none() {
-                cmd = cmd.arg(format!(
-                    "--lodTransportSquare={}",
-                    cli.lod_transport_square.as_ref().unwrap()
-                ));
-            }
-            if !cli.lod_water_body.is_none() {
-                cmd = cmd.arg(format!(
-                    "--lodWaterBody={}",
-                    cli.lod_water_body.as_ref().unwrap()
-                ));
-            }
-            if !cli.lod_plant_cover.is_none() {
-                cmd = cmd.arg(format!(
-                    "--lodPlantCover={}",
-                    cli.lod_plant_cover.as_ref().unwrap()
-                ));
-            }
-            if !cli.lod_solitary_vegetation_object.is_none() {
-                cmd = cmd.arg(format!(
-                    "--lodSolitaryVegetationObject={}",
-                    cli.lod_solitary_vegetation_object.as_ref().unwrap()
-                ));
-            }
-            if !cli.lod_land_use.is_none() {
-                cmd = cmd.arg(format!(
-                    "--lodLandUse={}",
-                    cli.lod_land_use.as_ref().unwrap()
-                ));
-            }
-            if !cli.lod_city_furniture.is_none() {
-                cmd = cmd.arg(format!(
-                    "--lodCityFurniture={}",
-                    cli.lod_city_furniture.as_ref().unwrap()
-                ));
-            }
-            if !cli.lod_bridge.is_none() {
-                cmd = cmd.arg(format!("--lodBridge={}", cli.lod_bridge.as_ref().unwrap()));
-            }
-            if !cli.lod_bridge_part.is_none() {
-                cmd = cmd.arg(format!(
-                    "--lodBridgePart={}",
-                    cli.lod_bridge_part.as_ref().unwrap()
-                ));
-            }
-            if !cli.lod_bridge_installation.is_none() {
-                cmd = cmd.arg(format!(
-                    "--lodBridgeInstallation={}",
-                    cli.lod_bridge_installation.as_ref().unwrap()
-                ));
-            }
-            if !cli.lod_bridge_construction_element.is_none() {
-                cmd = cmd.arg(format!(
-                    "--lodBridgeConstructionElement={}",
-                    cli.lod_bridge_construction_element.as_ref().unwrap()
-                ));
-            }
-            if !cli.lod_tunnel.is_none() {
-                cmd = cmd.arg(format!("--lodTunnel={}", cli.lod_tunnel.as_ref().unwrap()));
-            }
-            if !cli.lod_tunnel_part.is_none() {
-                cmd = cmd.arg(format!(
-                    "--lodTunnelPart={}",
-                    cli.lod_tunnel_part.as_ref().unwrap()
-                ));
-            }
-            if !cli.lod_tunnel_installation.is_none() {
-                cmd = cmd.arg(format!(
-                    "--lodTunnelInstallation={}",
-                    cli.lod_tunnel_installation.as_ref().unwrap()
-                ));
-            }
-            if !cli.lod_generic_city_object.is_none() {
-                cmd = cmd.arg(format!(
-                    "--lodGenericCityObject={}",
-                    cli.lod_generic_city_object.as_ref().unwrap()
-                ));
-            }
-
-            if cli.format == Formats::_3DTiles {
-                // geof specific args
-                if let Some(ref cotypes) = world.cityobject_types {
-                    if cotypes.contains(&parser::CityObjectType::Building)
-                        || cotypes.contains(&parser::CityObjectType::BuildingPart)
-                    {
-                        cmd = cmd.arg("--simplify_ratio=1.0").arg("--skip_clip=true");
+    let mut tiles_failed: Vec<Tile> = tiles
+        .into_par_iter()
+        .map(|(tile, tileid)| {
+            let mut tile_failed: Option<Tile> = None;
+            let tileid_grid = &tile.id;
+            let qtree_nodeid: spatial_structs::QuadTreeNodeId = tileid_grid.into();
+            let qtree_node = quadtree
+                .node(&qtree_nodeid)
+                .unwrap_or_else(|| panic!("did not find tile {} in quadtree", tileid_grid));
+            if qtree_node.nr_items > 0 {
+                let tileid_string = tileid.to_string();
+                let file_name = tileid_string;
+                let output_file = path_output_tiles
+                    .join(&file_name)
+                    .with_extension(&subprocess_config.output_extension);
+                // We write the list of feature paths for a tile into a text file, instead of passing
+                // super long paths-string to the subprocess, because with very long arguments we can
+                // get an 'Argument list too long' error.
+                let path_features_input_file = path_features_input_dir
+                    .join(&file_name)
+                    .with_extension("input");
+                fs::create_dir_all(path_features_input_file.parent().unwrap()).unwrap_or_else(
+                    |_| {
+                        panic!(
+                            "should be able to create the directory {:?}",
+                            path_features_input_file.parent().unwrap()
+                        )
+                    },
+                );
+                let mut feature_input =
+                    File::create(&path_features_input_file).unwrap_or_else(|_| {
+                        panic!(
+                            "should be able to create a file {:?}",
+                            &path_features_input_file
+                        )
+                    });
+                for cellid in qtree_node.cells() {
+                    let cell = world.grid.cell(cellid);
+                    for fid in cell.feature_ids.iter() {
+                        let fp = world.features[*fid]
+                            .path_jsonl
+                            .clone()
+                            .into_os_string()
+                            .into_string()
+                            .unwrap();
+                        writeln!(feature_input, "{}", fp)
+                            .expect("should be able to write feature path to the input file");
                     }
                 }
-                if log_enabled!(Level::Debug) {
-                    cmd = cmd.arg("--verbose");
+
+                // We use the quadtree node bbox here instead of the Tileset.Tile bounding
+                // volume, because the Tile is in EPSG:4979 and we need the input data CRS
+                let b = qtree_node.bbox(&world.grid);
+                // We need to string-format all the arguments with an = separator, because that's what
+                // geof can accept.
+                // TODO: maybe replace the subprocess carte with std::process to remove the dependency
+                let mut cmd = Exec::cmd(&subprocess_config.exe)
+                    .arg(&subprocess_config.script)
+                    .arg(format!(
+                        "--output_format={}",
+                        &cli.format.to_string().to_lowercase()
+                    ))
+                    .arg(format!("--output_file={}", &output_file.to_str().unwrap()))
+                    .arg(format!(
+                        "--path_metadata={}",
+                        &world.path_metadata.to_str().unwrap()
+                    ))
+                    .arg(format!(
+                        "--path_features_input_file={}",
+                        &path_features_input_file.to_str().unwrap()
+                    ))
+                    .arg(format!("--min_x={}", b[0]))
+                    .arg(format!("--min_y={}", b[1]))
+                    .arg(format!("--min_z={}", b[2]))
+                    .arg(format!("--max_x={}", b[3]))
+                    .arg(format!("--max_y={}", b[4]))
+                    .arg(format!("--max_z={}", b[5]))
+                    .arg(format!("--cotypes={}", &cotypes_arg))
+                    .arg(format!("--metadata_class={}", &metadata_class))
+                    .arg(format!("--attribute_spec={}", &attribute_spec))
+                    .arg(format!("--geometric_error={}", &tile.geometric_error));
+
+                // colors
+                if !cli.color_building.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--colorBuilding={}",
+                        cli.color_building.as_ref().unwrap()
+                    ));
                 }
+                if !cli.color_building_part.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--colorBuildingPart={}",
+                        cli.color_building_part.as_ref().unwrap()
+                    ));
+                }
+                if !cli.color_building_installation.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--colorBuildingInstallation={}",
+                        cli.color_building_installation.as_ref().unwrap()
+                    ));
+                }
+                if !cli.color_tin_relief.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--colorTINRelief={}",
+                        cli.color_tin_relief.as_ref().unwrap()
+                    ));
+                }
+                if !cli.color_road.is_none() {
+                    cmd = cmd.arg(format!("--colorRoad={}", cli.color_road.as_ref().unwrap()));
+                }
+                if !cli.color_railway.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--colorRailway={}",
+                        cli.color_railway.as_ref().unwrap()
+                    ));
+                }
+                if !cli.color_transport_square.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--colorTransportSquare={}",
+                        cli.color_transport_square.as_ref().unwrap()
+                    ));
+                }
+                if !cli.color_water_body.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--colorWaterBody={}",
+                        cli.color_water_body.as_ref().unwrap()
+                    ));
+                }
+                if !cli.color_plant_cover.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--colorPlantCover={}",
+                        cli.color_plant_cover.as_ref().unwrap()
+                    ));
+                }
+                if !cli.color_solitary_vegetation_object.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--colorSolitaryVegetationObject={}",
+                        cli.color_solitary_vegetation_object.as_ref().unwrap()
+                    ));
+                }
+                if !cli.color_land_use.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--colorLandUse={}",
+                        cli.color_land_use.as_ref().unwrap()
+                    ));
+                }
+                if !cli.color_city_furniture.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--colorCityFurniture={}",
+                        cli.color_city_furniture.as_ref().unwrap()
+                    ));
+                }
+                if !cli.color_bridge.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--colorBridge={}",
+                        cli.color_bridge.as_ref().unwrap()
+                    ));
+                }
+                if !cli.color_bridge_part.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--colorBridgePart={}",
+                        cli.color_bridge_part.as_ref().unwrap()
+                    ));
+                }
+                if !cli.color_bridge_installation.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--colorBridgeInstallation={}",
+                        cli.color_bridge_installation.as_ref().unwrap()
+                    ));
+                }
+                if !cli.color_bridge_construction_element.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--colorBridgeConstructionElement={}",
+                        cli.color_bridge_construction_element.as_ref().unwrap()
+                    ));
+                }
+                if !cli.color_tunnel.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--colorTunnel={}",
+                        cli.color_tunnel.as_ref().unwrap()
+                    ));
+                }
+                if !cli.color_tunnel_part.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--colorTunnelPart={}",
+                        cli.color_tunnel_part.as_ref().unwrap()
+                    ));
+                }
+                if !cli.color_tunnel_installation.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--colorTunnelInstallation={}",
+                        cli.color_tunnel_installation.as_ref().unwrap()
+                    ));
+                }
+                if !cli.color_generic_city_object.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--colorGenericCityObject={}",
+                        cli.color_generic_city_object.as_ref().unwrap()
+                    ));
+                }
+
+                // lod filter
+                if !cli.lod_building.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--lodBuilding={}",
+                        cli.lod_building.as_ref().unwrap()
+                    ));
+                }
+                if !cli.lod_building_part.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--lodBuildingPart={}",
+                        cli.lod_building_part.as_ref().unwrap()
+                    ));
+                }
+                if !cli.lod_building_installation.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--lodBuildingInstallation={}",
+                        cli.lod_building_installation.as_ref().unwrap()
+                    ));
+                }
+                if !cli.lod_tin_relief.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--lodTINRelief={}",
+                        cli.lod_tin_relief.as_ref().unwrap()
+                    ));
+                }
+                if !cli.lod_road.is_none() {
+                    cmd = cmd.arg(format!("--lodRoad={}", cli.lod_road.as_ref().unwrap()));
+                }
+                if !cli.lod_railway.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--lodRailway={}",
+                        cli.lod_railway.as_ref().unwrap()
+                    ));
+                }
+                if !cli.lod_transport_square.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--lodTransportSquare={}",
+                        cli.lod_transport_square.as_ref().unwrap()
+                    ));
+                }
+                if !cli.lod_water_body.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--lodWaterBody={}",
+                        cli.lod_water_body.as_ref().unwrap()
+                    ));
+                }
+                if !cli.lod_plant_cover.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--lodPlantCover={}",
+                        cli.lod_plant_cover.as_ref().unwrap()
+                    ));
+                }
+                if !cli.lod_solitary_vegetation_object.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--lodSolitaryVegetationObject={}",
+                        cli.lod_solitary_vegetation_object.as_ref().unwrap()
+                    ));
+                }
+                if !cli.lod_land_use.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--lodLandUse={}",
+                        cli.lod_land_use.as_ref().unwrap()
+                    ));
+                }
+                if !cli.lod_city_furniture.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--lodCityFurniture={}",
+                        cli.lod_city_furniture.as_ref().unwrap()
+                    ));
+                }
+                if !cli.lod_bridge.is_none() {
+                    cmd = cmd.arg(format!("--lodBridge={}", cli.lod_bridge.as_ref().unwrap()));
+                }
+                if !cli.lod_bridge_part.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--lodBridgePart={}",
+                        cli.lod_bridge_part.as_ref().unwrap()
+                    ));
+                }
+                if !cli.lod_bridge_installation.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--lodBridgeInstallation={}",
+                        cli.lod_bridge_installation.as_ref().unwrap()
+                    ));
+                }
+                if !cli.lod_bridge_construction_element.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--lodBridgeConstructionElement={}",
+                        cli.lod_bridge_construction_element.as_ref().unwrap()
+                    ));
+                }
+                if !cli.lod_tunnel.is_none() {
+                    cmd = cmd.arg(format!("--lodTunnel={}", cli.lod_tunnel.as_ref().unwrap()));
+                }
+                if !cli.lod_tunnel_part.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--lodTunnelPart={}",
+                        cli.lod_tunnel_part.as_ref().unwrap()
+                    ));
+                }
+                if !cli.lod_tunnel_installation.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--lodTunnelInstallation={}",
+                        cli.lod_tunnel_installation.as_ref().unwrap()
+                    ));
+                }
+                if !cli.lod_generic_city_object.is_none() {
+                    cmd = cmd.arg(format!(
+                        "--lodGenericCityObject={}",
+                        cli.lod_generic_city_object.as_ref().unwrap()
+                    ));
+                }
+
+                if cli.format == Formats::_3DTiles {
+                    // geof specific args
+                    if let Some(ref cotypes) = world.cityobject_types {
+                        if cotypes.contains(&parser::CityObjectType::Building)
+                            || cotypes.contains(&parser::CityObjectType::BuildingPart)
+                        {
+                            cmd = cmd.arg("--simplify_ratio=1.0").arg("--skip_clip=true");
+                        }
+                    }
+                    if log_enabled!(Level::Debug) {
+                        cmd = cmd.arg("--verbose");
+                    }
+                }
+                debug!("{}", cmd.to_cmdline_lossy());
+                let res_exit_status = cmd
+                    .stdout(Redirection::Pipe)
+                    .stderr(Redirection::Merge)
+                    .capture();
+                if let Ok(capturedata) = res_exit_status {
+                    let stdout = capturedata.stdout_str();
+                    if !capturedata.success() {
+                        error!("{} conversion subprocess stdout: {}", &tileid, stdout);
+                        error!(
+                            "{} conversion subprocess stderr: {}",
+                            &tileid,
+                            capturedata.stderr_str()
+                        );
+                    } else if !stdout.is_empty() && stdout != "\n" {
+                        debug!(
+                            "{} conversion subproces stdout {}",
+                            &tileid,
+                            capturedata.stdout_str()
+                        );
+                    }
+                    if !output_file.exists() {
+                        error!(
+                            "{} output {:?} was not written by the subprocess",
+                            &tileid, &output_file
+                        );
+                        tile_failed = Some(tile);
+                    } else if vec!["3/4/4", "3/4/5", "3/5/4", "3/5/5"]
+                        .contains(&tileid.to_string().as_str())
+                    {
+                        // FIXME: !!! DEBUG !!!
+                        tile_failed = Some(tile);
+                    }
+                } else if let Err(popen_error) = res_exit_status {
+                    error!("{}", popen_error);
+                    tile_failed = Some(tile);
+                }
+            } else {
+                debug!("tile {} is empty", &tile.id);
+                tile_failed = Some(tile);
             }
-            debug!("{}", cmd.to_cmdline_lossy());
-            let res_exit_status = cmd
-                .stdout(Redirection::Pipe)
-                .stderr(Redirection::Merge)
-                .capture();
-            if let Ok(capturedata) = res_exit_status {
-                let stdout = capturedata.stdout_str();
-                if !capturedata.success() {
-                    error!("{} conversion subprocess stdout: {}", &tileid, stdout);
-                    error!(
-                        "{} conversion subprocess stderr: {}",
-                        &tileid,
-                        capturedata.stderr_str()
-                    );
-                } else if !stdout.is_empty() && stdout != "\n" {
-                    debug!(
-                        "{} conversion subproces stdout {}",
-                        &tileid,
-                        capturedata.stdout_str()
-                    );
-                }
-                if !output_file.exists() {
-                    error!(
-                        "{} output {:?} was not written by the subprocess",
-                        &tileid, &output_file
-                    );
-                }
-            } else if let Err(popen_error) = res_exit_status {
-                error!("{}", popen_error);
-            }
-        } else {
-            debug!("tile {} is empty", &tile.id)
-        }
-    });
+            tile_failed
+        })
+        .filter_map(|failed_tile| failed_tile)
+        .collect();
     info!("Done");
     if !log_enabled!(Level::Debug) {
         fs::remove_dir_all(path_features_input_dir)?;
     }
-    for (i, failed) in tiles_failed.iter().enumerate() {
-        debug!("{}, removing failed from the tileset: {}", i, failed.id);
+
+    match cli.cesium3dtiles_implicit {
+        true => {
+            info!("Writing subtrees for implicit tiling");
+            let subtrees_path = cli.output.join("subtrees");
+            fs::create_dir_all(&subtrees_path)?;
+            for (subtree_id, subtree_bytes) in subtrees {
+                fs::create_dir_all(
+                    subtrees_path.join(format!("{}/{}", subtree_id.level, subtree_id.x)),
+                )
+                .unwrap();
+                let out_path = subtrees_path
+                    .join(&subtree_id.to_string())
+                    .with_extension("subtree");
+                let mut subtree_file = File::create(&out_path)
+                    .unwrap_or_else(|_| panic!("could not create {:?} for writing", &out_path));
+                if let Err(e) = subtree_file.write_all(&subtree_bytes) {
+                    error!("Failed to write subtree {} content", subtree_id);
+                }
+            }
+        }
+        false => {
+            for (i, failed) in tiles_failed.iter().enumerate() {
+                debug!("{}, removing failed from the tileset: {}", i, failed.id);
+            }
+            info!("Pruning tileset of empty tiles");
+            // Remove tiles that failed the gltf conversion
+            tileset.prune(&tiles_failed, &quadtree);
+            tileset.to_file(&tileset_path)?;
+        }
     }
-    info!("Pruning tileset of empty tiles");
-    // Remove tiles that failed the gltf conversion
-    tileset.prune(&tiles_failed, &quadtree);
-    tileset.to_file(&tileset_path)?;
     Ok(())
 }

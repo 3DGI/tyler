@@ -419,9 +419,9 @@ pub mod cesium3dtiles {
             &mut self,
             grid: &SquareGrid,
             qtree: &QuadTree,
-            output_dir: PathBuf,
             grid_export: bool,
-        ) -> Vec<(Tile, TileId)> {
+        ) -> (Vec<(Tile, TileId)>, Vec<(TileId, Vec<u8>)>) {
+            let mut subtrees_vec: Vec<(TileId, Vec<u8>)> = Vec::new();
             let mut flat_tiles_with_content: Vec<(Tile, TileId)> = Vec::new();
             let subtree_sections: usize = 1;
             let subtree_levels =
@@ -694,16 +694,7 @@ pub mod cesium3dtiles {
                 }
                 let subtree_json_bytes = subtree_json.as_bytes();
 
-                std::fs::create_dir_all(
-                    output_dir.join(format!("{}/{}", subtree_id.level, subtree_id.x)),
-                )
-                .unwrap();
-                let out_path = output_dir
-                    .join(&subtree_id.to_string())
-                    .with_extension("subtree");
-                let mut subtree_file = File::create(&out_path)
-                    .unwrap_or_else(|_| panic!("could not create {:?} for writing", &out_path));
-
+                let mut subtree_bytes: Vec<u8> = Vec::new();
                 // Header
                 let mut header: Vec<u8> = Vec::new();
                 let magic = 0x74627573u32.to_le_bytes(); // subt
@@ -722,28 +713,32 @@ pub mod cesium3dtiles {
                     );
                 }
 
-                if let Err(e) = subtree_file.write_all(&header) {
-                    error!("failed to header to subtree {}, error:\n{}", subtree_id, e);
-                };
+                subtree_bytes.extend(header);
+                // if let Err(e) = subtree_file.write_all(&header) {
+                //     error!("failed to header to subtree {}, error:\n{}", subtree_id, e);
+                // };
 
                 // Content
-                if let Err(e) = subtree_file.write_all(subtree_json_bytes) {
-                    error!(
-                        "failed to write json content to subtree {}, error:\n{}",
-                        subtree_id, e
-                    );
-                };
+                subtree_bytes.extend(subtree_json_bytes);
+                // if let Err(e) = subtree_file.write_all(subtree_json_bytes) {
+                //     error!(
+                //         "failed to write json content to subtree {}, error:\n{}",
+                //         subtree_id, e
+                //     );
+                // };
                 let buffer_bytes: Vec<u8> = buffer_vec
                     .iter()
                     .map(|i| i.to_le_bytes())
                     .flat_map(|bytearray| bytearray.to_vec())
                     .collect();
-                if let Err(e) = subtree_file.write_all(buffer_bytes.as_slice()) {
-                    error!(
-                        "failed to write binary buffer to subtree {}, error:\n{}",
-                        subtree_id, e
-                    );
-                };
+                subtree_bytes.extend(buffer_bytes);
+                // if let Err(e) = subtree_file.write_all(buffer_bytes.as_slice()) {
+                //     error!(
+                //         "failed to write binary buffer to subtree {}, error:\n{}",
+                //         subtree_id, e
+                //     );
+                // };
+                subtrees_vec.push((subtree_id, subtree_bytes));
             }
 
             self.root.content = Some(Content {
@@ -751,7 +746,7 @@ pub mod cesium3dtiles {
                 uri: "tiles/{level}/{x}/{y}.glb".to_string(),
             });
             self.root.children = None;
-            flat_tiles_with_content
+            (flat_tiles_with_content, subtrees_vec)
         }
 
         fn add_padding(buffer_vec: &mut Vec<u8>, align_by: usize) {
@@ -1103,9 +1098,9 @@ pub mod cesium3dtiles {
 
     #[derive(Clone, Debug, Default, Eq, PartialEq)]
     pub struct TileId {
-        x: usize,
+        pub(crate) x: usize,
         y: usize,
-        level: u16,
+        pub(crate) level: u16,
     }
 
     impl TileId {
