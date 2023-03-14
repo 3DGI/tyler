@@ -163,6 +163,11 @@ pub struct Cli {
     /// directory. Used for debugging.
     #[arg(long)]
     pub grid_export: bool,
+    /// Set the geometric error on the parent nodes of leafs. This controls at what
+    /// camera distance leaf nodes become visible, recommended values in between
+    /// 10 and 15. Higher values make content visible earlier when zooming in.
+    #[arg(long, short = 'e', default_value = "12")]
+    pub geometric_error_above_leaf: Option<f64>,
     /// Set the cell size for the grid that is used for constructing the quadtree.
     #[arg(long, default_value = "200")]
     pub grid_cellsize: Option<u16>,
@@ -181,12 +186,12 @@ pub struct Cli {
     pub qtree_criteria: Option<crate::spatial_structs::QuadTreeCriteria>,
     /// The capacity of a leaf of the quadtree. If a quadrant has less than or equal
     /// the capacity, its subtiles are merged.
-    #[arg(long, default_value = "10000")]
-    pub qtree_capacity: Option<usize>,
+    // #[arg(long, default_value = "0")]
+    // pub qtree_capacity: Option<usize>,
     /// The number of levels to export as content from the quadtree.
     /// Counted from the leaves.
-    #[arg(long, default_value = "4")]
-    pub qtree_export_levels: Option<u16>,
+    // #[arg(long, default_value = "0")]
+    // pub qtree_export_levels: Option<u16>,
     /// Path to the geoflow executable for clipping and exporting the gltf files.
     #[arg(long, value_parser = existing_path)]
     pub exe_geof: Option<PathBuf>,

@@ -51,8 +51,10 @@ pub mod cesium3dtiles {
         pub fn from_quadtree(
             quadtree: &crate::spatial_structs::QuadTree,
             world: &crate::parser::World,
+            geometric_error_above_leaf: f64,
+            arg_cellsize: u16,
             arg_minz: Option<i32>,
-            arg_maxz: Option<i32>,
+            arg_maxz: Option<i32>
         ) -> Self {
             let crs_from = format!("EPSG:{}", world.crs.to_epsg().unwrap());
             // Because we have a boundingVolume.box. For a boundingVolume.region we need 4979.
@@ -64,7 +66,7 @@ pub mod cesium3dtiles {
             //     1.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
             // ]);
 
-            let root = Self::generate_tiles(quadtree, world, &transformer, arg_minz, arg_maxz);
+            let root = Self::generate_tiles(quadtree, world, &transformer, geometric_error_above_leaf, arg_cellsize, arg_minz, arg_maxz);
             // root.transform = Some(y_up_to_z_up);
 
             // Using gltf tile content
@@ -90,6 +92,8 @@ pub mod cesium3dtiles {
             quadtree: &crate::spatial_structs::QuadTree,
             world: &crate::parser::World,
             transformer: &Proj,
+            geometric_error_above_leaf: f64,
+            arg_cellsize: u16,
             arg_minz: Option<i32>,
             arg_maxz: Option<i32>,
         ) -> Tile {
@@ -119,10 +123,10 @@ pub mod cesium3dtiles {
                     BoundingVolume::Sphere(_) => {}
                 }
 
-                // The geometric error of a tile is its 'size'.
-                // Since we have square tiles, we compute its size as the length of
-                // its side on the x-axis.
-                let d = 1.0 / 50.0 * (tile_bbox[3] - tile_bbox[0]);
+                // The geometric error of a tile is computed based on the specified error 
+                // for the nodes have leafs as children (assuming all leaf nodes are at the same level)
+                let level_multiplier = (tile_bbox[3] - tile_bbox[0]) / (arg_cellsize as f64) - 2.0;
+                let d = geometric_error_above_leaf * level_multiplier;
                 if d < 0.0 {
                     debug!("d is negative in parent");
                 }
@@ -132,8 +136,10 @@ pub mod cesium3dtiles {
                         child,
                         world,
                         transformer,
+                        geometric_error_above_leaf,
+                        arg_cellsize,
                         arg_minz,
-                        arg_maxz,
+                        arg_maxz
                     ));
                 }
                 Tile {

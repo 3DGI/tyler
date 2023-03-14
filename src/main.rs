@@ -49,6 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // Since we have a default value, we can safely unwrap.
     let grid_cellsize = cli.grid_cellsize.unwrap();
+    let geometric_error_above_leaf = cli.geometric_error_above_leaf.unwrap();
     let subprocess_config = match cli.format {
         Formats::_3DTiles => {
             if let Some(exe) = cli.exe_geof {
@@ -83,12 +84,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     debug!("{:?}", &subprocess_config);
     // Since we have a default value, it is safe to unwrap
+    let qtree_capacity = 0; // override cli.qtree_capacity
     let quadtree_capacity = match &cli.qtree_criteria.unwrap() {
         spatial_structs::QuadTreeCriteria::Objects => {
-            spatial_structs::QuadTreeCapacity::Objects(cli.qtree_capacity.unwrap())
+            spatial_structs::QuadTreeCapacity::Objects(qtree_capacity)
         }
         spatial_structs::QuadTreeCriteria::Vertices => {
-            spatial_structs::QuadTreeCapacity::Vertices(cli.qtree_capacity.unwrap())
+            spatial_structs::QuadTreeCapacity::Vertices(qtree_capacity)
         }
     };
     let metadata_class: String = match cli.format {
@@ -155,13 +157,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut tileset = formats::cesium3dtiles::Tileset::from_quadtree(
         &quadtree,
         &world,
+        geometric_error_above_leaf,
+        grid_cellsize,
         cli.grid_minz,
-        cli.grid_maxz,
+        cli.grid_maxz
     );
 
     // Select how many levels of tiles from the hierarchy do we want to export with
     // content.
-    tileset.add_content(cli.qtree_export_levels);
+    let qtree_export_levels = Some(0); //override cli.qtree_export_levels
+    tileset.add_content(qtree_export_levels);
 
     let (tiles, subtrees) = match cli.cesium3dtiles_implicit {
         true => {
@@ -174,7 +179,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             tiles_subtrees
         }
         false => {
-            let just_tiles = tileset.flatten(cli.qtree_export_levels);
+            let just_tiles = tileset.flatten(qtree_export_levels);
             // FIXME: here we need Vec<(Tile, TileId)> instead of Vec<&Tile>, for the same reason
             //  as above
             let tiles: Vec<(Tile, TileId)> = just_tiles
