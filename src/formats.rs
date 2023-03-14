@@ -19,7 +19,9 @@ pub mod cesium3dtiles {
     use serde_repr::Serialize_repr;
 
     use crate::proj::Proj;
-    use crate::spatial_structs::{Bbox, CellId, QuadTree, QuadTreeNodeId, SquareGrid};
+    use crate::spatial_structs::{
+        Bbox, CellId, QuadTree, QuadTreeCapacity, QuadTreeNodeId, SquareGrid,
+    };
 
     /// [Tileset](https://github.com/CesiumGS/3d-tiles/tree/main/specification#tileset).
     ///
@@ -49,12 +51,12 @@ pub mod cesium3dtiles {
         }
 
         pub fn from_quadtree(
-            quadtree: &crate::spatial_structs::QuadTree,
+            quadtree: &QuadTree,
             world: &crate::parser::World,
             geometric_error_above_leaf: f64,
             arg_cellsize: u16,
             arg_minz: Option<i32>,
-            arg_maxz: Option<i32>
+            arg_maxz: Option<i32>,
         ) -> Self {
             let crs_from = format!("EPSG:{}", world.crs.to_epsg().unwrap());
             // Because we have a boundingVolume.box. For a boundingVolume.region we need 4979.
@@ -66,7 +68,15 @@ pub mod cesium3dtiles {
             //     1.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
             // ]);
 
-            let root = Self::generate_tiles(quadtree, world, &transformer, geometric_error_above_leaf, arg_cellsize, arg_minz, arg_maxz);
+            let root = Self::generate_tiles(
+                quadtree,
+                world,
+                &transformer,
+                geometric_error_above_leaf,
+                arg_cellsize,
+                arg_minz,
+                arg_maxz,
+            );
             // root.transform = Some(y_up_to_z_up);
 
             // Using gltf tile content
@@ -123,7 +133,7 @@ pub mod cesium3dtiles {
                     BoundingVolume::Sphere(_) => {}
                 }
 
-                // The geometric error of a tile is computed based on the specified error 
+                // The geometric error of a tile is computed based on the specified error
                 // for the nodes have leafs as children (assuming all leaf nodes are at the same level)
                 let level_multiplier = (tile_bbox[3] - tile_bbox[0]) / (arg_cellsize as f64) - 2.0;
                 let d = geometric_error_above_leaf * level_multiplier;
@@ -139,7 +149,7 @@ pub mod cesium3dtiles {
                         geometric_error_above_leaf,
                         arg_cellsize,
                         arg_minz,
-                        arg_maxz
+                        arg_maxz,
                     ));
                 }
                 Tile {
@@ -558,31 +568,33 @@ pub mod cesium3dtiles {
                         }
                     }
 
-                    // DEBUG
-                    let nr_tiles = 4_usize.pow(level_subtree);
-
-                    // Grid for the current level
-                    let tile_width = (extent_width / (nr_tiles as f64).sqrt()) as u16;
-                    let grid_for_level = SquareGrid::new(&tile_bbox, tile_width, grid_epsg, None);
-                    let mut file_implicit_tileset_at_level = File::create(format!(
-                        "implicit-level-{}-{}-{}.tsv",
-                        &level_quadtree, &tile.id.x, &tile.id.y
-                    ))
-                    .unwrap();
-                    for (cellid_grid_level, i_z_curve) in grid_coordinate_map.values() {
-                        let wkt = grid_for_level.cell_to_wkt(cellid_grid_level);
-                        let tile_available = tile_availability_for_level.get(*i_z_curve).unwrap();
-                        let content_available =
-                            content_availability_for_level.get(*i_z_curve).unwrap();
-                        writeln!(
-                            file_implicit_tileset_at_level,
-                            "{}\t{}\t{}\t{}",
-                            cellid_grid_level,
-                            tile_available.as_ref(),
-                            content_available.as_ref(),
-                            wkt
-                        )
+                    if grid_export {
+                        let nr_tiles = 4_usize.pow(level_subtree);
+                        // Grid for the current level
+                        let tile_width = (extent_width / (nr_tiles as f64).sqrt()) as u16;
+                        let grid_for_level =
+                            SquareGrid::new(&tile_bbox, tile_width, grid_epsg, None);
+                        let mut file_implicit_tileset_at_level = File::create(format!(
+                            "implicit-level-{}-{}-{}.tsv",
+                            &level_quadtree, &tile.id.x, &tile.id.y
+                        ))
                         .unwrap();
+                        for (cellid_grid_level, i_z_curve) in grid_coordinate_map.values() {
+                            let wkt = grid_for_level.cell_to_wkt(cellid_grid_level);
+                            let tile_available =
+                                tile_availability_for_level.get(*i_z_curve).unwrap();
+                            let content_available =
+                                content_availability_for_level.get(*i_z_curve).unwrap();
+                            writeln!(
+                                file_implicit_tileset_at_level,
+                                "{}\t{}\t{}\t{}",
+                                cellid_grid_level,
+                                tile_available.as_ref(),
+                                content_available.as_ref(),
+                                wkt
+                            )
+                            .unwrap();
+                        }
                     }
 
                     tile_availability_for_level.set_uninitialized(false);
@@ -1105,8 +1117,8 @@ pub mod cesium3dtiles {
         }
     }
 
-    impl From<&crate::spatial_structs::QuadTreeNodeId> for TileId {
-        fn from(value: &crate::spatial_structs::QuadTreeNodeId) -> Self {
+    impl From<&QuadTreeNodeId> for TileId {
+        fn from(value: &QuadTreeNodeId) -> Self {
             Self {
                 x: value.x,
                 y: value.y,
@@ -1115,15 +1127,15 @@ pub mod cesium3dtiles {
         }
     }
 
-    impl Into<crate::spatial_structs::QuadTreeNodeId> for &TileId {
-        fn into(self) -> crate::spatial_structs::QuadTreeNodeId {
-            crate::spatial_structs::QuadTreeNodeId::new(self.x, self.y, self.level)
+    impl Into<QuadTreeNodeId> for &TileId {
+        fn into(self) -> QuadTreeNodeId {
+            QuadTreeNodeId::new(self.x, self.y, self.level)
         }
     }
 
-    impl Into<crate::spatial_structs::CellId> for &TileId {
-        fn into(self) -> crate::spatial_structs::CellId {
-            crate::spatial_structs::CellId {
+    impl Into<CellId> for &TileId {
+        fn into(self) -> CellId {
+            CellId {
                 column: self.x,
                 row: self.y,
             }
@@ -1159,8 +1171,8 @@ pub mod cesium3dtiles {
     /// half-length.
     /// The last three elements (indices 9, 10, and 11) define the z-axis direction and
     /// half-length.
-    impl From<&crate::spatial_structs::Bbox> for BoundingVolume {
-        fn from(bbox: &crate::spatial_structs::Bbox) -> Self {
+    impl From<&Bbox> for BoundingVolume {
+        fn from(bbox: &Bbox) -> Self {
             let dx = bbox[3] - bbox[0];
             let dy = bbox[4] - bbox[1];
             let dz = bbox[5] - bbox[2];
@@ -1220,7 +1232,7 @@ pub mod cesium3dtiles {
         ///
         #[allow(dead_code)]
         fn box_from_bbox(
-            bbox: &crate::spatial_structs::Bbox,
+            bbox: &Bbox,
             transformer: &Proj,
         ) -> Result<Self, Box<dyn std::error::Error>> {
             let min_coord = transformer.convert((bbox[0], bbox[1], bbox[2]))?;
@@ -1240,7 +1252,7 @@ pub mod cesium3dtiles {
         }
 
         fn region_from_bbox(
-            bbox: &crate::spatial_structs::Bbox,
+            bbox: &Bbox,
             transformer: &Proj,
         ) -> Result<Self, Box<dyn std::error::Error>> {
             let (west, south, minh) = transformer.convert((bbox[0], bbox[1], bbox[2]))?;
@@ -1426,13 +1438,10 @@ pub mod cesium3dtiles {
 
             world.export_grid();
 
-            let quadtree = crate::spatial_structs::QuadTree::from_world(
-                &world,
-                crate::spatial_structs::QuadTreeCapacity::Vertices(15000),
-            );
+            let quadtree = QuadTree::from_world(&world, QuadTreeCapacity::Vertices(15000));
             quadtree.export(&world.grid).unwrap();
 
-            let mut tileset = Tileset::from_quadtree(&quadtree, &world, None, None);
+            let mut tileset = Tileset::from_quadtree(&quadtree, &world, 16_f64, 200, None, None);
 
             // tileset.make_implicit(&world.grid, &quadtree, );
 
@@ -1455,8 +1464,7 @@ pub mod cesium3dtiles {
 
         #[test]
         fn test_boundingvolume_from_bbox() {
-            let bbox: crate::spatial_structs::Bbox =
-                [84995.279, 446316.813, -5.333, 85644.748, 446996.132, 52.881];
+            let bbox: Bbox = [84995.279, 446316.813, -5.333, 85644.748, 446996.132, 52.881];
             let bounding_volume = BoundingVolume::from(&bbox);
             println!("{:?}", bounding_volume);
         }
