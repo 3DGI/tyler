@@ -419,9 +419,9 @@ pub mod cesium3dtiles {
             &mut self,
             grid: &SquareGrid,
             qtree: &QuadTree,
-            output_dir: PathBuf,
             grid_export: bool,
-        ) -> Vec<(Tile, TileId)> {
+        ) -> (Vec<(Tile, TileId)>, Vec<(TileId, Vec<u8>)>) {
+            let mut subtrees_vec: Vec<(TileId, Vec<u8>)> = Vec::new();
             let mut flat_tiles_with_content: Vec<(Tile, TileId)> = Vec::new();
             let subtree_sections: usize = 1;
             let subtree_levels =
@@ -694,16 +694,7 @@ pub mod cesium3dtiles {
                 }
                 let subtree_json_bytes = subtree_json.as_bytes();
 
-                std::fs::create_dir_all(
-                    output_dir.join(format!("{}/{}", subtree_id.level, subtree_id.x)),
-                )
-                .unwrap();
-                let out_path = output_dir
-                    .join(&subtree_id.to_string())
-                    .with_extension("subtree");
-                let mut subtree_file = File::create(&out_path)
-                    .unwrap_or_else(|_| panic!("could not create {:?} for writing", &out_path));
-
+                let mut subtree_bytes: Vec<u8> = Vec::new();
                 // Header
                 let mut header: Vec<u8> = Vec::new();
                 let magic = 0x74627573u32.to_le_bytes(); // subt
@@ -721,29 +712,17 @@ pub mod cesium3dtiles {
                         header.len()
                     );
                 }
-
-                if let Err(e) = subtree_file.write_all(&header) {
-                    error!("failed to header to subtree {}, error:\n{}", subtree_id, e);
-                };
+                subtree_bytes.extend(header);
 
                 // Content
-                if let Err(e) = subtree_file.write_all(subtree_json_bytes) {
-                    error!(
-                        "failed to write json content to subtree {}, error:\n{}",
-                        subtree_id, e
-                    );
-                };
+                subtree_bytes.extend(subtree_json_bytes);
                 let buffer_bytes: Vec<u8> = buffer_vec
                     .iter()
                     .map(|i| i.to_le_bytes())
                     .flat_map(|bytearray| bytearray.to_vec())
                     .collect();
-                if let Err(e) = subtree_file.write_all(buffer_bytes.as_slice()) {
-                    error!(
-                        "failed to write binary buffer to subtree {}, error:\n{}",
-                        subtree_id, e
-                    );
-                };
+                subtree_bytes.extend(buffer_bytes);
+                subtrees_vec.push((subtree_id, subtree_bytes));
             }
 
             self.root.content = Some(Content {
@@ -751,7 +730,7 @@ pub mod cesium3dtiles {
                 uri: "tiles/{level}/{x}/{y}.glb".to_string(),
             });
             self.root.children = None;
-            flat_tiles_with_content
+            (flat_tiles_with_content, subtrees_vec)
         }
 
         fn add_padding(buffer_vec: &mut Vec<u8>, align_by: usize) {
@@ -884,6 +863,12 @@ pub mod cesium3dtiles {
 
             grid_for_level_corner_coords
         }
+
+        /// Prune the tileset by removing the tiles in `tiles_to_remove`.
+        /// In addition, it also removes that with `nr_items == 0`.
+        pub fn prune(&mut self, tiles_to_remove: &Vec<Tile>, qtree: &QuadTree) {
+            self.root.prune(tiles_to_remove, qtree);
+        }
     }
 
     /// [Asset](https://github.com/CesiumGS/3d-tiles/tree/main/specification#asset).
@@ -975,6 +960,16 @@ pub mod cesium3dtiles {
         implicit_tiling: Option<ImplicitTiling>,
     }
 
+    /// Tile equality is evaluated on the tile ID.
+    impl PartialEq for Tile {
+        fn eq(&self, other: &Self) -> bool {
+            self.id == other.id
+        }
+    }
+
+    /// Tile equality is evaluated on the tile ID.
+    impl Eq for Tile {}
+
     impl Tile {
         fn flatten_recurse<'collect>(
             &'collect self,
@@ -1062,13 +1057,34 @@ pub mod cesium3dtiles {
                 uri: format!("tiles/{}.glb", self.id),
             })
         }
+
+        fn prune(&mut self, tiles_to_remove: &Vec<Tile>, qtree: &QuadTree) {
+            if let Some(mut children) = self.children.take() {
+                let mut children_new: Vec<Tile> = Vec::with_capacity(4);
+                for child in children.iter_mut() {
+                    if !tiles_to_remove.contains(&*child) {
+                        let tileid: &TileId = &child.id;
+                        let qtree_nodeid: QuadTreeNodeId = tileid.into();
+                        if let Some(qtree_node) = qtree.node(&qtree_nodeid) {
+                            if qtree_node.nr_items > 0 {
+                                child.prune(tiles_to_remove, qtree);
+                                children_new.push(child.clone());
+                            }
+                        } else {
+                            error!("Did not find matching QuadTree node for TileId {}", tileid);
+                        }
+                    }
+                }
+                self.children = Some(children_new);
+            }
+        }
     }
 
     #[derive(Clone, Debug, Default, Eq, PartialEq)]
     pub struct TileId {
-        x: usize,
+        pub(crate) x: usize,
         y: usize,
-        level: u16,
+        pub(crate) level: u16,
     }
 
     impl TileId {

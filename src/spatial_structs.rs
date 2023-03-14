@@ -102,7 +102,8 @@ impl QuadTree {
             let id = QuadTreeNodeId::new(tiles[0].id.x, tiles[0].id.y, level);
             let id_string = id.to_string();
             // FIXME: this also adds the quadtree if sum_items == 0 so the parent will have 4
-            //  children instead of 3. Probably should return Option<Quadtree>
+            //  children instead of 3. Probably should return Option<Quadtree>.
+            //  Currently these empty tiles are removed in Tile.prune().
             if sum_items <= limit {
                 QuadTree {
                     id,
