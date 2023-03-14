@@ -605,11 +605,15 @@ pub mod cesium3dtiles {
                     false,
                 );
 
+                let mut child_subtree_availability_bitstream: bv::BitVec<u8, bv::Lsb0> =
+                    bv::BitVec::new();
+                child_subtree_availability_bitstream.resize(nr_tiles_child_level, false);
                 for child in tiles_queue.iter() {
                     let tile_corner_coord = Self::tile_corner_coordinate(grid, qtree, child);
                     if let Some((cellid_grid_level, i_z_curve)) =
                         grid_coordinate_map.get(&tile_corner_coord)
                     {
+                        child_subtree_availability_bitstream.set(*i_z_curve, true);
                         subtree_queue.push_back((level_child_subtree, *cellid_grid_level, child));
                     } else {
                         debug!(
@@ -622,10 +626,6 @@ pub mod cesium3dtiles {
                 // Bufferviews
                 let mut bufferviews: Vec<BufferView> = Vec::with_capacity(3);
                 let mut bufferview_idx: usize = 0;
-
-                let mut child_subtree_availability_bitstream: bv::BitVec<u8, bv::Lsb0> =
-                    bv::BitVec::new();
-                child_subtree_availability_bitstream.resize(nr_tiles_child_level, false);
 
                 let tile_availability =
                     Self::create_availability(bufferview_idx, &mut tile_availability_bitstream);
