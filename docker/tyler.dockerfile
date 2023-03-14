@@ -1,11 +1,10 @@
-FROM balazsdukai/geoflow-bundle-builder-ubuntu:latest as builder
+FROM balazsdukai/geoflow-bundle-builder-ubuntu:develop as builder
+
+USER root
 
 ARG GF_PLUGIN_FOLDER="/usr/local/lib/geoflow-plugins"
 
-RUN apt-get install unzip curl
-RUN wget https://github.com/zeux/meshoptimizer/releases/download/v0.18/gltfpack-ubuntu.zip -O /tmp/gltfpack-ubuntu.zip
-RUN unzip /tmp/gltfpack-ubuntu.zip -d /tmp && \
-    chmod a+x /tmp/gltfpack
+RUN apt-get update && apt-get install -y unzip curl
 
 # Download Dutch transformation grids
 RUN wget https://cdn.proj.org/nl_nsgi_nlgeo2018.tif -O /usr/local/share/proj/nl_nsgi_nlgeo2018.tif && \
@@ -38,7 +37,7 @@ RUN mkdir /export && \
     -f $GF_PLUGIN_FOLDER/gfp_las.so \
     -f /root/.cargo/bin/tyler
 
-FROM ubuntu:lunar-20221216
+FROM ubuntu:kinetic-20230126
 ARG VERSION
 LABEL org.opencontainers.image.authors="Balázs Dukai <balazs.dukai@3dgi.nl>"
 LABEL org.opencontainers.image.vendor="3DGI"
@@ -50,7 +49,6 @@ ARG GF_PLUGIN_FOLDER="/usr/local/lib/geoflow-plugins"
 
 RUN rm -rf /var/lib/apt/lists/*
 COPY --from=builder /usr/src/tyler/resources/geof /usr/src/tyler/resources/geof
-COPY --from=builder /tmp/gltfpack /usr/local/bin/gltfpack
 COPY --from=builder /usr/local/share/proj /usr/local/share/proj
 COPY --from=builder $GF_PLUGIN_FOLDER $GF_PLUGIN_FOLDER
 COPY --from=builder /export/lib/ /lib/
