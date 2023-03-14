@@ -171,7 +171,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!("Converting to implicit tiling");
             let tiles_subtrees =
                 tileset_implicit.make_implicit(&world.grid, &quadtree, cli.grid_export);
-            tileset = tileset_implicit;
             tiles_subtrees
         }
         false => {
@@ -185,7 +184,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             (tiles, vec![])
         }
     };
-    tileset.to_file(&tileset_path)?;
 
     // Export by calling a subprocess to merge the .jsonl files and convert them to the
     // target format
@@ -590,35 +588,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         fs::remove_dir_all(path_features_input_dir)?;
     }
 
-    match cli.cesium3dtiles_implicit {
-        true => {
-            info!("Writing subtrees for implicit tiling");
-            let subtrees_path = cli.output.join("subtrees");
-            fs::create_dir_all(&subtrees_path)?;
-            for (subtree_id, subtree_bytes) in subtrees {
-                fs::create_dir_all(
-                    subtrees_path.join(format!("{}/{}", subtree_id.level, subtree_id.x)),
-                )
-                .unwrap();
-                let out_path = subtrees_path
-                    .join(&subtree_id.to_string())
-                    .with_extension("subtree");
-                let mut subtree_file = File::create(&out_path)
-                    .unwrap_or_else(|_| panic!("could not create {:?} for writing", &out_path));
-                if let Err(e) = subtree_file.write_all(&subtree_bytes) {
-                    error!("Failed to write subtree {} content", subtree_id);
-                }
+    info!("Pruning tileset of empty tiles");
+    for (i, failed) in tiles_failed.iter().enumerate() {
+        debug!("{}, removing failed from the tileset: {}", i, failed.id);
+    }
+    // Remove tiles that failed the gltf conversion
+    tileset.prune(&tiles_failed, &quadtree);
+    if cli.cesium3dtiles_implicit {
+        // FIXME: here we re-create the implicit tileset from the pruned tileset,
+        //  because it is simpler than flipping the bits of the unavailable tiles,
+        //  because of the mixed up explicit/implicit tile IDs. But ideally, we
+        //  flip the bits, so we won't need to duplicate the tileset here.
+        let (_, subtrees) = tileset.make_implicit(&world.grid, &quadtree, cli.grid_export);
+        info!("Writing subtrees for implicit tiling");
+        let subtrees_path = cli.output.join("subtrees");
+        fs::create_dir_all(&subtrees_path)?;
+        for (subtree_id, subtree_bytes) in subtrees {
+            fs::create_dir_all(
+                subtrees_path.join(format!("{}/{}", subtree_id.level, subtree_id.x)),
+            )
+            .unwrap();
+            let out_path = subtrees_path
+                .join(&subtree_id.to_string())
+                .with_extension("subtree");
+            let mut subtree_file = File::create(&out_path)
+                .unwrap_or_else(|_| panic!("could not create {:?} for writing", &out_path));
+            if let Err(e) = subtree_file.write_all(&subtree_bytes) {
+                error!("Failed to write subtree {} content", subtree_id);
             }
-        }
-        false => {
-            for (i, failed) in tiles_failed.iter().enumerate() {
-                debug!("{}, removing failed from the tileset: {}", i, failed.id);
-            }
-            info!("Pruning tileset of empty tiles");
-            // Remove tiles that failed the gltf conversion
-            tileset.prune(&tiles_failed, &quadtree);
-            tileset.to_file(&tileset_path)?;
         }
     }
+    tileset.to_file(&tileset_path)?;
+
     Ok(())
 }

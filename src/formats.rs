@@ -712,32 +712,16 @@ pub mod cesium3dtiles {
                         header.len()
                     );
                 }
-
                 subtree_bytes.extend(header);
-                // if let Err(e) = subtree_file.write_all(&header) {
-                //     error!("failed to header to subtree {}, error:\n{}", subtree_id, e);
-                // };
 
                 // Content
                 subtree_bytes.extend(subtree_json_bytes);
-                // if let Err(e) = subtree_file.write_all(subtree_json_bytes) {
-                //     error!(
-                //         "failed to write json content to subtree {}, error:\n{}",
-                //         subtree_id, e
-                //     );
-                // };
                 let buffer_bytes: Vec<u8> = buffer_vec
                     .iter()
                     .map(|i| i.to_le_bytes())
                     .flat_map(|bytearray| bytearray.to_vec())
                     .collect();
                 subtree_bytes.extend(buffer_bytes);
-                // if let Err(e) = subtree_file.write_all(buffer_bytes.as_slice()) {
-                //     error!(
-                //         "failed to write binary buffer to subtree {}, error:\n{}",
-                //         subtree_id, e
-                //     );
-                // };
                 subtrees_vec.push((subtree_id, subtree_bytes));
             }
 
