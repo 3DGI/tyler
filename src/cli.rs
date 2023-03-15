@@ -185,14 +185,6 @@ pub struct Cli {
     /// The criteria to check for the quadtree leaf capacity.
     #[arg(long, value_enum, default_value = "vertices")]
     pub qtree_criteria: Option<crate::spatial_structs::QuadTreeCriteria>,
-    /// The capacity of a leaf of the quadtree. If a quadrant has less than or equal
-    /// the capacity, its subtiles are merged.
-    // #[arg(long, default_value = "0")]
-    // pub qtree_capacity: Option<usize>,
-    /// The number of levels to export as content from the quadtree.
-    /// Counted from the leaves.
-    // #[arg(long, default_value = "0")]
-    // pub qtree_export_levels: Option<u16>,
     /// Path to the geoflow executable for clipping and exporting the gltf files.
     #[arg(long, value_parser = existing_path)]
     pub exe_geof: Option<PathBuf>,
@@ -201,6 +193,14 @@ pub struct Cli {
     /// installed.
     #[arg(long, value_parser = existing_path)]
     pub exe_python: Option<PathBuf>,
+    // The capacity of a leaf of the quadtree. If a quadrant has less than or equal
+    // the capacity, its subtiles are merged.
+    // #[arg(long, default_value = "0")]
+    // pub qtree_capacity: Option<usize>,
+    // The number of levels to export as content from the quadtree.
+    // Counted from the leaves.
+    // #[arg(long, default_value = "0")]
+    // pub qtree_export_levels: Option<u16>,
 }
 
 fn existing_canonical_path(s: &str) -> Result<PathBuf, String> {
