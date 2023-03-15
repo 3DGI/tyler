@@ -52,17 +52,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let geometric_error_above_leaf = cli.geometric_error_above_leaf.unwrap();
     let subprocess_config = match cli.format {
         Formats::_3DTiles => {
-            if let Some(exe) = cli.exe_geof {
-                SubprocessConfig {
-                    output_extension: "glb".to_string(),
-                    exe,
-                    script: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                        .join("resources")
-                        .join("geof")
-                        .join("createGLB.json"),
-                }
+            let mut exe = PathBuf::new();
+            if let Some(exe_g) = cli.exe_geof {
+                assert!(exe_g.exists() && exe_g.is_file(), "geoflow executable must be an existing file for generating 3D Tiles, exe_geof: {:?}", &exe_g);
+                exe = exe_g;
             } else {
-                panic!("exe_geof must be set for generating 3D Tiles");
+                debug!(
+                    "exe_geof is not set for generating 3D Tiles, defaulting to 'geof' in the filesystem PATH"
+                );
+                exe = PathBuf::from("geof");
+            }
+            let res = Exec::cmd(&exe)
+                .arg("-p")
+                .stdout(Redirection::Pipe)
+                .stderr(Redirection::Merge)
+                .capture();
+            if let Ok(capture_data) = res {
+                debug!("geof version:\n{}", capture_data.stdout_str());
+            } else if let Err(popen_error) = res {
+                panic!(
+                    "Could not execute geof ({:?}):\n{}",
+                    &exe,
+                    popen_error.to_string()
+                )
+            }
+            SubprocessConfig {
+                output_extension: "glb".to_string(),
+                exe,
+                script: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("resources")
+                    .join("geof")
+                    .join("createGLB.json"),
             }
         }
         Formats::CityJSON => {
@@ -160,7 +180,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         geometric_error_above_leaf,
         grid_cellsize,
         cli.grid_minz,
-        cli.grid_maxz
+        cli.grid_maxz,
     );
 
     // Select how many levels of tiles from the hierarchy do we want to export with
