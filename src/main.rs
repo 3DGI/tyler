@@ -590,11 +590,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             &tileid, &output_file
                         );
                         tile_failed = Some(tile);
-                    } else if vec!["3/4/4", "3/4/5", "3/5/4", "3/5/5"]
-                        .contains(&tileid.to_string().as_str())
-                    {
-                        // FIXME: !!! DEBUG !!!
-                        tile_failed = Some(tile);
                     }
                 } else if let Err(popen_error) = res_exit_status {
                     error!("{}", popen_error);

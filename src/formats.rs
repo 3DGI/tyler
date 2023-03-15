@@ -470,8 +470,6 @@ pub mod cesium3dtiles {
 
             while let Some((level_subtree_root, cellid, tile)) = subtree_queue.pop_front() {
                 let subtree_id = TileId::new(cellid.column, cellid.row, level_subtree_root as u16);
-                info!("\n\t\t{:=>10}\tprocessing subtree {}", "", &subtree_id);
-
                 let mut buffer_vec: Vec<u8> = Vec::new();
                 let mut tile_availability_bitstream: bv::BitVec<u8, bv::Lsb0> = bv::BitVec::new();
                 let mut content_availability_bitstream: bv::BitVec<u8, bv::Lsb0> =
@@ -534,7 +532,6 @@ pub mod cesium3dtiles {
                     content_availability_for_level.resize(nr_tiles_subtree, false);
 
                     while let Some(tile) = tiles_queue.pop_front() {
-                        debug!("processing tile {}", tile.id);
                         let tile_corner_coord = Self::tile_corner_coordinate(grid, qtree, tile);
                         // Set the tile and content available
                         if let Some((cellid_grid_level, i_z_curve)) =
@@ -543,10 +540,6 @@ pub mod cesium3dtiles {
                             if let Some((cellid_grid_global, ..)) =
                                 grid_coordinate_map_global.get(&tile_corner_coord)
                             {
-                                debug!(
-                                    "tile {} matched grid cell {}, z-curve idx {}",
-                                    tile.id, cellid_grid_level, i_z_curve
-                                );
                                 tile_availability_for_level.set(*i_z_curve, true);
                                 if tile.content.is_some() {
                                     content_availability_for_level.set(*i_z_curve, true);
@@ -574,11 +567,12 @@ pub mod cesium3dtiles {
                         let tile_width = (extent_width / (nr_tiles as f64).sqrt()) as u16;
                         let grid_for_level =
                             SquareGrid::new(&tile_bbox, tile_width, grid_epsg, None);
-                        let mut file_implicit_tileset_at_level = File::create(format!(
+                        let filename = format!(
                             "implicit-level-{}-{}-{}.tsv",
                             &level_quadtree, &tile.id.x, &tile.id.y
-                        ))
-                        .unwrap();
+                        );
+                        debug!("Exporting {:?}", &filename);
+                        let mut file_implicit_tileset_at_level = File::create(&filename).unwrap();
                         for (cellid_grid_level, i_z_curve) in grid_coordinate_map.values() {
                             let wkt = grid_for_level.cell_to_wkt(cellid_grid_level);
                             let tile_available =
@@ -688,7 +682,7 @@ pub mod cesium3dtiles {
                 // pad our buffer_vec to have a length that is a multiple of 8 bytes
                 Self::add_padding(&mut buffer_vec, 8);
 
-                debug!("writing subtree {}", &subtree_id);
+                debug!("Writing subtree {}", &subtree_id);
                 let buffer = Buffer {
                     name: None,
                     byte_length: buffer_vec.len(),
@@ -725,7 +719,7 @@ pub mod cesium3dtiles {
                 header.extend_from_slice(&buffer_byte_length);
                 if header.len() != 24 {
                     error!(
-                        "subtree {} binary header must be 24 bytes long, it is {}",
+                        "Subtree {} binary header must be 24 bytes long, it is {}",
                         &subtree_id,
                         header.len()
                     );
