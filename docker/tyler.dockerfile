@@ -1,4 +1,4 @@
-FROM balazsdukai/geoflow-bundle-builder-ubuntu:develop as builder
+FROM balazsdukai/geoflow-bundle-builder:2023.03.15 as builder
 
 USER root
 
@@ -37,7 +37,7 @@ RUN mkdir /export && \
     -f $GF_PLUGIN_FOLDER/gfp_las.so \
     -f /root/.cargo/bin/tyler
 
-FROM ubuntu:kinetic-20230126
+FROM ubuntu:lunar-20230301
 ARG VERSION
 LABEL org.opencontainers.image.authors="Balázs Dukai <balazs.dukai@3dgi.nl>"
 LABEL org.opencontainers.image.vendor="3DGI"
