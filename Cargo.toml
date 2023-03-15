@@ -1,6 +1,6 @@
 [package]
 name = "tyler"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Balázs Dukai <balazs.dukai@3dgi.nl>", "Ravi Peters <ravi.peters@3dgi.nl>"]
 description = "Create tiles from 3D city objects encoded as CityJSONFeatures."
@@ -8,6 +8,8 @@ repository = "https://github.com/3DGI/tyler"
 readme = "README.md"
 license = "Apache-2.0"
 license-file = "LICENSE"
+keywords = ["geo", "cityjson"]
+categories = ["command-line-utilities", "science::geo"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

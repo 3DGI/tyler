@@ -44,6 +44,7 @@ LABEL org.opencontainers.image.vendor="3DGI"
 LABEL org.opencontainers.image.title="tyler"
 LABEL org.opencontainers.image.description="Create tiles from 3D city objects encoded as CityJSONFeatures."
 LABEL org.opencontainers.image.version=$VERSION
+LABEL org.opencontainers.image.license="(APACHE-2.0 AND GPL-3 AND AGPL-3)"
 
 ARG GF_PLUGIN_FOLDER="/usr/local/lib/geoflow-plugins"
 
