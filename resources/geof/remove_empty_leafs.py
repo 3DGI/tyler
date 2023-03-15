@@ -1,3 +1,4 @@
+"""Copyright 2023 Balázs Dukai, Ravi Peters"""
 import json
 import os, sys
 from pathlib import Path

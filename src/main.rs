@@ -1,3 +1,4 @@
+// Copyright 2023 Balázs Dukai, Ravi Peters
 mod cli;
 mod formats;
 mod parser;

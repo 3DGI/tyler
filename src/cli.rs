@@ -1,3 +1,4 @@
+// Copyright 2023 Balázs Dukai, Ravi Peters
 use std::path::{Path, PathBuf};
 
 use clap::Parser;

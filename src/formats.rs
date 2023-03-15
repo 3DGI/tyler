@@ -1,5 +1,6 @@
 //! Output formats for the tiles.
 //! All format
+// Copyright 2023 Balázs Dukai, Ravi Peters
 
 pub mod cesium3dtiles {
     //! Cesium [3D Tiles](https://github.com/CesiumGS/3d-tiles).

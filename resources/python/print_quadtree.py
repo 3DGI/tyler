@@ -1,3 +1,4 @@
+"""Copyright 2023 Balázs Dukai, Ravi Peters"""
 from pathlib import Path
 import json
 

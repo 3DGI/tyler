@@ -1,6 +1,6 @@
 //! CityJSON parser.
 //! The module is responsible for parsing CityJSON data and populating the World.
-//!
+// Copyright 2023 Balázs Dukai, Ravi Peters
 
 use std::collections::HashMap;
 use std::fmt;

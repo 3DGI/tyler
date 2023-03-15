@@ -1,8 +1,8 @@
 //! Proj.convert() function adapted from the
 //! [proj](https://github.com/georust/proj/blob/main/src/proj.rs) crate to transform xyz
 //! coordinates instead of only xy.
-//!
-//! TODO: include proj license
+// Copyright 2017 The GeoRust Project Developers https://github.com/georust/proj/blob/main/LICENSE-APACHE
+// Copyright 2023 Balázs Dukai, Ravi Peters
 
 use libc::c_int;
 use libc::{c_char, c_double};

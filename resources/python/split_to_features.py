@@ -1,6 +1,8 @@
 """Split a directory of cityjson files to cityjsonfeature files, one file per feature.
 One main cityjson file (metadata.city.json) is written for all the features and the
 'transform' property is computed from the extent of all files.
+
+Copyright 2023 Balázs Dukai, Ravi Peters
 """
 from pathlib import Path
 from sys import argv

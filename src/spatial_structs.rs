@@ -1,4 +1,5 @@
 //! Spatial data structures for indexing the features.
+// Copyright 2023 Balázs Dukai, Ravi Peters
 use crate::parser::FeatureSet;
 use log::{debug, error};
 use std::collections::VecDeque;
