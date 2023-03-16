@@ -29,13 +29,9 @@ pub struct Cli {
     /// Directory for the output.
     #[arg(short, long)]
     pub output: PathBuf,
-    /// Output format.
-    #[arg(long, value_enum)]
-    pub format: crate::Formats,
-    /// Create implicit tiling when the output format is 3D Tiles (https://docs.ogc.org/cs/22-025r4/22-025r4.html#toc31).
-    /// By default, explicit tiling is created for the 3D Tiles output.
-    #[arg(long = "3dtiles-implicit")]
-    pub cesium3dtiles_implicit: bool,
+    // /// Output format.
+    // #[arg(long, value_enum)]
+    // pub format: crate::Formats,
     /// The CityObject type to use for the 3D Tiles
     /// (https://www.cityjson.org/specs/1.1.3/#the-different-city-objects).
     /// You can specify it multiple times.
@@ -52,6 +48,39 @@ pub struct Cli {
     /// 3D Tiles (https://github.com/CesiumGS/glTF/tree/3d-tiles-next/extensions/2.0/Vendor/EXT_structural_metadata#class).
     #[arg(long = "3dtiles-metadata-class")]
     pub cesium3dtiles_metadata_class: Option<String>,
+    /// Create implicit tiling when the output format is 3D Tiles (https://docs.ogc.org/cs/22-025r4/22-025r4.html#toc31).
+    /// By default, explicit tiling is created for the 3D Tiles output.
+    #[arg(long = "3dtiles-implicit")]
+    pub cesium3dtiles_implicit: bool,
+    /// Set the geometric error on the parent nodes of leafs. This controls at what
+    /// camera distance leaf nodes become visible, recommended values in between
+    /// 10 and 15. Higher values make content visible earlier when zooming in.
+    #[arg(long, short = 'e', default_value = "12")]
+    pub geometric_error_above_leaf: Option<f64>,
+    /// Set the 2D cell size for the grid that is used for constructing the quadtree.
+    #[arg(long, default_value = "250")]
+    pub grid_cellsize: Option<u16>,
+    /// Limit the minimum z coordinate for the bounding box that is computed from the
+    /// features. Useful if the features contain errors with extremely small z
+    /// coordinates.
+    #[arg(long)]
+    pub grid_minz: Option<i32>,
+    /// Limit the maximum z coordinate for the bounding box that is computed from the
+    /// features. Useful if the features contain errors with extremely large z
+    /// coordinates.
+    #[arg(long)]
+    pub grid_maxz: Option<i32>,
+    /// Export the grid and the feature centroids in to .tsv files in the working
+    /// directory. Used for debugging.
+    #[arg(long)]
+    pub grid_export: bool,
+    /// The capacity of a leaf of the quadtree. If a quadrant has less than or equal
+    /// the capacity, its subtiles are merged.
+    #[arg(long, default_value = "42000")]
+    pub qtree_capacity: Option<usize>,
+    /// Path to the geoflow executable for clipping and exporting the gltf files.
+    #[arg(long, value_parser = existing_path)]
+    pub exe_geof: Option<PathBuf>,
     /// LoD to use in output for Building features
     #[arg(long)]
     pub lod_building: Option<String>,
@@ -172,47 +201,18 @@ pub struct Cli {
     /// Color for GenericCityObject features specified as a hex rgb-color value, eg. #FF0000 is red.
     #[arg(long, value_parser = hex_color)]
     pub color_generic_city_object: Option<String>,
-    /// Export the grid and the feature centroids in to .tsv files in the working
-    /// directory. Used for debugging.
-    #[arg(long)]
-    pub grid_export: bool,
-    /// Set the geometric error on the parent nodes of leafs. This controls at what
-    /// camera distance leaf nodes become visible, recommended values in between
-    /// 10 and 15. Higher values make content visible earlier when zooming in.
-    #[arg(long, short = 'e', default_value = "12")]
-    pub geometric_error_above_leaf: Option<f64>,
-    /// Set the cell size for the grid that is used for constructing the quadtree.
-    #[arg(long, default_value = "250")]
-    pub grid_cellsize: Option<u16>,
-    /// Limit the minimum z coordinate for the bounding box that is computed from the
-    /// features. Useful if the features contain errors with extremely small z
-    /// coordinates.
-    #[arg(long)]
-    pub grid_minz: Option<i32>,
-    /// Limit the maximum z coordinate for the bounding box that is computed from the
-    /// features. Useful if the features contain errors with extremely large z
-    /// coordinates.
-    #[arg(long)]
-    pub grid_maxz: Option<i32>,
-    /// The criteria to check for the quadtree leaf capacity.
-    #[arg(long, value_enum, default_value = "vertices")]
-    pub qtree_criteria: Option<crate::spatial_structs::QuadTreeCriteria>,
-    /// Path to the geoflow executable for clipping and exporting the gltf files.
-    #[arg(long, value_parser = existing_path)]
-    pub exe_geof: Option<PathBuf>,
-    /// Path to the python interpreter (>=3.8) to use for generating CityJSON tiles.
-    /// The interpreter must have a recent cjio (https://github.com/cityjson/cjio)
-    /// installed.
-    #[arg(long, value_parser = existing_path)]
-    pub exe_python: Option<PathBuf>,
-    /// The capacity of a leaf of the quadtree. If a quadrant has less than or equal
-    /// the capacity, its subtiles are merged.
-    #[arg(long, default_value = "42000")]
-    pub qtree_capacity: Option<usize>,
     // The number of levels to export as content from the quadtree.
     // Counted from the leaves.
     // #[arg(long, default_value = "0")]
     // pub qtree_export_levels: Option<u16>,
+    // /// The criteria to check for the quadtree leaf capacity.
+    // #[arg(long, value_enum, default_value = "vertices")]
+    // pub qtree_criteria: Option<crate::spatial_structs::QuadTreeCriteria>,
+    // /// Path to the python interpreter (>=3.8) to use for generating CityJSON tiles.
+    // /// The interpreter must have a recent cjio (https://github.com/cityjson/cjio)
+    // /// installed.
+    // #[arg(long, value_parser = existing_path)]
+    // pub exe_python: Option<PathBuf>,
 }
 
 fn existing_canonical_path(s: &str) -> Result<PathBuf, String> {

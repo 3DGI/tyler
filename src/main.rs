@@ -63,7 +63,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Since we have a default value, we can safely unwrap.
     let grid_cellsize = cli.grid_cellsize.unwrap();
     let geometric_error_above_leaf = cli.geometric_error_above_leaf.unwrap();
-    let subprocess_config = match cli.format {
+    let format = crate::Formats::_3DTiles; // override --format
+    let subprocess_config = match format {
         Formats::_3DTiles => {
             let mut exe = PathBuf::new();
             if let Some(exe_g) = cli.exe_geof {
@@ -118,7 +119,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     debug!("{:?}", &subprocess_config);
     // Since we have a default value, it is safe to unwrap
     // let qtree_capacity = 0; // override cli.qtree_capacity
-    let quadtree_capacity = match &cli.qtree_criteria.unwrap() {
+    let qtree_criteria = spatial_structs::QuadTreeCriteria::Vertices; // override --qtree-criteria
+    let quadtree_capacity = match qtree_criteria {
         spatial_structs::QuadTreeCriteria::Objects => {
             spatial_structs::QuadTreeCapacity::Objects(cli.qtree_capacity.unwrap())
         }
@@ -126,7 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             spatial_structs::QuadTreeCapacity::Vertices(cli.qtree_capacity.unwrap())
         }
     };
-    let metadata_class: String = match cli.format {
+    let metadata_class: String = match format {
         Formats::_3DTiles => {
             if cli.cesium3dtiles_metadata_class.is_none() {
                 panic!("metadata_class must be set for writing 3D Tiles")
@@ -312,7 +314,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .arg(&subprocess_config.script)
                     .arg(format!(
                         "--output_format={}",
-                        &cli.format.to_string().to_lowercase()
+                        &format.to_string().to_lowercase()
                     ))
                     .arg(format!("--output_file={}", &output_file.to_str().unwrap()))
                     .arg(format!(
@@ -566,7 +568,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ));
                 }
 
-                if cli.format == Formats::_3DTiles {
+                if format == Formats::_3DTiles {
                     // geof specific args
                     if let Some(ref cotypes) = world.cityobject_types {
                         if cotypes.contains(&parser::CityObjectType::Building)
