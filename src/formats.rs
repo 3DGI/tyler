@@ -81,6 +81,8 @@ pub mod cesium3dtiles {
             //     1.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
             // ]);
 
+            let root_bbox = quadtree.bbox(&world.grid);
+
             let root = Self::generate_tiles(
                 quadtree,
                 world,
