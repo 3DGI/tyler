@@ -196,10 +196,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         cli.grid_maxz,
     );
 
-    // Select how many levels of tiles from the hierarchy do we want to export with
-    // content.
-    let qtree_export_levels = Some(0); //override cli.qtree_export_levels
-    tileset.add_content(qtree_export_levels);
+    // // Select how many levels of tiles from the hierarchy do we want to export with
+    // // content.
+    // let qtree_export_levels = Some(0); //override cli.qtree_export_levels
+    // tileset.add_content(qtree_export_levels);
 
     let (tiles, subtrees) = match cli.cesium3dtiles_implicit {
         true => {
@@ -207,12 +207,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // FIXME: here we have a Vec<(Tile, TileId)> in 'tiles' instead of Vec<&Tile>, because of the
             //  mess with the implicit/explicit tile id-s.
             info!("Converting to implicit tiling");
+            // Tileset.make_implicit() outputs the tiles that have content. If only the leaves have
+            //  content, then only the leaves are outputted.
             let tiles_subtrees =
                 tileset_implicit.make_implicit(&world.grid, &quadtree, cli.grid_export);
             tiles_subtrees
         }
         false => {
-            let just_tiles = tileset.flatten(qtree_export_levels);
+            // let just_tiles = tileset.flatten(qtree_export_levels);
+            let just_tiles = tileset.collect_leaves();
             // FIXME: here we need Vec<(Tile, TileId)> instead of Vec<&Tile>, for the same reason
             //  as above
             let tiles: Vec<(Tile, TileId)> = just_tiles

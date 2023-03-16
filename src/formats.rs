@@ -434,6 +434,10 @@ pub mod cesium3dtiles {
             self.root.flatten(levels_up)
         }
 
+        pub fn collect_leaves(&self) -> Vec<&Tile> {
+            self.root.collect_leaves()
+        }
+
         pub fn add_content(&mut self, levels_up: Option<u16>) {
             self.root.add_content_from_level(levels_up);
         }
@@ -1036,6 +1040,22 @@ pub mod cesium3dtiles {
             let mut flat_tiles: Vec<&Tile> = Vec::new();
             self.flatten_recurse(&mut flat_tiles, &limit_upwards);
             flat_tiles
+        }
+
+        fn collect_leaves_recurse<'collect>(&'collect self, leaves: &mut Vec<&'collect Tile>) {
+            if let Some(ref children) = self.children {
+                for child in children {
+                    child.collect_leaves_recurse(leaves);
+                }
+            } else {
+                leaves.push(self);
+            }
+        }
+
+        pub fn collect_leaves(&self) -> Vec<&Self> {
+            let mut leaves: Vec<&Tile> = Vec::new();
+            self.collect_leaves_recurse(&mut leaves);
+            leaves
         }
 
         fn add_content_from_level(&mut self, levels_up: Option<u16>) {
