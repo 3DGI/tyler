@@ -182,7 +182,7 @@ pub struct Cli {
     #[arg(long, short = 'e', default_value = "12")]
     pub geometric_error_above_leaf: Option<f64>,
     /// Set the cell size for the grid that is used for constructing the quadtree.
-    #[arg(long, default_value = "200")]
+    #[arg(long, default_value = "250")]
     pub grid_cellsize: Option<u16>,
     /// Limit the minimum z coordinate for the bounding box that is computed from the
     /// features. Useful if the features contain errors with extremely small z
@@ -205,10 +205,10 @@ pub struct Cli {
     /// installed.
     #[arg(long, value_parser = existing_path)]
     pub exe_python: Option<PathBuf>,
-    // The capacity of a leaf of the quadtree. If a quadrant has less than or equal
-    // the capacity, its subtiles are merged.
-    // #[arg(long, default_value = "0")]
-    // pub qtree_capacity: Option<usize>,
+    /// The capacity of a leaf of the quadtree. If a quadrant has less than or equal
+    /// the capacity, its subtiles are merged.
+    #[arg(long, default_value = "42000")]
+    pub qtree_capacity: Option<usize>,
     // The number of levels to export as content from the quadtree.
     // Counted from the leaves.
     // #[arg(long, default_value = "0")]

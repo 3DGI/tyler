@@ -117,13 +117,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     debug!("{:?}", &subprocess_config);
     // Since we have a default value, it is safe to unwrap
-    let qtree_capacity = 0; // override cli.qtree_capacity
+    // let qtree_capacity = 0; // override cli.qtree_capacity
     let quadtree_capacity = match &cli.qtree_criteria.unwrap() {
         spatial_structs::QuadTreeCriteria::Objects => {
-            spatial_structs::QuadTreeCapacity::Objects(qtree_capacity)
+            spatial_structs::QuadTreeCapacity::Objects(cli.qtree_capacity.unwrap())
         }
         spatial_structs::QuadTreeCriteria::Vertices => {
-            spatial_structs::QuadTreeCapacity::Vertices(qtree_capacity)
+            spatial_structs::QuadTreeCapacity::Vertices(cli.qtree_capacity.unwrap())
         }
     };
     let metadata_class: String = match cli.format {
