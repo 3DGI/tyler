@@ -128,10 +128,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let metadata_class: String = match cli.format {
         Formats::_3DTiles => {
-            if cli.metadata_class.is_none() {
+            if cli.cesium3dtiles_metadata_class.is_none() {
                 panic!("metadata_class must be set for writing 3D Tiles")
             } else {
-                cli.metadata_class.unwrap()
+                cli.cesium3dtiles_metadata_class.unwrap()
             }
         }
         Formats::CityJSON => "".to_string(),

@@ -50,8 +50,8 @@ pub struct Cli {
     /// The CityObject attribute
     /// The metadata class to assign to the property table when the output is
     /// 3D Tiles (https://github.com/CesiumGS/glTF/tree/3d-tiles-next/extensions/2.0/Vendor/EXT_structural_metadata#class).
-    #[arg(long)]
-    pub metadata_class: Option<String>,
+    #[arg(long = "3dtiles-metadata-class")]
+    pub cesium3dtiles_metadata_class: Option<String>,
     /// LoD to use in output for Building features
     #[arg(long)]
     pub lod_building: Option<String>,
