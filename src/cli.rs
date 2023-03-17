@@ -82,7 +82,7 @@ pub struct Cli {
     #[arg(long, value_parser = existing_path)]
     pub exe_geof: Option<PathBuf>,
     /// Use mesh simplification to reduce the number of vertices per object by this fraction. Value should be a float between 0.0 and 1.0. Ignored for building object types.
-    #[arg(long, default_value = "0.95")]
+    #[arg(long, default_value = "0.05")]
     pub reduce_vertices: Option<f64>,
     /// LoD to use in output for Building features
     #[arg(long)]
