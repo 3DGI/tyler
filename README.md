@@ -12,6 +12,14 @@ As output, *tyler* can create:
 
 - [3D Tiles v1.1](https://docs.ogc.org/cs/22-025r4/22-025r4.html)
 
+Details of the 3D Tiles output:
+
+- The tileset content if binary glTF (.glb).
+- The glTF assets contain feature metadata (per CityObject), using the [EXT_mesh_features](https://github.com/CesiumGS/glTF/tree/3d-tiles-next/extensions/2.0/Vendor/EXT_mesh_features) and [EXT_structural_metadata](https://github.com/CesiumGS/glTF/tree/3d-tiles-next/extensions/2.0/Vendor/EXT_structural_metadata) extensions.
+- The features are colored to default values, and the colors can by set per CityObject type.
+- The glTF files are compressed, using the [KHR_mesh_quantization](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_mesh_quantization) and [EXT_meshopt_compression](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Vendor/EXT_meshopt_compression) extensions.
+- Implicit tiling is supported (optional).
+
 Additional information about the internals of *tyler* you will find in the [design document](https://github.com/3DGI/tyler/blob/master/docs/design_document.md).
 
 ## Installation
