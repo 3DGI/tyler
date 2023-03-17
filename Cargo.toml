@@ -9,7 +9,6 @@ homepage = "https://github.com/3DGI/tyler"
 documentation = "https://github.com/3DGI/tyler"
 readme = "README.md"
 license = "Apache-2.0"
-license-file = "LICENSE"
 keywords = ["geo", "cityjson"]
 categories = ["command-line-utilities", "science::geo"]
 
