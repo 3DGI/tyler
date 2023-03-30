@@ -37,6 +37,18 @@ After downloading the source code from GitHub, navigate into the tyler directory
 cargo install .
 ```
 
+#### On Windows
+
+Use [MSYS2](https://www.msys2.org/) with `UCRT64` environment.
+
+Required libraries (prefix: `mingw-w64-ucrt-x86_64-`):
+* clang
+* cmake
+* libtiff
+* make
+* rust
+* sqlite3
+
 ## Usage
 
 *tyler* is a command line application.
