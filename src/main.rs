@@ -24,7 +24,7 @@ use std::path::PathBuf;
 
 use crate::formats::cesium3dtiles::{Tile, TileId};
 use clap::Parser;
-use log::{debug, error, info, log_enabled, Level};
+use log::{debug, error, info, log_enabled, warn, Level};
 use rayon::prelude::*;
 use subprocess::{Exec, Redirection};
 
@@ -569,15 +569,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             cli.lod_generic_city_object.as_ref().unwrap()
                         ));
                     }
-                
+
                     if let Some(ref cotypes) = world.cityobject_types {
                         if cotypes.contains(&parser::CityObjectType::Building)
                             || cotypes.contains(&parser::CityObjectType::BuildingPart)
                         {
                             cmd = cmd.arg("--simplify_ratio=1.0").arg("--skip_clip=true");
-                        }
-                        else
-                        {
+                        } else {
                             if !cli.reduce_vertices.is_none() {
                                 cmd = cmd.arg(format!(
                                     "--simplify_ratio={}",
@@ -598,8 +596,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Ok(capturedata) = res_exit_status {
                     let stdout = capturedata.stdout_str();
                     if !capturedata.success() {
-                        error!("{} conversion subprocess stdout: {}", &tileid, stdout);
-                        error!(
+                        warn!("{} conversion subprocess stdout: {}", &tileid, stdout);
+                        warn!(
                             "{} conversion subprocess stderr: {}",
                             &tileid,
                             capturedata.stderr_str()
@@ -612,14 +610,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         );
                     }
                     if !output_file.exists() {
-                        error!(
+                        warn!(
                             "{} output {:?} was not written by the subprocess",
                             &tileid, &output_file
                         );
                         tile_failed = Some(tile);
                     }
                 } else if let Err(popen_error) = res_exit_status {
-                    error!("{}", popen_error);
+                    warn!("{}", popen_error);
                     tile_failed = Some(tile);
                 }
             } else {
@@ -661,7 +659,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut subtree_file = File::create(&out_path)
                 .unwrap_or_else(|_| panic!("could not create {:?} for writing", &out_path));
             if let Err(e) = subtree_file.write_all(&subtree_bytes) {
-                error!("Failed to write subtree {} content", subtree_id);
+                warn!("Failed to write subtree {} content", subtree_id);
             }
         }
     }

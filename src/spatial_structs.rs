@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 use crate::parser::FeatureSet;
-use log::{debug, error};
+use log::{debug, error, warn};
 use std::collections::VecDeque;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
@@ -127,7 +127,7 @@ impl QuadTree {
                 }
             } else {
                 if tiles.len() % 4 != 0 {
-                    error!(
+                    warn!(
                         "number of children is not dividable by 4: {}, in level {}",
                         tiles.len(),
                         &level

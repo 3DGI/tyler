@@ -26,7 +26,7 @@ pub mod cesium3dtiles {
     use std::path::{Path, PathBuf};
 
     use bitvec::prelude as bv;
-    use log::{debug, error, info};
+    use log::{debug, error, warn};
     use morton_encoding::morton_encode;
     use serde::{Serialize, Serializer};
     use serde_repr::Serialize_repr;
@@ -124,7 +124,7 @@ pub mod cesium3dtiles {
         ) -> Tile {
             if !quadtree.children.is_empty() {
                 if quadtree.children.len() != 4 {
-                    error!("Quadtree does not have 4 children {:?}", &quadtree);
+                    warn!("Quadtree does not have 4 children {:?}", &quadtree);
                 }
                 // Tile bounding volume
                 let mut tile_bbox = quadtree.bbox(&world.grid);
@@ -737,7 +737,7 @@ pub mod cesium3dtiles {
                 header.extend_from_slice(&json_byte_length);
                 header.extend_from_slice(&buffer_byte_length);
                 if header.len() != 24 {
-                    error!(
+                    warn!(
                         "Subtree {} binary header must be 24 bytes long, it is {}",
                         &subtree_id,
                         header.len()
