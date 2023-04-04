@@ -464,6 +464,7 @@ impl SquareGrid {
         }
     }
 
+    /// Insert a point into the grid, by assigning it to the Cell where it is located.
     pub fn insert(&mut self, point: &[f64; 2], feature_id: usize) -> CellId {
         let cell_id = self.locate_point(point);
         let cell = self.cell_mut(&cell_id);
@@ -471,12 +472,29 @@ impl SquareGrid {
         cell_id
     }
 
+    /// Return the Cells that intersect the Bounding Box.
+    pub fn intersect_bbox(&self, bbox: &Bbox) -> Vec<CellId> {
+        let mut cellids: Vec<CellId> = Vec::new();
+        let [minx, miny, _, maxx, maxy, _] = *bbox;
+        let min_cellid = self.locate_point(&[minx, miny]);
+        let max_cellid = self.locate_point(&[maxx, maxy]);
+        for column in min_cellid.column..=max_cellid.column {
+            for row in min_cellid.row..=max_cellid.row {
+                cellids.push(CellId { row, column });
+            }
+        }
+        cellids
+    }
+
     /// Exports the grid and the feature centroids into TSV files into the working directory.
-    /// Two files are created, `grid.tsv` and `features.tsv`.
+    /// The grid is written to `grid.tsv`.
+    /// If `feature_set` is provided, then the feature centroids are written to
+    /// `features.tsv`.
+    /// If `feature_set` is provided, `transform` must be provided too (and vica-versa).
     pub fn export(
         &self,
-        feature_set: &FeatureSet,
-        transform: &crate::parser::Transform,
+        feature_set: Option<&FeatureSet>,
+        transform: Option<&crate::parser::Transform>,
     ) -> std::io::Result<()> {
         let mut file_grid = File::create("grid.tsv")?;
         let mut file_features = File::create("features.tsv")?;
@@ -497,18 +515,25 @@ impl SquareGrid {
                 .write_all(format!("{}\t{}\t{}\n", &cellid, cell.nr_vertices, wkt).as_bytes())
                 .expect("cannot write grid line");
             let mut cellbuffer = String::new();
-            for fid in cell.feature_ids.iter() {
-                let f = &feature_set[*fid];
-                let centroid = f.centroid(transform);
-                cellbuffer += format!(
-                    "{}\t{}\tPOINT({} {})\n",
-                    fid, &cellid, centroid[0], centroid[1]
-                )
-                .as_str();
+            if let Some(fset) = feature_set {
+                for fid in cell.feature_ids.iter() {
+                    let f = &fset[*fid];
+                    let centroid = f.centroid(transform.unwrap());
+                    cellbuffer += format!(
+                        "{}\t{}\tPOINT({} {})\n",
+                        fid, &cellid, centroid[0], centroid[1]
+                    )
+                    .as_str();
+                }
             }
-            file_features
-                .write_all(cellbuffer.as_bytes())
-                .expect("cannot write cell contents");
+            if feature_set.is_some() {
+                file_features
+                    .write_all(cellbuffer.as_bytes())
+                    .expect("cannot write cell contents");
+            }
+        }
+        if feature_set.is_none() {
+            std::fs::remove_file("features.tsv").unwrap();
         }
         Ok(())
     }
@@ -707,6 +732,46 @@ impl BboxQc {
 mod tests {
     use super::*;
     use morton_encoding::morton_encode;
+
+    #[test]
+    fn test_intersect_bbox() {
+        let extent = [195548.0, 538909.0, 0.0, 264268.0, 590410.0, 0.0];
+        let grid = SquareGrid::new(&extent, 400, 7415, Some(0.0));
+        grid.export(None, None).unwrap();
+
+        // Polygon ((248923.44474360189633444 601084.25658657902386039, 249381.04931766359368339 601093.95845033996738493, 249369.73047660905285738 601954.19037048425525427, 248923.44474360189633444 601084.25658657902386039))
+        let bbox: Bbox = [248923.4, 601084.2, 0.0, 249381.0, 601954.1, 0.0];
+        // 133-155, 133-156, 133-157, 134-155, 134-156, 134-157
+        let expected = vec![
+            CellId {
+                row: 157,
+                column: 133,
+            },
+            CellId {
+                row: 157,
+                column: 134,
+            },
+            CellId {
+                row: 156,
+                column: 133,
+            },
+            CellId {
+                row: 156,
+                column: 134,
+            },
+            CellId {
+                row: 155,
+                column: 133,
+            },
+            CellId {
+                row: 155,
+                column: 134,
+            },
+        ];
+        let res = grid.intersect_bbox(&bbox);
+        assert_eq!(expected.len(), res.len());
+        assert!(res.iter().all(|res_cellid| expected.contains(res_cellid)))
+    }
 
     #[test]
     fn test_create_grid() {

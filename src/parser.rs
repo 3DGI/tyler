@@ -24,6 +24,8 @@ use serde::Deserialize;
 use serde_json::from_str;
 use walkdir::WalkDir;
 
+use crate::spatial_structs::BboxQc;
+
 /// Represents the "world" that contains some features and needs to be partitioned into
 /// tiles.
 ///
@@ -103,7 +105,7 @@ impl World {
     fn extent_qc<P: AsRef<Path>>(
         path_features: P,
         cityobject_types: Option<&Vec<CityObjectType>>,
-    ) -> (crate::spatial_structs::BboxQc, usize, Vec<CityObjectType>) {
+    ) -> (BboxQc, usize, Vec<CityObjectType>) {
         info!(
             "Computing extent from the features of type {:?}",
             cityobject_types
@@ -114,7 +116,7 @@ impl World {
             .into_iter()
             .filter_map(Self::jsonl_path);
         // Init the extent with from the first feature of the requested types
-        let mut extent_qc: [i64; 6] = [0, 0, 0, 0, 0, 0];
+        let mut extent_qc = BboxQc([0, 0, 0, 0, 0, 0]);
         let mut found_feature_type = false;
         let mut nr_features = 0;
         let mut cotypes_ignored: Vec<CityObjectType> = Vec::new();
@@ -148,23 +150,22 @@ impl World {
         debug!("First feature found. Iterating over all features to compute the extent.");
         for feature_path in features_enum_iter {
             if let Ok(cf) = CityJSONFeatureVertices::from_file(&feature_path) {
-                if let Some([x_min, y_min, z_min, x_max, y_max, z_max]) =
-                    cf.bbox_of_types(cityobject_types)
-                {
-                    if x_min < extent_qc[0] {
-                        extent_qc[0] = x_min
-                    } else if x_max > extent_qc[3] {
-                        extent_qc[3] = x_max
+                if let Some(bbox_qc) = cf.bbox_of_types(cityobject_types) {
+                    let [x_min, y_min, z_min, x_max, y_max, z_max] = bbox_qc.0;
+                    if x_min < extent_qc.0[0] {
+                        extent_qc.0[0] = x_min
+                    } else if x_max > extent_qc.0[3] {
+                        extent_qc.0[3] = x_max
                     }
-                    if y_min < extent_qc[1] {
-                        extent_qc[1] = y_min
-                    } else if y_max > extent_qc[4] {
-                        extent_qc[4] = y_max
+                    if y_min < extent_qc.0[1] {
+                        extent_qc.0[1] = y_min
+                    } else if y_max > extent_qc.0[4] {
+                        extent_qc.0[4] = y_max
                     }
-                    if z_min < extent_qc[2] {
-                        extent_qc[2] = z_min
-                    } else if z_max > extent_qc[5] {
-                        extent_qc[5] = z_max
+                    if z_min < extent_qc.0[2] {
+                        extent_qc.0[2] = z_min
+                    } else if z_max > extent_qc.0[5] {
+                        extent_qc.0[5] = z_max
                     }
                     nr_features += 1;
                 } else {
@@ -178,11 +179,7 @@ impl World {
                 error!("Failed to parse {:?}", &feature_path);
             }
         }
-        (
-            crate::spatial_structs::BboxQc(extent_qc),
-            nr_features,
-            cotypes_ignored,
-        )
+        (extent_qc, nr_features, cotypes_ignored)
     }
 
     /// Return the file path if the 'DirEntry' is a .jsonl file (eg. .city.jsonl).
@@ -249,6 +246,22 @@ impl World {
                         }
                     }
                 }
+                // After counting the object vertices in the cells, we need to
+                // assign the object to the cells that intersect with its bbox,
+                // because of https://github.com/3DGI/tyler/issues/28
+                if let Some(bbox_qc) = featurevertices.bbox_of_types(self.cityobject_types.as_ref())
+                {
+                    let bbox = bbox_qc.to_bbox(&self.transform, None, None);
+                    let intersecting_cellids = self.grid.intersect_bbox(&bbox);
+                    for cellid in intersecting_cellids {
+                        // Just add a new entry with the intersecting cell to the map, but no not
+                        // increase the vertex count, because the vertices have been counted
+                        // already, these might be cells where the object does not actually have a
+                        // vertex.
+                        *cell_vtx_cnt.entry(cellid).or_insert(0) += 0;
+                    }
+                }
+
                 if !cell_vtx_cnt.is_empty() {
                     // We found at least one CityObject of the required type
                     self.features[fid] = featurevertices.to_feature(&feature_path);
@@ -257,7 +270,7 @@ impl World {
                         if cotypes.contains(&CityObjectType::Building)
                             || cotypes.contains(&CityObjectType::BuildingPart)
                         {
-                            // In case we have a 1-1 feature-to-cell assignment, we only retain the vertex
+                            // In this case we have a 1-1 feature-to-cell assignment, we only retain the vertex
                             // count in the cell that gets the feature.
                             // The cell that receives the feature is the one with the highest vertex count
                             // of the feature.
@@ -295,7 +308,8 @@ impl World {
 
     // Export the grid of the World into the working directory.
     pub fn export_grid(&self) -> std::io::Result<()> {
-        self.grid.export(&self.features, &self.transform)
+        self.grid
+            .export(Some(&self.features), Some(&self.transform))
     }
 }
 
@@ -453,15 +467,12 @@ impl CityJSONFeatureVertices {
                 z_max = *z
             }
         }
-        crate::spatial_structs::BboxQc([x_min, y_min, z_min, x_max, y_max, z_max])
+        BboxQc([x_min, y_min, z_min, x_max, y_max, z_max])
     }
 
     /// Compute the 3D bounding box of only the provided CityObject types in the feature.
     /// Returns quantized coordinates.
-    pub fn bbox_of_types(
-        &self,
-        cityobject_types: Option<&Vec<CityObjectType>>,
-    ) -> Option<[i64; 6]> {
+    pub fn bbox_of_types(&self, cityobject_types: Option<&Vec<CityObjectType>>) -> Option<BboxQc> {
         let [mut x_min, mut y_min, mut z_min] = self.vertices[0];
         let [mut x_max, mut y_max, mut z_max] = self.vertices[0];
         let mut found_co_geometry = false;
@@ -534,7 +545,7 @@ impl CityJSONFeatureVertices {
             }
         }
         if found_co_geometry {
-            Some([x_min, y_min, z_min, x_max, y_max, z_max])
+            Some(BboxQc([x_min, y_min, z_min, x_max, y_max, z_max]))
         } else {
             None
         }
@@ -580,7 +591,7 @@ impl CityJSONFeatureVertices {
             centroid_qc: [ctr_bbox[0], ctr_bbox[1]],
             nr_vertices: self.vertex_count(),
             path_jsonl: path.as_ref().to_path_buf(),
-            bbox_qc: crate::spatial_structs::BboxQc([
+            bbox_qc: BboxQc([
                 ctr_bbox[2],
                 ctr_bbox[3],
                 ctr_bbox[4],
@@ -598,7 +609,7 @@ pub struct Feature {
     pub(crate) centroid_qc: [i64; 2],
     pub(crate) nr_vertices: u16,
     pub path_jsonl: PathBuf,
-    pub bbox_qc: crate::spatial_structs::BboxQc,
+    pub bbox_qc: BboxQc,
 }
 
 impl Feature {
