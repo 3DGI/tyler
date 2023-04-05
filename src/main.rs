@@ -17,6 +17,7 @@ mod parser;
 mod proj;
 mod spatial_structs;
 
+use std::env;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
@@ -90,13 +91,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     popen_error.to_string()
                 )
             }
-            SubprocessConfig {
-                output_extension: "glb".to_string(),
-                exe,
-                script: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            let geof_flowchart_path = match env::var("TYLER_RESOURCES_DIR") {
+                Ok(var) => PathBuf::from(var).join("geof").join("createGLB.json"),
+                Err(_) => PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                     .join("resources")
                     .join("geof")
                     .join("createGLB.json"),
+            };
+            SubprocessConfig {
+                output_extension: "glb".to_string(),
+                exe,
+                script: geof_flowchart_path,
             }
         }
         Formats::CityJSON => {

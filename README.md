@@ -66,6 +66,12 @@ For instance turn on the debug messages.
 ```shell
 RUST_LOG=debug tyler ...
 ```
+### Resources directory
+
+Tyler need two geoflow flowchart files in order to export glTF files.
+These files are located in the `resources/geof` directory and they are picked up automatically when the docker image is used.
+However, it is also possible to provide their location with the environment variable `TYLER_RESOURCES_DIR`, pointing to the `geof` directory.
+For example `export TYLER_RESOURCES_DIR=/some_path/geof`.
 
 ### Exporting 3D Tiles
 
