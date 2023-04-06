@@ -1,5 +1,15 @@
 # Changelog
 
+## tyler 0.3.1 (2023-04-06)
+
+### Changed
+
+- Add the *proj* crate as a submodule, because the proj-sys build script need to be changed so that proj-sys can be built with MYSYS2 on Windows (see https://github.com/georust/proj/pull/156).
+- Warning instead of error when the gltf export in the subprocess fails (fixes #36).
+- The geoflow flowchart directory can be set at runtime with the `TYLER_RESOURCES_DIR` environment variable. By default, the directory is set to the `CARGO_MANIFEST_DIR` at compile time.
+- Features are assigned to tiles based on their bounding box, instead of only their vertices (fixes #28).
+- Update the geoflow docker image.
+
 ## tyler 0.3.0 (2023-03-17)
 
 First public release of Tyler.
