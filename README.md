@@ -27,6 +27,12 @@ Additional information about the internals of *tyler* you will find in the [desi
 For the time being, *tyler* depends on the [geoflow-bundle](https://github.com/geoflow3d/geoflow-bundle) for converting CityJSONFeatures to glTF.
 Unless you want to install the *geoflow-bundle* yourself, we strongly recommend to use the provided docker image for running *tyler*, because it contains the *geoflow-bundle*.
 
+### Using the pre-compiled binaries on windows
+1. Install [geoflow-bundle](https://github.com/geoflow3d/geoflow-bundle) using the windows installer. Install to the default `C:\Program Files\Geoflow` directory.
+1. Download the latest Tyler binary package for windows from the [Tyler release page](https://github.com/3DGI/tyler/releases)
+1. Unzip the Tyler binary package to a folder, for example `C:\software\tyler`
+1. You can now run Tyler using the `run_tyler_example.bat` file inside this directory by double clicking on it. You can also copy and open this file in a text editor to change the parameters (eg. input and output data directories) used for running.
+
 ### Compiling from source
 
 *tyler* is written in Rust and you need the [Rust toolchain](https://www.rust-lang.org/learn/get-started) to compile it.
