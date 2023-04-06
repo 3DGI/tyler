@@ -52,36 +52,34 @@ pub struct Cli {
     /// By default, explicit tiling is created for the 3D Tiles output.
     #[arg(long = "3dtiles-implicit")]
     pub cesium3dtiles_implicit: bool,
-    /// Set the geometric error on the parent nodes of leafs. This controls at what
-    /// camera distance leaf nodes become visible, recommended values in between
-    /// 10 and 15. Higher values make content visible earlier when zooming in.
+    /// Set the geometric error (see 3D Tiles specification) on the parent nodes of leafs. This controls at what
+    /// camera distance leaf nodes become visible. Higher values make content visible earlier when zooming in. 
     #[arg(long, short = 'e', default_value = "12")]
     pub geometric_error_above_leaf: Option<f64>,
-    /// Set the 2D cell size for the grid that is used for constructing the quadtree.
+    /// Set the 2D cell size for the grid that is used for constructing the quadtree. In input units (eg. meters).
     #[arg(long, default_value = "250")]
     pub grid_cellsize: Option<u16>,
     /// Limit the minimum z coordinate for the bounding box that is computed from the
     /// features. Useful if the features contain errors with extremely small z
-    /// coordinates.
+    /// coordinates. In input units (eg. meters).
     #[arg(long)]
     pub grid_minz: Option<i32>,
     /// Limit the maximum z coordinate for the bounding box that is computed from the
     /// features. Useful if the features contain errors with extremely large z
-    /// coordinates.
+    /// coordinates. In input units (eg. meters).
     #[arg(long)]
     pub grid_maxz: Option<i32>,
     /// Export the grid and the feature centroids in to .tsv files in the working
     /// directory. Used for debugging.
     #[arg(long)]
     pub grid_export: bool,
-    /// The capacity of a leaf of the quadtree. If a quadrant has less than or equal
-    /// the capacity, its subtiles are merged.
+    /// The maximum number of vertices in a leaf of the quadtree.
     #[arg(long, default_value = "42000")]
     pub qtree_capacity: Option<usize>,
     /// Path to the geoflow executable for clipping and exporting the gltf files.
     #[arg(long, value_parser = existing_path)]
     pub exe_geof: Option<PathBuf>,
-    /// Use mesh simplification to reduce the number of vertices per object by this fraction. Value should be a float between 0.0 and 1.0. Ignored for building object types.
+    /// Use mesh simplification to reduce the number of vertices per object by this fraction. Value should be a float between 0.0 (100% reduction) and 1.0 (do not use simplification). Ignored for building object types.
     #[arg(long, default_value = "0.05")]
     pub reduce_vertices: Option<f64>,
     /// LoD to use in output for Building features
