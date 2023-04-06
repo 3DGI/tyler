@@ -258,7 +258,8 @@ impl World {
                         // increase the vertex count, because the vertices have been counted
                         // already, these might be cells where the object does not actually have a
                         // vertex.
-                        *cell_vtx_cnt.entry(cellid).or_insert(0) += 0;
+                        // REVIEW: actually, let's just increase the vertex count
+                        *cell_vtx_cnt.entry(cellid).or_insert(1) += 1;
                     }
                 }
 
