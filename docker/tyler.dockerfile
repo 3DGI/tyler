@@ -20,6 +20,7 @@ WORKDIR /usr/src/tyler
 COPY Cargo.toml Cargo.lock ./
 COPY resources ./resources
 COPY src ./src
+COPY proj ./proj
 RUN --mount=type=cache,target=/usr/src/tyler/target /root/.cargo/bin/cargo install --path .
 
 COPY docker/strip-docker-image-export ./
