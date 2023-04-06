@@ -9,6 +9,7 @@
 - The geoflow flowchart directory can be set at runtime with the `TYLER_RESOURCES_DIR` environment variable. By default, the directory is set to the `CARGO_MANIFEST_DIR` at compile time.
 - Features are assigned to tiles based on their bounding box, instead of only their vertices (fixes #28).
 - Update the geoflow docker image.
+- Improve documentation.
 
 ## tyler 0.3.0 (2023-03-17)
 
