@@ -33,6 +33,8 @@ Unless you want to install the *geoflow-bundle* yourself, we strongly recommend 
 1. Unzip the Tyler binary package to a folder, for example `C:\software\tyler`
 1. You can now run Tyler using the `run_tyler_example.bat` file inside this directory by double clicking on it. You can also copy and open this file in a text editor to change the parameters (eg. input and output data directories) used for running.
 
+For testing purposes you download [this sample data](https://data.3dgi.xyz/3dtiles-test-data/download/3D-basisvoorziening-2021-30dz1_01.zip). Create a `data` folder in same the folder as the `.bat` file mentioned above and unzip the contents there.
+
 ### Compiling from source
 
 *tyler* is written in Rust and you need the [Rust toolchain](https://www.rust-lang.org/learn/get-started) to compile it.
@@ -72,6 +74,10 @@ For instance turn on the debug messages.
 ```shell
 RUST_LOG=debug tyler ...
 ```
+
+Tyler uses the [proj](https://proj.org/) library for reprojecting the input to the required CRS.
+The [PROJ_DATA](https://proj.org/usage/environmentvars.html#envvar-PROJ_DATA) environment variable is passed on to the subprocess that generates the glTF files.
+
 ### Resources directory
 
 Tyler need two geoflow flowchart files in order to export glTF files.
