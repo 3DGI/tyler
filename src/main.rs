@@ -64,7 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Since we have a default value, we can safely unwrap.
     let grid_cellsize = cli.grid_cellsize.unwrap();
     let geometric_error_above_leaf = cli.geometric_error_above_leaf.unwrap();
-    let format = crate::Formats::_3DTiles; // override --format
+    let format = Formats::_3DTiles; // override --format
     let subprocess_config = match format {
         Formats::_3DTiles => {
             let mut exe = PathBuf::new();
@@ -92,7 +92,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
             }
             let geof_flowchart_path = match env::var("TYLER_RESOURCES_DIR") {
-                Ok(var) => PathBuf::from(var).join("geof").join("createGLB.json"),
+                Ok(val) => PathBuf::from(val).join("geof").join("createGLB.json"),
                 Err(_) => PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                     .join("resources")
                     .join("geof")
@@ -142,6 +142,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         Formats::CityJSON => "".to_string(),
+    };
+    let proj_data = match env::var("PROJ_DATA") {
+        Ok(val) => {
+            debug!("PROJ_DATA: {val:?}");
+            Some(val)
+        }
+        Err(val) => {
+            warn!("PROJ_DATA environment variable is not set");
+            None
+        }
     };
     // --- end of argument parsing
 
@@ -589,6 +599,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     cmd = cmd.arg("--verbose");
                 }
             }
+
+            if let Some(pd) = &proj_data {
+                cmd = cmd.env("PROJ_DATA", pd);
+            }
+
             debug!("{}", cmd.to_cmdline_lossy());
             let res_exit_status = cmd
                 .stdout(Redirection::Pipe)
