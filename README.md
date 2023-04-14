@@ -191,3 +191,7 @@ The argument value is the hexadecimal rgb color value. For instance “#FF0000�
 For example:
 
 `tyler … --color-building-part #FF0000`
+
+## Funding
+
+Version 0.3 (3D Tiles) was funded by the [Dutch Kadaster](https://www.kadaster.nl/).
