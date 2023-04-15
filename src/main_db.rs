@@ -86,6 +86,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build quadtree
     info!("Building quadtree");
     let quadtree = spatial_structs::QuadTree::from_worlddb(&world, quadtree_capacity);
+
+    world.export_grid()?;
+    quadtree.export(&world.grid)?;
+
     info!("Writing quadtree leaves to the database");
     let mut client = Client::connect(&cli.uri, NoTls)?;
     let table_tiles = format!("{}.tiles", cli.output_schema);

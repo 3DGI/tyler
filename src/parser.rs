@@ -17,9 +17,11 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::fs::read_to_string;
+use std::iter;
 use std::path::{Path, PathBuf};
 
 use log::{debug, error, info};
+use postgres::fallible_iterator::FallibleIterator;
 use postgres::types::FromSql;
 use postgres::{Client, Error, NoTls};
 use serde::Deserialize;
@@ -114,39 +116,40 @@ impl WorldDb {
             geom = &self.geometry_column,
             tbl = &self.table
         );
-        let mut transaction = client.transaction()?;
-        let portal = transaction.bind(&q, &[])?;
-        for rows in transaction.query_portal(&portal, transaction_size).iter() {
-            for feature_row in rows {
-                let mut cell_vtx_cnt: HashMap<crate::spatial_structs::CellId, usize> =
-                    HashMap::new();
-                let fid_pk: i32 = feature_row.get(0);
-                let feature = FeatureDb {
-                    primary_key: fid_pk,
-                };
-                let wkt: &str = feature_row.get(1);
-                let vertices = parse_wkt_polygon(wkt);
-                for vtx in &vertices {
-                    let cellid = self.grid.locate_point(&vtx);
-                    *cell_vtx_cnt.entry(cellid).or_insert(1) += 1;
+        let params: Vec<String> = vec![];
+        let mut res_it = client.query_raw(&q, params)?;
+        while let Some(feature_row) = res_it.next()? {
+            let mut cell_vtx_cnt: HashMap<crate::spatial_structs::CellId, usize> = HashMap::new();
+            let fid_pk: i32 = feature_row.get(0);
+            let feature = FeatureDb {
+                primary_key: fid_pk,
+            };
+            let wkt: &str = feature_row.get(1);
+            let vertices = parse_wkt_polygon(wkt);
+            for vtx in &vertices {
+                let cellid = self.grid.locate_point(&vtx);
+                *cell_vtx_cnt.entry(cellid).or_insert(1) += 1;
+            }
+            if !cell_vtx_cnt.is_empty() {
+                self.features[fid] = feature;
+                let (cellid, nr_vertices) = cell_vtx_cnt
+                    .iter()
+                    .max_by(|a, b| a.1.cmp(b.1))
+                    .map(|(k, v)| (k, v))
+                    .unwrap();
+                let cell = self.grid.cell_mut(cellid);
+                cell.nr_vertices += nr_vertices;
+                if !cell.feature_ids.contains(&fid) {
+                    cell.feature_ids.push(fid)
                 }
-                if !cell_vtx_cnt.is_empty() {
-                    self.features[fid] = feature;
-                    let (cellid, nr_vertices) = cell_vtx_cnt
-                        .iter()
-                        .max_by(|a, b| a.1.cmp(b.1))
-                        .map(|(k, v)| (k, v))
-                        .unwrap();
-                    let cell = self.grid.cell_mut(cellid);
-                    cell.nr_vertices += nr_vertices;
-                    if !cell.feature_ids.contains(&fid) {
-                        cell.feature_ids.push(fid)
-                    }
-                    fid += 1;
-                }
+                fid += 1;
             }
         }
         Ok(())
+    }
+
+    pub fn export_grid(&self) -> std::io::Result<()> {
+        self.grid.export_db()
     }
 }
 

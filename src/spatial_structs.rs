@@ -542,6 +542,30 @@ impl SquareGrid {
         Ok(())
     }
 
+    pub fn export_db(&self) -> std::io::Result<()> {
+        let mut file_grid = File::create("grid.tsv")?;
+        let mut file_features = File::create("features.tsv")?;
+
+        let root_wkt = format!(
+            "POLYGON(({minx} {miny}, {maxx} {miny}, {maxx} {maxy}, {minx} {maxy}, {minx} {miny}))",
+            minx = self.bbox[0],
+            miny = self.bbox[1],
+            maxx = self.bbox[3],
+            maxy = self.bbox[4]
+        );
+        file_grid
+            .write_all(format!("x-x\t0\t{}\n", root_wkt).as_bytes())
+            .expect("cannot write grid line");
+        for (cellid, cell) in self {
+            let wkt = self.cell_to_wkt(&cellid);
+            file_grid
+                .write_all(format!("{}\t{}\t{}\n", &cellid, cell.nr_vertices, wkt).as_bytes())
+                .expect("cannot write grid line");
+        }
+
+        Ok(())
+    }
+
     pub fn cell_to_wkt(&self, cellid: &CellId) -> String {
         let minx = self.origin[0] + (cellid.column * self.cellsize as usize) as f64;
         let miny = self.origin[1] + (cellid.row * self.cellsize as usize) as f64;
