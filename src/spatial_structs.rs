@@ -38,6 +38,10 @@ impl QuadTree {
         Self::from_grid(&world.grid, limit)
     }
 
+    pub fn from_worlddb(world: &crate::parser::WorldDb, limit: QuadTreeCapacity) -> Self {
+        Self::from_grid(&world.grid, limit)
+    }
+
     fn from_grid(grid: &SquareGrid, limit: QuadTreeCapacity) -> Self {
         let mut merge_limit: usize = 0;
         let nr_cells = grid.length.pow(2) as f64;

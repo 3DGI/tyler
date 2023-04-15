@@ -18,6 +18,10 @@ categories = ["command-line-utilities", "science::geo"]
 name = "tyler"
 path = "src/main.rs"
 
+[[bin]]
+name = "tyler-db"
+path = "src/main_db.rs"
+
 [dependencies]
 log = "0.4.17"
 env_logger = "0.10.0"
@@ -36,3 +40,4 @@ libc = "0.2.119"
 thiserror = "1.0.30"
 bitvec = "1.0.1"
 morton-encoding = "2.0.1"
+postgres = {version = "0.19.5", features = ["array-impls"] }

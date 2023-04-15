@@ -20,11 +20,204 @@ use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 
 use log::{debug, error, info};
+use postgres::types::FromSql;
+use postgres::{Client, Error, NoTls};
 use serde::Deserialize;
 use serde_json::from_str;
 use walkdir::WalkDir;
 
-use crate::spatial_structs::BboxQc;
+use crate::spatial_structs::{Bbox, BboxQc, SquareGrid};
+
+pub struct WorldDb {
+    pub uri: String,
+    table: String,
+    geometry_column: String,
+    primary_key: String,
+    pub grid: SquareGrid,
+    pub features: FeatureSetDb,
+}
+
+impl WorldDb {
+    pub fn new(
+        uri: &str,
+        table: &str,
+        geometry_column: &str,
+        primary_key: &str,
+        cellsize: u16,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut client = Client::connect(uri, NoTls)?;
+        let extent_rw = Self::extent_rw(&mut client, table, geometry_column)?;
+        let epsg: u16 = Self::epsg(&mut client, table, geometry_column)?;
+        let q = format!("SELECT count(*) FROM {table};");
+        let res = client.query_one(&q, &[])?;
+        let nr_features: i64 = res.get(0);
+        let mut features: FeatureSetDb = Vec::with_capacity(nr_features as usize + 1);
+        features.resize(nr_features as usize + 1, FeatureDb::default());
+
+        let grid = SquareGrid::new(&extent_rw, cellsize, epsg, Some(10.0));
+        Ok(Self {
+            uri: uri.to_string(),
+            table: table.to_string(),
+            geometry_column: geometry_column.to_string(),
+            primary_key: primary_key.to_string(),
+            grid,
+            features,
+        })
+    }
+
+    fn extent_rw(
+        client: &mut Client,
+        table: &str,
+        geometry_column: &str,
+    ) -> Result<Bbox, Box<dyn std::error::Error>> {
+        let q = format!(
+            "SELECT st_xmin(extent) xmin
+             , st_ymin(extent) ymin
+             , st_zmin(extent) zmin
+             , st_xmax(extent) xmax
+             , st_ymax(extent) ymax
+             , st_zmax(extent) zmax
+        FROM (SELECT st_3dextent({geometry_column}) extent FROM {table}) AS e;"
+        );
+        let row = client.query_one(&q, &[])?;
+        let b: Bbox = [
+            row.get(0),
+            row.get(1),
+            row.get(2),
+            row.get(3),
+            row.get(4),
+            row.get(5),
+        ];
+        Ok(b)
+    }
+
+    fn epsg(
+        client: &mut Client,
+        table: &str,
+        geometry_column: &str,
+    ) -> Result<u16, Box<dyn std::error::Error>> {
+        let q = format!("SELECT st_srid({geometry_column}) FROM {table} LIMIT 1;");
+        let row = client.query_one(&q, &[])?;
+        let epsg: i32 = row.get(0);
+        Ok(epsg as u16)
+    }
+
+    pub fn index_with_grid(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let transaction_size: i32 = 10;
+        info!("Counting vertices in grid cells");
+        let mut fid: usize = 0;
+        let mut client = Client::connect(&self.uri, NoTls)?;
+
+        let q = format!(
+            "SELECT {pk}, st_astext({geom}) FROM {tbl};",
+            pk = &self.primary_key,
+            geom = &self.geometry_column,
+            tbl = &self.table
+        );
+        let mut transaction = client.transaction()?;
+        let portal = transaction.bind(&q, &[])?;
+        for rows in transaction.query_portal(&portal, transaction_size).iter() {
+            for feature_row in rows {
+                let mut cell_vtx_cnt: HashMap<crate::spatial_structs::CellId, usize> =
+                    HashMap::new();
+                let fid_pk: i32 = feature_row.get(0);
+                let feature = FeatureDb {
+                    primary_key: fid_pk,
+                };
+                let wkt: &str = feature_row.get(1);
+                let vertices = parse_wkt_polygon(wkt);
+                for vtx in &vertices {
+                    let cellid = self.grid.locate_point(&vtx);
+                    *cell_vtx_cnt.entry(cellid).or_insert(1) += 1;
+                }
+                if !cell_vtx_cnt.is_empty() {
+                    self.features[fid] = feature;
+                    let (cellid, nr_vertices) = cell_vtx_cnt
+                        .iter()
+                        .max_by(|a, b| a.1.cmp(b.1))
+                        .map(|(k, v)| (k, v))
+                        .unwrap();
+                    let cell = self.grid.cell_mut(cellid);
+                    cell.nr_vertices += nr_vertices;
+                    if !cell.feature_ids.contains(&fid) {
+                        cell.feature_ids.push(fid)
+                    }
+                    fid += 1;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+pub fn parse_wkt_polygon(wkt: &str) -> Vec<[f64; 2]> {
+    let mut res: Vec<[f64; 2]> = Vec::new();
+    let wlower = wkt.to_lowercase();
+    let coords_str: Vec<&str> = wlower
+        .strip_prefix("polygon(")
+        .unwrap()
+        .strip_suffix(')')
+        .unwrap()
+        .split(',')
+        .collect();
+    for coord in coords_str {
+        let c = coord.trim_matches(|c| c == '(' || c == ')');
+        let cv: Vec<&str> = c.split(' ').collect();
+        let x: f64 = cv[0].parse().unwrap();
+        let y: f64 = cv[1].parse().unwrap();
+        res.push([x, y]);
+    }
+    res
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct FeatureDb {
+    primary_key: i32,
+}
+pub type FeatureSetDb = Vec<FeatureDb>;
+
+mod tests_worlddb {
+    use super::parse_wkt_polygon;
+    use super::WorldDb;
+    use crate::spatial_structs::QuadTree;
+    use postgres::{Client, Error, NoTls};
+
+    #[test]
+    fn test_parse_wkt_polygon() {
+        let wkt = "POLYGON((138019.09 456805.535,138018.832 456802.644,138018.376 456802.686,138018.071 456799.248,138019.684 456799.105,138019.397 456795.847,138018.282 456795.945,138017.819 456790.686,138016.563 456790.796,138016.481 456789.807,138016.244 456787.169,138018.609 456786.992,138018.602 456786.87,138028.334 456786.172,138029.43 456798.371,138029.32 456798.381,138030.339 456810.397,138030.449 456810.387,138031.126 456818.864,138031.016 456818.872,138031.937 456830.906,138032.047 456830.898,138033.001 456842.031,138032.1 456843.22,138018.425 456844.181,138018.364 456843.352,138015.454 456843.577,138015.514 456844.395,138000 456845.528,137976.701 456847.27,137976.769 456848.187,137974.655 456848.345,137974.587 456847.428,137905.446 456852.655,137904.177 456834.915,137903.721 456828.958,137902.747 456829.031,137902.571 456826.648,137903.539 456826.575,137901.901 456804.718,137901.851 456804.722,137901.158 456795.545,137906.121 456795.193,137906.117 456795.143,137910.327 456794.843,137910.332 456794.913,137913.624 456794.69,137920.358 456794.163,137920.375 456794.203,137932.105 456793.348,137932.193 456795.172,137934.521 456795.015,137960.807 456793.026,137960.824 456793.245,137973.585 456792.254,137973.592 456792.354,137979.735 456791.891,137979.71 456791.562,137988.448 456790.938,137988.471 456791.257,137994.625 456790.813,137994.616 456790.693,138000 456790.295,138007.631 456789.738,138007.594 456789.229,138010.608 456789.012,138010.663 456789.78,138012.578 456789.641,138012.901 456794.089,138007.949 456794.447,138008.418 456801.412,138001.94 456801.879,138002 456802.871,138000 456803.004,137995.976 456803.293,137995.945 456802.982,137992.083 456803.267,137992.035 456802.422,137989.355 456802.623,137989.521 456804.369,137985.081 456804.722,137984.885 456802.486,137980.579 456802.808,137980.633 456803.665,137976.911 456803.982,137976.881 456803.576,137974.137 456803.801,137974.204 456804.741,137970.742 456805.027,137970.675 456804.056,137969.85 456804.11,137969.91 456804.98,137968.754 456805.084,137968.687 456804.207,137967.37 456804.319,137967.701 456809.208,137961.919 456809.698,137961.642 456805.243,137961.6 456804.525,137957.376 456804.866,137957.339 456804.39,137957.003 456804.42,137957.069 456805.398,137954.916 456805.575,137954.879 456805.071,137948.274 456805.573,137948.236 456805.074,137941.842 456805.561,137942.079 456808.888,137935.55 456809.354,137935.21 456804.477,137932.892 456804.634,137933.031 456806.73,137929.849 456806.96,137929.861 456807.182,137921.109 456807.831,137921.715 456816.575,137926.073 456816.273,137926.054 456816.057,137936.14 456815.305,137936.57 456821.718,137943.658 456821.311,137943.766 456823.514,137941.22 456823.353,137935.014 456823.839,137934.875 456821.82,137926.968 456822.243,137921.563 456822.63,137921.733 456825.075,137916.721 456825.451,137916.885 456827.851,137915.64 456827.942,137915.84 456830.978,137914.239 456831.074,137914.452 456834.122,137913.226 456834.212,137913.529 456838.613,137915.143 456838.479,137915.27 456840.251,137913.651 456840.385,137914.107 456846.627,137918.013 456846.342,137917.587 456840.652,137930.004 456839.693,137929.846 456837.356,137930.85 456837.264,137931.033 456839.614,137933.072 456839.456,137932.889 456837.113,137936.026 456836.876,137935.935 456835.784,137936.767 456835.717,137937.029 456839.146,137939.125 456839.001,137938.986 456836.842,137942.111 456836.586,137942.25 456838.752,137954.844 456837.793,137954.674 456835.348,137955.525 456835.281,137955.714 456837.726,137957.912 456837.556,137957.742 456835.206,137961.743 456834.915,137961.913 456837.252,137969.205 456836.713,137968.84 456831.817,137973.229 456831.47,137973.198 456831.197,137974.43 456831.1,137974.813 456836.301,137979.869 456835.944,137979.705 456833.613,137981.82 456833.462,137981.984 456835.761,137992.146 456835.015,137992.068 456833.822,137995.224 456833.572,137995.309 456834.772,137998.593 456834.517,137998.618 456834.822,138000 456834.716,138000.083 456834.71,138000 456833.842,137999.825 456832.012,138000 456831.996,138002.046 456831.803,138002.177 456833.2,138007.731 456832.7,138007.642 456831.703,138011.028 456831.4,138011.611 456837.933,138021.969 456837.007,138021.727 456834.187,138022.842 456834.087,138022.569 456831.029,138020.248 456831.236,138019.977 456828.208,138021.172 456828.101,138020.004 456815.063,138020.166 456815.071,138020.024 456814.057,138021 456813.969,138020.752 456811.2,138018.202 456811.428,138017.884 456807.88,138017.688 456805.659,138019.09 456805.535))";
+        let res = parse_wkt_polygon(wkt);
+        println!("{:?}", res);
+    }
+
+    #[test]
+    fn test_extent() -> Result<(), Box<dyn std::error::Error>> {
+        let uri = "postgresql://db3dbag_user:db3dbag_1234@localhost:5560/baseregisters";
+        let mut client = Client::connect(uri.as_ref(), NoTls)?;
+        if let Ok(bbox) = WorldDb::extent_rw(&mut client, "top10nl.gebouw", "geometrie_vlak") {
+            println!("{:?}", bbox);
+        };
+        client.close()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_epsg() -> Result<(), Box<dyn std::error::Error>> {
+        let uri = "postgresql://db3dbag_user:db3dbag_1234@localhost:5560/baseregisters";
+        let mut client = Client::connect(uri.as_ref(), NoTls)?;
+        if let Ok(epsg) = WorldDb::epsg(&mut client, "top10nl.gebouw", "geometrie_vlak") {
+            assert_eq!(epsg, 28992_u16);
+        };
+        client.close()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_new() -> Result<(), Box<dyn std::error::Error>> {
+        let uri = "postgresql://db3dbag_user:db3dbag_1234@localhost:5560/baseregisters";
+        let world = WorldDb::new(&uri, "top10nl.gebouw", "geometrie_vlak", "fid", 250)?;
+        Ok(())
+    }
+}
 
 /// Represents the "world" that contains some features and needs to be partitioned into
 /// tiles.
@@ -82,7 +275,7 @@ impl World {
 
         // Allocate the grid, but at this point it is still empty
         let epsg = crs.to_epsg()?;
-        let grid = crate::spatial_structs::SquareGrid::new(&extent_rw, cellsize, epsg, Some(10.0));
+        let grid = SquareGrid::new(&extent_rw, cellsize, epsg, Some(10.0));
         debug!("{}", grid);
 
         // Allocate the features container, but at this point it is still empty
@@ -349,6 +542,7 @@ impl Crs {
     /// let epsg_code = crs.to_epsg().unwrap();
     /// assert_eq!(7415_u16, epsg_code);
     /// ```
+    /// FIXME: u16 is not enough for EPSG codes, because we can have values in 90k+
     pub fn to_epsg(&self) -> Result<u16, Box<dyn std::error::Error>> {
         let parts: Vec<&str> = self.0.split('/').collect();
         if let Some(authority) = parts.get(parts.len() - 3) {
