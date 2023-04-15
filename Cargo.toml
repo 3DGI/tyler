@@ -40,4 +40,4 @@ libc = "0.2.119"
 thiserror = "1.0.30"
 bitvec = "1.0.1"
 morton-encoding = "2.0.1"
-postgres = {version = "0.19.5", features = ["array-impls"] }
+postgres = {version = "0.19.5"}

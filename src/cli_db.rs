@@ -18,23 +18,29 @@ use clap::Parser;
 #[derive(Parser)]
 #[command(author, version, about)]
 pub struct Cli {
-    /// PostgreSQL connection URI (postgresql://[userspec@][hostspec][/dbname][?paramspec])
+    /// PostgreSQL connection URI (postgresql://[userspec@][hostspec][/dbname][?paramspec]).
     #[arg(long)]
     pub uri: String,
-    /// Database table name
+    /// Database table name.
     #[arg(long)]
     pub table: String,
-    /// Database table geometry column
+    /// Database table geometry column.
     #[arg(long)]
     pub geometry_column: String,
-    /// Database table primary key column
+    /// Database table primary key column.
     #[arg(long)]
     pub primary_key: String,
+    /// The schema where to write the 'tiles' and 'index' tables.
+    #[arg(long)]
+    pub output_schema: String,
+    /// Drop the 'tiles' and 'index' tables if they exist.
+    #[arg(long)]
+    pub drop_existing: bool,
     /// Set the 2D cell size for the grid that is used for constructing the quadtree. In input units (eg. meters).
     #[arg(long, default_value = "250")]
     pub grid_cellsize: Option<u16>,
     /// The maximum number of vertices in a leaf of the quadtree.
-    #[arg(long, default_value = "5000")]
+    #[arg(long, default_value = "18000")]
     pub qtree_capacity: Option<usize>,
 }
 

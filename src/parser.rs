@@ -103,7 +103,7 @@ impl WorldDb {
     }
 
     pub fn index_with_grid(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let transaction_size: i32 = 10;
+        let transaction_size: i32 = 100;
         info!("Counting vertices in grid cells");
         let mut fid: usize = 0;
         let mut client = Client::connect(&self.uri, NoTls)?;
@@ -172,7 +172,7 @@ pub fn parse_wkt_polygon(wkt: &str) -> Vec<[f64; 2]> {
 
 #[derive(Clone, Debug, Default)]
 pub struct FeatureDb {
-    primary_key: i32,
+    pub primary_key: i32,
 }
 pub type FeatureSetDb = Vec<FeatureDb>;
 

@@ -26,6 +26,7 @@ use std::path::PathBuf;
 use crate::formats::cesium3dtiles::{Tile, TileId};
 use clap::Parser;
 use log::{debug, error, info, log_enabled, warn, Level};
+use postgres::{Client, Error, NoTls};
 use rayon::prelude::*;
 use subprocess::{Exec, Redirection};
 
@@ -56,6 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
 
     // --- Begin argument parsing
+    // FIXME: need to sanitize the user input database relations
     let cli = crate::cli_db::Cli::parse();
     // Since we have a default value, we can safely unwrap.
     let grid_cellsize = cli.grid_cellsize.unwrap();
@@ -73,10 +75,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --- end of argument parsing
 
     let mut world = parser::WorldDb::new(
-        cli.uri.as_ref(),
-        cli.table.as_ref(),
-        cli.geometry_column.as_ref(),
-        cli.primary_key.as_ref(),
+        &cli.uri,
+        &cli.table,
+        &cli.geometry_column,
+        &cli.primary_key,
         grid_cellsize,
     )?;
     world.index_with_grid()?;
@@ -84,6 +86,48 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build quadtree
     info!("Building quadtree");
     let quadtree = spatial_structs::QuadTree::from_worlddb(&world, quadtree_capacity);
+    info!("Writing quadtree leaves to the database");
+    let mut client = Client::connect(&cli.uri, NoTls)?;
+    let table_tiles = format!("{}.tiles", cli.output_schema);
+    let table_index = format!("{}.index", cli.output_schema);
+    if cli.drop_existing {
+        let q = format!("DROP TABLE IF EXISTS {table_tiles} CASCADE",);
+        client.batch_execute(&q)?;
+        let q = format!("DROP TABLE IF EXISTS {table_index} CASCADE",);
+        client.batch_execute(&q)?;
+    }
+    let q = format!(
+        "CREATE TABLE {table_tiles} (tile_id text, cnt bigint, boundary geometry(Polygon, {}))",
+        world.grid.epsg
+    );
+    client.batch_execute(&q)?;
+    let q = format!(
+        "CREATE TABLE {table_index} ({} int, tile_id text)",
+        &cli.primary_key
+    );
+    client.batch_execute(&q)?;
+    let q_tiles = format!(
+        "INSERT INTO {table_tiles} VALUES ($1, $2, st_geomfromtext($3, {}))",
+        world.grid.epsg
+    );
+    let statement_tiles = client.prepare(&q_tiles)?;
+    let q_index = format!("INSERT INTO {table_index} VALUES ($1, $2)");
+    let statement_index = client.prepare(&q_index)?;
+    let leaves = quadtree.collect_leaves();
+    for leaf in leaves {
+        let wkt = leaf.to_wkt(&world.grid);
+        let tile_id = leaf.id.to_string();
+        let nr_items_i64 = leaf.nr_items as i64;
+        client.execute(&statement_tiles, &[&tile_id, &nr_items_i64, &wkt])?;
 
+        for cellid in leaf.cells() {
+            let cell = world.grid.cell(cellid);
+            for feature_id in &cell.feature_ids {
+                let pk = world.features[*feature_id].primary_key;
+                client.execute(&statement_index, &[&pk, &tile_id])?;
+            }
+        }
+    }
+    info!("Done");
     Ok(())
 }
