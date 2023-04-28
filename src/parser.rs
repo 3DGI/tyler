@@ -106,12 +106,12 @@ impl WorldDb {
 
     pub fn index_with_grid(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let transaction_size: i32 = 100;
-        info!("Counting vertices in grid cells");
+        info!("Predicting runtime in grid cells");
         let mut fid: usize = 0;
         let mut client = Client::connect(&self.uri, NoTls)?;
 
         let q = format!(
-            "SELECT {pk}, st_astext({geom}) FROM {tbl};",
+            "SELECT {pk}, st_astext({geom}), st_area({geom}) FROM {tbl};",
             pk = &self.primary_key,
             geom = &self.geometry_column,
             tbl = &self.table
@@ -125,11 +125,11 @@ impl WorldDb {
                 primary_key: fid_pk,
             };
             let wkt: &str = feature_row.get(1);
+            let area = feature_row.get(2);
             let vertices = parse_wkt_polygon(wkt);
-            for vtx in &vertices {
-                let cellid = self.grid.locate_point(&vtx);
-                *cell_vtx_cnt.entry(cellid).or_insert(1) += 1;
-            }
+            let centroid = Self::centroid(vertices);
+            let cellid = self.grid.locate_point(&centroid);
+            *cell_vtx_cnt.entry(cellid).or_insert(1) += 1;
             if !cell_vtx_cnt.is_empty() {
                 self.features[fid] = feature;
                 let (cellid, nr_vertices) = cell_vtx_cnt
@@ -138,7 +138,11 @@ impl WorldDb {
                     .map(|(k, v)| (k, v))
                     .unwrap();
                 let cell = self.grid.cell_mut(cellid);
-                cell.nr_vertices += nr_vertices;
+                // Yes, in fact we don't store the number of vertices, but we store the
+                // total predicted runtime for the cell. This just a hack so that we
+                // don't need to change the data structure.
+                let runtime = predict_run_time(area).ceil() as usize;
+                cell.nr_vertices += runtime;
                 if !cell.feature_ids.contains(&fid) {
                     cell.feature_ids.push(fid)
                 }
@@ -148,9 +152,31 @@ impl WorldDb {
         Ok(())
     }
 
+    fn centroid(vertices: Vec<[f64; 2]>) -> [f64; 2] {
+        let mut x_sum: f64 = 0.0;
+        let mut y_sum: f64 = 0.0;
+        for [x, y] in vertices.iter() {
+            x_sum += *x;
+            y_sum += *y;
+        }
+        [
+            (x_sum / vertices.len() as f64),
+            (y_sum / vertices.len() as f64),
+        ]
+    }
+
     pub fn export_grid(&self) -> std::io::Result<()> {
         self.grid.export_db()
     }
+}
+
+/// Predict the reconstruction time with geoflow for the given feature, from the area
+/// of the footprint. Uses a simple linear model. The model parameters were determined
+/// from a random sample of 3D BAG version v210908_fd2cee53.
+pub fn predict_run_time(footprint_area: f64) -> f64 {
+    let intercept: f64 = -347.033256;
+    let coefficient: f64 = 6.222044;
+    intercept + coefficient * footprint_area
 }
 
 pub fn parse_wkt_polygon(wkt: &str) -> Vec<[f64; 2]> {
