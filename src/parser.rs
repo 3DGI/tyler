@@ -56,6 +56,7 @@ impl WorldDb {
         let mut features: FeatureSetDb = Vec::with_capacity(nr_features as usize + 1);
         features.resize(nr_features as usize + 1, FeatureDb::default());
 
+        info!("Building grid with {} features", nr_features);
         let grid = SquareGrid::new(&extent_rw, cellsize, epsg, Some(10.0));
         Ok(Self {
             uri: uri.to_string(),
