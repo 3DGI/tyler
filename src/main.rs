@@ -57,6 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --- Begin argument parsing
     let cli = crate::cli::Cli::parse();
+    debug!("tyler version: {}", clap::crate_version!());
     if !cli.output.is_dir() {
         fs::create_dir_all(&cli.output)?;
         info!("Created output directory {:#?}", &cli.output);
