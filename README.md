@@ -35,6 +35,31 @@ Unless you want to install the *geoflow-bundle* yourself, we strongly recommend 
 
 For testing purposes you download [this sample data](https://data.3dgi.xyz/3dtiles-test-data/download/3D-basisvoorziening-2021-30dz1_01.zip). Create a `data` folder in same the folder as the `.bat` file mentioned above and unzip the contents there.
 
+Contents of the `run_tyler_example.bat` file :
+
+```
+set RUST_LOG=debug
+set TYLER_RESOURCES_DIR=%~dp0\resources
+set PROJ_DATA=%~dp0\share\proj
+
+%~dp0\bin\tyler.exe ^
+--metadata %~dp0\data\metadata.city.json ^
+--features %~dp0\data\30dz2_01 ^
+--output %~dp0\data-out\3dtiles-terrain ^
+--exe-geof "%GF_INSTALL_ROOT%\bin\geof.exe" ^
+--3dtiles-implicit ^
+--object-type LandUse ^
+--object-type PlantCover ^
+--object-type WaterBody ^
+--object-type Road ^
+--object-type GenericCityObject ^
+--object-type Bridge ^
+--object-attribute objectid:int,bronhouder:string,bgt_fysiekvoorkomen:string,bgt_type:string ^
+--3dtiles-metadata-class terrain ^
+--grid-minz=-15 ^
+--grid-maxz=400 >> log.txt 2>&1
+```
+
 ### Compiling from source
 
 *tyler* is written in Rust and you need the [Rust toolchain](https://www.rust-lang.org/learn/get-started) to compile it.
