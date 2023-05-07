@@ -41,6 +41,7 @@ struct SubprocessConfig {
 pub enum Formats {
     _3DTiles,
     CityJSON,
+    Multi,
 }
 
 impl ToString for Formats {
@@ -48,6 +49,7 @@ impl ToString for Formats {
         match self {
             Formats::_3DTiles => "3DTiles".to_string(),
             Formats::CityJSON => "CityJSON".to_string(),
+            Formats::Multi => "Multi".to_string(),
         }
     }
 }
@@ -105,9 +107,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 script: geof_flowchart_path,
             }
         }
+        Formats::Multi => {
+            let mut exe = PathBuf::new();
+            if let Some(exe_g) = cli.exe_geof {
+                assert!(exe_g.exists() && exe_g.is_file(), "geoflow executable must be an existing file for generating Multi-format, exe_geof: {:?}", &exe_g);
+                exe = exe_g;
+            } else {
+                debug!(
+                    "exe_geof is not set for generating Multi-format, defaulting to 'geof' in the filesystem PATH"
+                );
+                exe = PathBuf::from("geof");
+            }
+            let res = Exec::cmd(&exe)
+                .arg("-p")
+                .stdout(Redirection::Pipe)
+                .stderr(Redirection::Merge)
+                .capture();
+            if let Ok(capture_data) = res {
+                debug!("geof version:\n{}", capture_data.stdout_str());
+            } else if let Err(popen_error) = res {
+                panic!(
+                    "Could not execute geof ({:?}):\n{}",
+                    &exe,
+                    popen_error.to_string()
+                )
+            }
+            let geof_flowchart_path = match env::var("TYLER_RESOURCES_DIR") {
+                Ok(val) => PathBuf::from(val).join("geof").join("createMulti.json"),
+                Err(_) => PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("resources")
+                    .join("geof")
+                    .join("createMulti.json"),
+            };
+            SubprocessConfig {
+                output_extension: "multi".to_string(), // TODO
+                exe,
+                script: geof_flowchart_path,
+            }
+        }
         Formats::CityJSON => {
             // TODO: refactor parallel loop
-            panic!("cityjson output is not supported");
+            unimplemented!("cityjson-only output is not supported, use the 'multi' format instead");
             // if let Some(exe) = cli.exe_python {
             //     SubprocessConfig {
             //         output_extension: "city.json".to_string(),
@@ -142,6 +182,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 cli.cesium3dtiles_metadata_class.unwrap()
             }
         }
+        Formats::Multi => "".to_string(),
         Formats::CityJSON => "".to_string(),
     };
     let proj_data = match env::var("PROJ_DATA") {

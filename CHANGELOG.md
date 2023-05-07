@@ -1,5 +1,14 @@
 # Changelog
 
+## tyler 0.4.0 (unreleased)
+
+### Changed
+- The `--format` argument is mandatory.
+
+### Added
+- Multi-format output, for outputting Wavefront OBJ, GeoPackage and CityJSON files from the generated tiles.
+
+
 ## tyler 0.3.2 (2023-05-05)
 
 ### Fixed

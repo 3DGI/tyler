@@ -29,9 +29,10 @@ pub struct Cli {
     /// Directory for the output.
     #[arg(short, long)]
     pub output: PathBuf,
-    // /// Output format.
-    // #[arg(long, value_enum)]
-    // pub format: crate::Formats,
+    /// Output format. The 'multi' format outputs Wavefront OBJ, GeoPackage and CityJSON formats
+    /// for the generated tiles.
+    #[arg(long, value_enum)]
+    pub format: crate::Formats,
     /// The CityObject type to use for the 3D Tiles
     /// (https://www.cityjson.org/specs/1.1.3/#the-different-city-objects).
     /// You can specify it multiple times.
@@ -53,7 +54,7 @@ pub struct Cli {
     #[arg(long = "3dtiles-implicit")]
     pub cesium3dtiles_implicit: bool,
     /// Set the geometric error (see 3D Tiles specification) on the parent nodes of leafs. This controls at what
-    /// camera distance leaf nodes become visible. Higher values make content visible earlier when zooming in. 
+    /// camera distance leaf nodes become visible. Higher values make content visible earlier when zooming in.
     #[arg(long, short = 'e', default_value = "12")]
     pub geometric_error_above_leaf: Option<f64>,
     /// Set the 2D cell size for the grid that is used for constructing the quadtree. In input units (eg. meters).
