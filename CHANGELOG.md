@@ -1,5 +1,10 @@
 # Changelog
 
+## tyler 0.3.2 (2023-05-05)
+
+### Fixed
+- *proj* related fixes for running Tyler under Windows
+
 ## tyler 0.3.1 (2023-04-06)
 
 ### Changed
