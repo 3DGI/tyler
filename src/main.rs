@@ -24,6 +24,7 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use crate::formats::cesium3dtiles::{Tile, TileId};
+use crate::spatial_structs::{QuadTree, QuadTreeNodeId};
 use clap::Parser;
 use log::{debug, error, info, log_enabled, warn, Level};
 use rayon::prelude::*;
@@ -229,62 +230,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         quadtree.export(&world.grid)?;
     }
 
-    // let tiles: Vec<&formats::cesium3dtiles::Tile> = Vec::new();
-    // if cli.format == Formats::_3DTiles {
-    //     // 3D Tiles
-    //     info!("Generating 3D Tiles tileset");
-    //     let tileset_path = cli.output.join("tileset.json");
-    //     let tileset = formats::cesium3dtiles::Tileset::from_quadtree(
-    //         &quadtree,
-    //         &world,
-    //         cli.grid_minz,
-    //         cli.grid_maxz,
-    //     );
-    //     tileset.to_file(tileset_path)?;
-    //     tiles = tileset.flatten(Some(4));
-    // }
-    // 3D Tiles
-    info!("Generating 3D Tiles tileset");
-    let tileset_path = cli.output.join("tileset.json");
-    let mut tileset = formats::cesium3dtiles::Tileset::from_quadtree(
-        &quadtree,
-        &world,
-        geometric_error_above_leaf,
-        grid_cellsize,
-        cli.grid_minz,
-        cli.grid_maxz,
-    );
-
-    // // Select how many levels of tiles from the hierarchy do we want to export with
-    // // content.
-    // let qtree_export_levels = Some(0); //override cli.qtree_export_levels
-    // tileset.add_content(qtree_export_levels);
-
-    let (tiles, subtrees) = match cli.cesium3dtiles_implicit {
-        true => {
-            let mut tileset_implicit = tileset.clone();
-            // FIXME: here we have a Vec<(Tile, TileId)> in 'tiles' instead of Vec<&Tile>, because of the
-            //  mess with the implicit/explicit tile id-s.
-            info!("Converting to implicit tiling");
-            // Tileset.make_implicit() outputs the tiles that have content. If only the leaves have
-            //  content, then only the leaves are outputted.
-            let tiles_subtrees =
-                tileset_implicit.make_implicit(&world.grid, &quadtree, cli.grid_export);
-            tiles_subtrees
-        }
-        false => {
-            // let just_tiles = tileset.flatten(qtree_export_levels);
-            let just_tiles = tileset.collect_leaves();
-            // FIXME: here we need Vec<(Tile, TileId)> instead of Vec<&Tile>, for the same reason
-            //  as above
-            let tiles: Vec<(Tile, TileId)> = just_tiles
-                .into_iter()
-                .map(|tile_ref| (tile_ref.clone(), tile_ref.id.clone()))
-                .collect();
-            (tiles, vec![])
-        }
-    };
-
     // Export by calling a subprocess to merge the .jsonl files and convert them to the
     // target format
     let path_output_tiles = cli.output.join("tiles");
@@ -308,416 +253,592 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(attributes) => attributes.join(","),
     };
 
-    // TODO: need to refactor this parallel loop somehow that it does not only read the
-    //  3d tiles tiles, but also works with cityjson output
-    info!("Exporting and optimizing {} tiles", tiles.len());
-    let mut tiles_failed: Vec<Tile> = tiles
-        .into_par_iter()
-        .map(|(tile, tileid)| {
-            let mut tile_failed: Option<Tile> = None;
-            let tileid_grid = &tile.id;
-            let qtree_nodeid: spatial_structs::QuadTreeNodeId = tileid_grid.into();
-            let qtree_node = quadtree
-                .node(&qtree_nodeid)
-                .unwrap_or_else(|| panic!("did not find tile {} in quadtree", tileid_grid));
-            let tileid_string = tileid.to_string();
-            let file_name = tileid_string;
-            let output_file = path_output_tiles
-                .join(&file_name)
-                .with_extension(&subprocess_config.output_extension);
-            // We write the list of feature paths for a tile into a text file, instead of passing
-            // super long paths-string to the subprocess, because with very long arguments we can
-            // get an 'Argument list too long' error.
-            let path_features_input_file = path_features_input_dir
-                .join(&file_name)
-                .with_extension("input");
-            fs::create_dir_all(path_features_input_file.parent().unwrap()).unwrap_or_else(|_| {
-                panic!(
-                    "should be able to create the directory {:?}",
-                    path_features_input_file.parent().unwrap()
-                )
-            });
-            let mut feature_input = File::create(&path_features_input_file).unwrap_or_else(|_| {
-                panic!(
-                    "should be able to create a file {:?}",
-                    &path_features_input_file
-                )
-            });
-            for cellid in qtree_node.cells() {
-                let cell = world.grid.cell(cellid);
-                for fid in cell.feature_ids.iter() {
-                    let fp = world.features[*fid]
-                        .path_jsonl
-                        .clone()
-                        .into_os_string()
-                        .into_string()
-                        .unwrap();
-                    writeln!(feature_input, "{}", fp)
-                        .expect("should be able to write feature path to the input file");
-                }
-            }
+    match format {
+        Formats::_3DTiles => {
+            // 3D Tiles
+            info!("Generating 3D Tiles tileset");
+            let tileset_path = cli.output.join("tileset.json");
+            let mut tileset = formats::cesium3dtiles::Tileset::from_quadtree(
+                &quadtree,
+                &world,
+                geometric_error_above_leaf,
+                grid_cellsize,
+                cli.grid_minz,
+                cli.grid_maxz,
+            );
+            // // Select how many levels of tiles from the hierarchy do we want to export with
+            // // content.
+            // let qtree_export_levels = Some(0); //override cli.qtree_export_levels
+            // tileset.add_content(qtree_export_levels);
 
-            // We use the quadtree node bbox here instead of the Tileset.Tile bounding
-            // volume, because the Tile is in EPSG:4979 and we need the input data CRS
-            let b = qtree_node.bbox(&world.grid);
-            // We need to string-format all the arguments with an = separator, because that's what
-            // geof can accept.
-            // TODO: maybe replace the subprocess carte with std::process to remove the dependency
-            let mut cmd = Exec::cmd(&subprocess_config.exe)
-                .arg(&subprocess_config.script)
-                .arg(format!(
-                    "--output_format={}",
-                    &format.to_string().to_lowercase()
-                ))
-                .arg(format!("--output_file={}", &output_file.to_str().unwrap()))
-                .arg(format!(
-                    "--path_metadata={}",
-                    &world.path_metadata.to_str().unwrap()
-                ))
-                .arg(format!(
-                    "--path_features_input_file={}",
-                    &path_features_input_file.to_str().unwrap()
-                ))
-                .arg(format!("--min_x={}", b[0]))
-                .arg(format!("--min_y={}", b[1]))
-                .arg(format!("--min_z={}", b[2]))
-                .arg(format!("--max_x={}", b[3]))
-                .arg(format!("--max_y={}", b[4]))
-                .arg(format!("--max_z={}", b[5]))
-                .arg(format!("--cotypes={}", &cotypes_arg))
-                .arg(format!("--metadata_class={}", &metadata_class))
-                .arg(format!("--attribute_spec={}", &attribute_spec))
-                .arg(format!("--geometric_error={}", &tile.geometric_error));
+            let (tiles, subtrees) = match cli.cesium3dtiles_implicit {
+                true => {
+                    let mut tileset_implicit = tileset.clone();
+                    // FIXME: here we have a Vec<(Tile, TileId)> in 'tiles' instead of Vec<&Tile>, because of the
+                    //  mess with the implicit/explicit tile id-s.
+                    info!("Converting to implicit tiling");
+                    // Tileset.make_implicit() outputs the tiles that have content. If only the leaves have
+                    //  content, then only the leaves are outputted.
+                    let tiles_subtrees =
+                        tileset_implicit.make_implicit(&world.grid, &quadtree, cli.grid_export);
+                    tiles_subtrees
+                }
+                false => {
+                    // let just_tiles = tileset.flatten(qtree_export_levels);
+                    let just_tiles = tileset.collect_leaves();
+                    // FIXME: here we need Vec<(Tile, TileId)> instead of Vec<&Tile>, for the same reason
+                    //  as above
+                    let tiles: Vec<(Tile, TileId)> = just_tiles
+                        .into_iter()
+                        .map(|tile_ref| (tile_ref.clone(), tile_ref.id.clone()))
+                        .collect();
+                    (tiles, vec![])
+                }
+            };
 
-            if format == Formats::_3DTiles {
-                // geof specific args
-                // colors
-                if !cli.color_building.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--colorBuilding={}",
-                        cli.color_building.as_ref().unwrap()
-                    ));
-                }
-                if !cli.color_building_part.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--colorBuildingPart={}",
-                        cli.color_building_part.as_ref().unwrap()
-                    ));
-                }
-                if !cli.color_building_installation.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--colorBuildingInstallation={}",
-                        cli.color_building_installation.as_ref().unwrap()
-                    ));
-                }
-                if !cli.color_tin_relief.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--colorTINRelief={}",
-                        cli.color_tin_relief.as_ref().unwrap()
-                    ));
-                }
-                if !cli.color_road.is_none() {
-                    cmd = cmd.arg(format!("--colorRoad={}", cli.color_road.as_ref().unwrap()));
-                }
-                if !cli.color_railway.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--colorRailway={}",
-                        cli.color_railway.as_ref().unwrap()
-                    ));
-                }
-                if !cli.color_transport_square.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--colorTransportSquare={}",
-                        cli.color_transport_square.as_ref().unwrap()
-                    ));
-                }
-                if !cli.color_water_body.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--colorWaterBody={}",
-                        cli.color_water_body.as_ref().unwrap()
-                    ));
-                }
-                if !cli.color_plant_cover.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--colorPlantCover={}",
-                        cli.color_plant_cover.as_ref().unwrap()
-                    ));
-                }
-                if !cli.color_solitary_vegetation_object.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--colorSolitaryVegetationObject={}",
-                        cli.color_solitary_vegetation_object.as_ref().unwrap()
-                    ));
-                }
-                if !cli.color_land_use.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--colorLandUse={}",
-                        cli.color_land_use.as_ref().unwrap()
-                    ));
-                }
-                if !cli.color_city_furniture.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--colorCityFurniture={}",
-                        cli.color_city_furniture.as_ref().unwrap()
-                    ));
-                }
-                if !cli.color_bridge.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--colorBridge={}",
-                        cli.color_bridge.as_ref().unwrap()
-                    ));
-                }
-                if !cli.color_bridge_part.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--colorBridgePart={}",
-                        cli.color_bridge_part.as_ref().unwrap()
-                    ));
-                }
-                if !cli.color_bridge_installation.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--colorBridgeInstallation={}",
-                        cli.color_bridge_installation.as_ref().unwrap()
-                    ));
-                }
-                if !cli.color_bridge_construction_element.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--colorBridgeConstructionElement={}",
-                        cli.color_bridge_construction_element.as_ref().unwrap()
-                    ));
-                }
-                if !cli.color_tunnel.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--colorTunnel={}",
-                        cli.color_tunnel.as_ref().unwrap()
-                    ));
-                }
-                if !cli.color_tunnel_part.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--colorTunnelPart={}",
-                        cli.color_tunnel_part.as_ref().unwrap()
-                    ));
-                }
-                if !cli.color_tunnel_installation.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--colorTunnelInstallation={}",
-                        cli.color_tunnel_installation.as_ref().unwrap()
-                    ));
-                }
-                if !cli.color_generic_city_object.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--colorGenericCityObject={}",
-                        cli.color_generic_city_object.as_ref().unwrap()
-                    ));
-                }
-
-                // lod filter
-                if !cli.lod_building.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--lodBuilding={}",
-                        cli.lod_building.as_ref().unwrap()
-                    ));
-                }
-                if !cli.lod_building_part.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--lodBuildingPart={}",
-                        cli.lod_building_part.as_ref().unwrap()
-                    ));
-                }
-                if !cli.lod_building_installation.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--lodBuildingInstallation={}",
-                        cli.lod_building_installation.as_ref().unwrap()
-                    ));
-                }
-                if !cli.lod_tin_relief.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--lodTINRelief={}",
-                        cli.lod_tin_relief.as_ref().unwrap()
-                    ));
-                }
-                if !cli.lod_road.is_none() {
-                    cmd = cmd.arg(format!("--lodRoad={}", cli.lod_road.as_ref().unwrap()));
-                }
-                if !cli.lod_railway.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--lodRailway={}",
-                        cli.lod_railway.as_ref().unwrap()
-                    ));
-                }
-                if !cli.lod_transport_square.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--lodTransportSquare={}",
-                        cli.lod_transport_square.as_ref().unwrap()
-                    ));
-                }
-                if !cli.lod_water_body.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--lodWaterBody={}",
-                        cli.lod_water_body.as_ref().unwrap()
-                    ));
-                }
-                if !cli.lod_plant_cover.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--lodPlantCover={}",
-                        cli.lod_plant_cover.as_ref().unwrap()
-                    ));
-                }
-                if !cli.lod_solitary_vegetation_object.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--lodSolitaryVegetationObject={}",
-                        cli.lod_solitary_vegetation_object.as_ref().unwrap()
-                    ));
-                }
-                if !cli.lod_land_use.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--lodLandUse={}",
-                        cli.lod_land_use.as_ref().unwrap()
-                    ));
-                }
-                if !cli.lod_city_furniture.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--lodCityFurniture={}",
-                        cli.lod_city_furniture.as_ref().unwrap()
-                    ));
-                }
-                if !cli.lod_bridge.is_none() {
-                    cmd = cmd.arg(format!("--lodBridge={}", cli.lod_bridge.as_ref().unwrap()));
-                }
-                if !cli.lod_bridge_part.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--lodBridgePart={}",
-                        cli.lod_bridge_part.as_ref().unwrap()
-                    ));
-                }
-                if !cli.lod_bridge_installation.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--lodBridgeInstallation={}",
-                        cli.lod_bridge_installation.as_ref().unwrap()
-                    ));
-                }
-                if !cli.lod_bridge_construction_element.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--lodBridgeConstructionElement={}",
-                        cli.lod_bridge_construction_element.as_ref().unwrap()
-                    ));
-                }
-                if !cli.lod_tunnel.is_none() {
-                    cmd = cmd.arg(format!("--lodTunnel={}", cli.lod_tunnel.as_ref().unwrap()));
-                }
-                if !cli.lod_tunnel_part.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--lodTunnelPart={}",
-                        cli.lod_tunnel_part.as_ref().unwrap()
-                    ));
-                }
-                if !cli.lod_tunnel_installation.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--lodTunnelInstallation={}",
-                        cli.lod_tunnel_installation.as_ref().unwrap()
-                    ));
-                }
-                if !cli.lod_generic_city_object.is_none() {
-                    cmd = cmd.arg(format!(
-                        "--lodGenericCityObject={}",
-                        cli.lod_generic_city_object.as_ref().unwrap()
-                    ));
-                }
-
-                if let Some(ref cotypes) = world.cityobject_types {
-                    if cotypes.contains(&parser::CityObjectType::Building)
-                        || cotypes.contains(&parser::CityObjectType::BuildingPart)
-                    {
-                        cmd = cmd.arg("--simplify_ratio=1.0").arg("--skip_clip=true");
-                    } else {
-                        if !cli.reduce_vertices.is_none() {
-                            cmd = cmd.arg(format!(
-                                "--simplify_ratio={}",
-                                cli.reduce_vertices.as_ref().unwrap()
-                            ));
+            // TODO: need to refactor this parallel loop somehow that it does not only read the
+            //  3d tiles tiles, but also works with cityjson output
+            info!("Exporting and optimizing {} tiles", tiles.len());
+            let mut tiles_failed: Vec<Tile> = tiles
+                .into_par_iter()
+                .map(|(tile, tileid)| {
+                    let mut tile_failed: Option<Tile> = None;
+                    let tileid_grid = &tile.id;
+                    let qtree_nodeid: spatial_structs::QuadTreeNodeId = tileid_grid.into();
+                    let qtree_node = quadtree
+                        .node(&qtree_nodeid)
+                        .unwrap_or_else(|| panic!("did not find tile {} in quadtree", tileid_grid));
+                    let tileid_string = tileid.to_string();
+                    let file_name = tileid_string;
+                    let output_file = path_output_tiles
+                        .join(&file_name)
+                        .with_extension(&subprocess_config.output_extension);
+                    // We write the list of feature paths for a tile into a text file, instead of passing
+                    // super long paths-string to the subprocess, because with very long arguments we can
+                    // get an 'Argument list too long' error.
+                    let path_features_input_file = path_features_input_dir
+                        .join(&file_name)
+                        .with_extension("input");
+                    fs::create_dir_all(path_features_input_file.parent().unwrap()).unwrap_or_else(
+                        |_| {
+                            panic!(
+                                "should be able to create the directory {:?}",
+                                path_features_input_file.parent().unwrap()
+                            )
+                        },
+                    );
+                    let mut feature_input =
+                        File::create(&path_features_input_file).unwrap_or_else(|_| {
+                            panic!(
+                                "should be able to create a file {:?}",
+                                &path_features_input_file
+                            )
+                        });
+                    for cellid in qtree_node.cells() {
+                        let cell = world.grid.cell(cellid);
+                        for fid in cell.feature_ids.iter() {
+                            let fp = world.features[*fid]
+                                .path_jsonl
+                                .clone()
+                                .into_os_string()
+                                .into_string()
+                                .unwrap();
+                            writeln!(feature_input, "{}", fp)
+                                .expect("should be able to write feature path to the input file");
                         }
                     }
-                }
-                if log_enabled!(Level::Debug) {
-                    cmd = cmd.arg("--verbose");
-                }
+
+                    // We use the quadtree node bbox here instead of the Tileset.Tile bounding
+                    // volume, because the Tile is in EPSG:4979 and we need the input data CRS
+                    let b = qtree_node.bbox(&world.grid);
+                    // We need to string-format all the arguments with an = separator, because that's what
+                    // geof can accept.
+                    // TODO: maybe replace the subprocess carte with std::process to remove the dependency
+                    let mut cmd = Exec::cmd(&subprocess_config.exe)
+                        .arg(&subprocess_config.script)
+                        .arg(format!(
+                            "--output_format={}",
+                            &format.to_string().to_lowercase()
+                        ))
+                        .arg(format!("--output_file={}", &output_file.to_str().unwrap()))
+                        .arg(format!(
+                            "--path_metadata={}",
+                            &world.path_metadata.to_str().unwrap()
+                        ))
+                        .arg(format!(
+                            "--path_features_input_file={}",
+                            &path_features_input_file.to_str().unwrap()
+                        ))
+                        .arg(format!("--min_x={}", b[0]))
+                        .arg(format!("--min_y={}", b[1]))
+                        .arg(format!("--min_z={}", b[2]))
+                        .arg(format!("--max_x={}", b[3]))
+                        .arg(format!("--max_y={}", b[4]))
+                        .arg(format!("--max_z={}", b[5]))
+                        .arg(format!("--cotypes={}", &cotypes_arg))
+                        .arg(format!("--metadata_class={}", &metadata_class))
+                        .arg(format!("--attribute_spec={}", &attribute_spec))
+                        .arg(format!("--geometric_error={}", &tile.geometric_error));
+
+                    if format == Formats::_3DTiles {
+                        // geof specific args
+                        // colors
+                        if !cli.color_building.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--colorBuilding={}",
+                                cli.color_building.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.color_building_part.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--colorBuildingPart={}",
+                                cli.color_building_part.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.color_building_installation.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--colorBuildingInstallation={}",
+                                cli.color_building_installation.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.color_tin_relief.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--colorTINRelief={}",
+                                cli.color_tin_relief.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.color_road.is_none() {
+                            cmd = cmd
+                                .arg(format!("--colorRoad={}", cli.color_road.as_ref().unwrap()));
+                        }
+                        if !cli.color_railway.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--colorRailway={}",
+                                cli.color_railway.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.color_transport_square.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--colorTransportSquare={}",
+                                cli.color_transport_square.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.color_water_body.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--colorWaterBody={}",
+                                cli.color_water_body.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.color_plant_cover.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--colorPlantCover={}",
+                                cli.color_plant_cover.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.color_solitary_vegetation_object.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--colorSolitaryVegetationObject={}",
+                                cli.color_solitary_vegetation_object.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.color_land_use.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--colorLandUse={}",
+                                cli.color_land_use.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.color_city_furniture.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--colorCityFurniture={}",
+                                cli.color_city_furniture.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.color_bridge.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--colorBridge={}",
+                                cli.color_bridge.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.color_bridge_part.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--colorBridgePart={}",
+                                cli.color_bridge_part.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.color_bridge_installation.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--colorBridgeInstallation={}",
+                                cli.color_bridge_installation.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.color_bridge_construction_element.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--colorBridgeConstructionElement={}",
+                                cli.color_bridge_construction_element.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.color_tunnel.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--colorTunnel={}",
+                                cli.color_tunnel.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.color_tunnel_part.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--colorTunnelPart={}",
+                                cli.color_tunnel_part.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.color_tunnel_installation.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--colorTunnelInstallation={}",
+                                cli.color_tunnel_installation.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.color_generic_city_object.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--colorGenericCityObject={}",
+                                cli.color_generic_city_object.as_ref().unwrap()
+                            ));
+                        }
+
+                        // lod filter
+                        if !cli.lod_building.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--lodBuilding={}",
+                                cli.lod_building.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.lod_building_part.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--lodBuildingPart={}",
+                                cli.lod_building_part.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.lod_building_installation.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--lodBuildingInstallation={}",
+                                cli.lod_building_installation.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.lod_tin_relief.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--lodTINRelief={}",
+                                cli.lod_tin_relief.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.lod_road.is_none() {
+                            cmd = cmd.arg(format!("--lodRoad={}", cli.lod_road.as_ref().unwrap()));
+                        }
+                        if !cli.lod_railway.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--lodRailway={}",
+                                cli.lod_railway.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.lod_transport_square.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--lodTransportSquare={}",
+                                cli.lod_transport_square.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.lod_water_body.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--lodWaterBody={}",
+                                cli.lod_water_body.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.lod_plant_cover.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--lodPlantCover={}",
+                                cli.lod_plant_cover.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.lod_solitary_vegetation_object.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--lodSolitaryVegetationObject={}",
+                                cli.lod_solitary_vegetation_object.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.lod_land_use.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--lodLandUse={}",
+                                cli.lod_land_use.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.lod_city_furniture.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--lodCityFurniture={}",
+                                cli.lod_city_furniture.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.lod_bridge.is_none() {
+                            cmd = cmd
+                                .arg(format!("--lodBridge={}", cli.lod_bridge.as_ref().unwrap()));
+                        }
+                        if !cli.lod_bridge_part.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--lodBridgePart={}",
+                                cli.lod_bridge_part.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.lod_bridge_installation.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--lodBridgeInstallation={}",
+                                cli.lod_bridge_installation.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.lod_bridge_construction_element.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--lodBridgeConstructionElement={}",
+                                cli.lod_bridge_construction_element.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.lod_tunnel.is_none() {
+                            cmd = cmd
+                                .arg(format!("--lodTunnel={}", cli.lod_tunnel.as_ref().unwrap()));
+                        }
+                        if !cli.lod_tunnel_part.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--lodTunnelPart={}",
+                                cli.lod_tunnel_part.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.lod_tunnel_installation.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--lodTunnelInstallation={}",
+                                cli.lod_tunnel_installation.as_ref().unwrap()
+                            ));
+                        }
+                        if !cli.lod_generic_city_object.is_none() {
+                            cmd = cmd.arg(format!(
+                                "--lodGenericCityObject={}",
+                                cli.lod_generic_city_object.as_ref().unwrap()
+                            ));
+                        }
+
+                        if let Some(ref cotypes) = world.cityobject_types {
+                            if cotypes.contains(&parser::CityObjectType::Building)
+                                || cotypes.contains(&parser::CityObjectType::BuildingPart)
+                            {
+                                cmd = cmd.arg("--simplify_ratio=1.0").arg("--skip_clip=true");
+                            } else {
+                                if !cli.reduce_vertices.is_none() {
+                                    cmd = cmd.arg(format!(
+                                        "--simplify_ratio={}",
+                                        cli.reduce_vertices.as_ref().unwrap()
+                                    ));
+                                }
+                            }
+                        }
+                        if log_enabled!(Level::Debug) {
+                            cmd = cmd.arg("--verbose");
+                        }
+                    }
+
+                    if let Some(pd) = &proj_data {
+                        cmd = cmd.env("PROJ_DATA", pd);
+                    }
+
+                    debug!("{}", cmd.to_cmdline_lossy());
+                    let res_exit_status = cmd
+                        .stdout(Redirection::Pipe)
+                        .stderr(Redirection::Merge)
+                        .capture();
+                    if let Ok(capturedata) = res_exit_status {
+                        let stdout = capturedata.stdout_str();
+                        if !capturedata.success() {
+                            warn!("{} conversion subprocess stdout: {}", &tileid, stdout);
+                            warn!(
+                                "{} conversion subprocess stderr: {}",
+                                &tileid,
+                                capturedata.stderr_str()
+                            );
+                        } else if !stdout.is_empty() && stdout != "\n" {
+                            debug!(
+                                "{} conversion subproces stdout {}",
+                                &tileid,
+                                capturedata.stdout_str()
+                            );
+                        }
+                        if !output_file.exists() {
+                            warn!(
+                                "{} output {:?} was not written by the subprocess",
+                                &tileid, &output_file
+                            );
+                            tile_failed = Some(tile);
+                        }
+                    } else if let Err(popen_error) = res_exit_status {
+                        warn!("{}", popen_error);
+                        tile_failed = Some(tile);
+                    }
+                    tile_failed
+                })
+                .filter_map(|failed_tile| failed_tile)
+                .collect();
+            info!("Done");
+            if !log_enabled!(Level::Debug) {
+                fs::remove_dir_all(path_features_input_dir)?;
             }
 
-            if let Some(pd) = &proj_data {
-                cmd = cmd.env("PROJ_DATA", pd);
+            info!("Pruning tileset of empty tiles");
+            for (i, failed) in tiles_failed.iter().enumerate() {
+                debug!("{}, removing failed from the tileset: {}", i, failed.id);
             }
-
-            debug!("{}", cmd.to_cmdline_lossy());
-            let res_exit_status = cmd
-                .stdout(Redirection::Pipe)
-                .stderr(Redirection::Merge)
-                .capture();
-            if let Ok(capturedata) = res_exit_status {
-                let stdout = capturedata.stdout_str();
-                if !capturedata.success() {
-                    warn!("{} conversion subprocess stdout: {}", &tileid, stdout);
-                    warn!(
-                        "{} conversion subprocess stderr: {}",
-                        &tileid,
-                        capturedata.stderr_str()
-                    );
-                } else if !stdout.is_empty() && stdout != "\n" {
-                    debug!(
-                        "{} conversion subproces stdout {}",
-                        &tileid,
-                        capturedata.stdout_str()
-                    );
+            // Remove tiles that failed the gltf conversion
+            tileset.prune(&tiles_failed, &quadtree);
+            if cli.cesium3dtiles_implicit {
+                // FIXME: here we re-create the implicit tileset from the pruned tileset,
+                //  because it is simpler than flipping the bits of the unavailable tiles,
+                //  because of the mixed up explicit/implicit tile IDs. But ideally, we
+                //  flip the bits, so we won't need to duplicate the tileset here.
+                let (_, subtrees) = tileset.make_implicit(&world.grid, &quadtree, cli.grid_export);
+                info!("Writing subtrees for implicit tiling");
+                let subtrees_path = cli.output.join("subtrees");
+                fs::create_dir_all(&subtrees_path)?;
+                for (subtree_id, subtree_bytes) in subtrees {
+                    fs::create_dir_all(
+                        subtrees_path.join(format!("{}/{}", subtree_id.level, subtree_id.x)),
+                    )
+                    .unwrap();
+                    let out_path = subtrees_path
+                        .join(&subtree_id.to_string())
+                        .with_extension("subtree");
+                    let mut subtree_file = File::create(&out_path)
+                        .unwrap_or_else(|_| panic!("could not create {:?} for writing", &out_path));
+                    if let Err(e) = subtree_file.write_all(&subtree_bytes) {
+                        warn!("Failed to write subtree {} content", subtree_id);
+                    }
                 }
-                if !output_file.exists() {
-                    warn!(
-                        "{} output {:?} was not written by the subprocess",
-                        &tileid, &output_file
-                    );
-                    tile_failed = Some(tile);
-                }
-            } else if let Err(popen_error) = res_exit_status {
-                warn!("{}", popen_error);
-                tile_failed = Some(tile);
             }
-            tile_failed
-        })
-        .filter_map(|failed_tile| failed_tile)
-        .collect();
-    info!("Done");
-    if !log_enabled!(Level::Debug) {
-        fs::remove_dir_all(path_features_input_dir)?;
-    }
+            tileset.to_file(&tileset_path)?;
+        }
+        Formats::CityJSON => {
+            unimplemented!("citjson-only output is not implemented, use the 'multi' format instead")
+        }
+        Formats::Multi => {
+            // let just_tiles = tileset.flatten(qtree_export_levels);
+            let just_tiles = quadtree.collect_leaves();
+            // FIXME: here we need Vec<(Tile, TileId)> instead of Vec<&Tile>, for the same reason
+            //  as above
+            let tiles: Vec<(QuadTree, QuadTreeNodeId)> = just_tiles
+                .into_iter()
+                .map(|tile_ref| (tile_ref.clone(), tile_ref.id.clone()))
+                .collect();
+            // TODO: need to refactor this parallel loop somehow that it does not only read the
+            //  3d tiles tiles, but also works with cityjson output
+            info!("Exporting and optimizing {} tiles", tiles.len());
+            let mut tiles_failed: Vec<QuadTree> = tiles
+                .into_par_iter()
+                .map(|(tile, tileid)| {
+                    let mut tile_failed: Option<QuadTree> = None;
+                    let qtree_nodeid = &tileid;
+                    let qtree_node = &tile;
+                    let tileid_string = tileid.to_string();
+                    let file_name = tileid_string;
+                    let output_dir = path_output_tiles.join(&file_name);
+                    // We write the list of feature paths for a tile into a text file, instead of passing
+                    // super long paths-string to the subprocess, because with very long arguments we can
+                    // get an 'Argument list too long' error.
+                    let path_features_input_file = path_features_input_dir
+                        .join(&file_name)
+                        .with_extension("input");
+                    fs::create_dir_all(path_features_input_file.parent().unwrap()).unwrap_or_else(
+                        |_| {
+                            panic!(
+                                "should be able to create the directory {:?}",
+                                path_features_input_file.parent().unwrap()
+                            )
+                        },
+                    );
+                    let mut feature_input =
+                        File::create(&path_features_input_file).unwrap_or_else(|_| {
+                            panic!(
+                                "should be able to create a file {:?}",
+                                &path_features_input_file
+                            )
+                        });
+                    for cellid in qtree_node.cells() {
+                        let cell = world.grid.cell(cellid);
+                        for fid in cell.feature_ids.iter() {
+                            let fp = world.features[*fid]
+                                .path_jsonl
+                                .clone()
+                                .into_os_string()
+                                .into_string()
+                                .unwrap();
+                            writeln!(feature_input, "{}", fp)
+                                .expect("should be able to write feature path to the input file");
+                        }
+                    }
 
-    info!("Pruning tileset of empty tiles");
-    for (i, failed) in tiles_failed.iter().enumerate() {
-        debug!("{}, removing failed from the tileset: {}", i, failed.id);
-    }
-    // Remove tiles that failed the gltf conversion
-    tileset.prune(&tiles_failed, &quadtree);
-    if cli.cesium3dtiles_implicit {
-        // FIXME: here we re-create the implicit tileset from the pruned tileset,
-        //  because it is simpler than flipping the bits of the unavailable tiles,
-        //  because of the mixed up explicit/implicit tile IDs. But ideally, we
-        //  flip the bits, so we won't need to duplicate the tileset here.
-        let (_, subtrees) = tileset.make_implicit(&world.grid, &quadtree, cli.grid_export);
-        info!("Writing subtrees for implicit tiling");
-        let subtrees_path = cli.output.join("subtrees");
-        fs::create_dir_all(&subtrees_path)?;
-        for (subtree_id, subtree_bytes) in subtrees {
-            fs::create_dir_all(
-                subtrees_path.join(format!("{}/{}", subtree_id.level, subtree_id.x)),
-            )
-            .unwrap();
-            let out_path = subtrees_path
-                .join(&subtree_id.to_string())
-                .with_extension("subtree");
-            let mut subtree_file = File::create(&out_path)
-                .unwrap_or_else(|_| panic!("could not create {:?} for writing", &out_path));
-            if let Err(e) = subtree_file.write_all(&subtree_bytes) {
-                warn!("Failed to write subtree {} content", subtree_id);
+                    // We need to string-format all the arguments with an = separator, because that's what
+                    // geof can accept.
+                    // TODO: maybe replace the subprocess carte with std::process to remove the dependency
+                    let mut cmd = Exec::cmd(&subprocess_config.exe)
+                        .arg(&subprocess_config.script)
+                        .arg(format!("--output_dir={}", &output_dir.to_str().unwrap()))
+                        .arg(format!(
+                            "--path_metadata={}",
+                            &world.path_metadata.to_str().unwrap()
+                        ))
+                        .arg(format!(
+                            "--path_features_input_file={}",
+                            &path_features_input_file.to_str().unwrap()
+                        ));
+                    // TODO: add TILE_CJ_OUTPUT
+
+                    if log_enabled!(Level::Debug) {
+                        cmd = cmd.arg("--verbose");
+                    }
+
+                    if let Some(pd) = &proj_data {
+                        cmd = cmd.env("PROJ_DATA", pd);
+                    }
+
+                    debug!("{}", cmd.to_cmdline_lossy());
+                    let res_exit_status = cmd
+                        .stdout(Redirection::Pipe)
+                        .stderr(Redirection::Merge)
+                        .capture();
+                    if let Ok(capturedata) = res_exit_status {
+                        let stdout = capturedata.stdout_str();
+                        if !capturedata.success() {
+                            warn!("{} conversion subprocess stdout: {}", &tileid, stdout);
+                            warn!(
+                                "{} conversion subprocess stderr: {}",
+                                &tileid,
+                                capturedata.stderr_str()
+                            );
+                        } else if !stdout.is_empty() && stdout != "\n" {
+                            debug!(
+                                "{} conversion subproces stdout {}",
+                                &tileid,
+                                capturedata.stdout_str()
+                            );
+                        }
+                        // TODO: check if output files exist
+                        // if !output_file.exists() {
+                        //     warn!(
+                        //         "{} output {:?} was not written by the subprocess",
+                        //         &tileid, &output_file
+                        //     );
+                        //     tile_failed = Some(tile);
+                        // }
+                    } else if let Err(popen_error) = res_exit_status {
+                        warn!("{}", popen_error);
+                        tile_failed = Some(tile);
+                    }
+                    tile_failed
+                })
+                .filter_map(|failed_tile| failed_tile)
+                .collect();
+            info!("Done");
+            if !log_enabled!(Level::Debug) {
+                fs::remove_dir_all(path_features_input_dir)?;
             }
         }
     }
-    tileset.to_file(&tileset_path)?;
 
     Ok(())
 }

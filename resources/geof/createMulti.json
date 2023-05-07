@@ -1,0 +1,780 @@
+{
+  "globals": {
+    "DATASET_TITLE": [
+      "",
+      "str",
+      "wippolder"
+    ],
+    "GF_PROCESS_CRS": [
+      "",
+      "str",
+      "EPSG:7415"
+    ],
+    "GF_PROCESS_OFFSET_X": [
+      "offset in X coordinate",
+      "float",
+      85373.40625
+    ],
+    "GF_PROCESS_OFFSET_Y": [
+      "offset in Y coordinate",
+      "float",
+      447090.53125
+    ],
+    "GF_PROCESS_OFFSET_Z": [
+      "offset in Z coordinate",
+      "float",
+      0.0
+    ],
+    "JSONL_METADATA_PATH": [
+      "",
+      "str",
+      "/output/wippolder/metadata.city.json"
+    ],
+    "OUTPUT_CRS": [
+      "",
+      "str",
+      "EPSG:7415"
+    ],
+    "TILE_CJ_OUTPUT": [
+      "output path of tile cityjson",
+      "str",
+      "/output/wippolder/wippolder_0"
+    ],
+    "TILE_ID": [
+      "",
+      "str",
+      "0"
+    ],
+    "TILE_INDEX_PATH": [
+      "input tile index file",
+      "str",
+      "/output/wippolder/index.gpkg"
+    ]
+  },
+  "nodes": {
+    "CityJSONL2Mesh-LoD12": {
+      "connections": {
+        "attributes": [
+          [
+            "OGRWriter-2D-LoD12",
+            "attributes"
+          ],
+          [
+            "OGRWriter-3D-LoD12",
+            "attributes"
+          ]
+        ],
+        "meshes": [
+          [
+            "OGRWriter-3D-LoD12",
+            "geometries"
+          ]
+        ],
+        "roofparts": [
+          [
+            "OGRWriter-2D-LoD12",
+            "geometries"
+          ]
+        ]
+      },
+      "marked_inputs": {
+        "jsonl_features_str": false,
+        "jsonl_metadata_str": false
+      },
+      "marked_outputs": {
+        "attributes": false,
+        "feature_type": false,
+        "meshes": false,
+        "roofparts": false
+      },
+      "parameters": {
+        "3bag_buildings_mode": true,
+        "atribute_spec": "",
+        "cotypes": "",
+        "lod_filter": {},
+        "optimal_lod": false,
+        "optimal_lod_value": "1.2"
+      },
+      "position": [
+        751.0,
+        524.0
+      ],
+      "type": [
+        "CoreIO",
+        "CityJSONL2Mesh"
+      ]
+    },
+    "CityJSONL2Mesh-LoD13": {
+      "connections": {
+        "attributes": [
+          [
+            "OGRWriter-3D-LoD13",
+            "attributes"
+          ],
+          [
+            "OGRWriter-2D-LoD13",
+            "attributes"
+          ]
+        ],
+        "meshes": [
+          [
+            "OGRWriter-3D-LoD13",
+            "geometries"
+          ]
+        ],
+        "roofparts": [
+          [
+            "OGRWriter-2D-LoD13",
+            "geometries"
+          ]
+        ]
+      },
+      "marked_inputs": {
+        "jsonl_features_str": false,
+        "jsonl_metadata_str": false
+      },
+      "marked_outputs": {
+        "attributes": false,
+        "feature_type": false,
+        "meshes": false,
+        "roofparts": false
+      },
+      "parameters": {
+        "3bag_buildings_mode": true,
+        "atribute_spec": "",
+        "cotypes": "",
+        "lod_filter": {},
+        "optimal_lod": false,
+        "optimal_lod_value": "1.3"
+      },
+      "position": [
+        752.0,
+        432.0
+      ],
+      "type": [
+        "CoreIO",
+        "CityJSONL2Mesh"
+      ]
+    },
+    "CityJSONL2Mesh-LoD22": {
+      "connections": {
+        "attributes": [
+          [
+            "OGRWriter-3D-LoD22",
+            "attributes"
+          ],
+          [
+            "OGRWriter-2D-LoD22",
+            "attributes"
+          ]
+        ],
+        "meshes": [
+          [
+            "OGRWriter-3D-LoD22",
+            "geometries"
+          ]
+        ],
+        "roofparts": [
+          [
+            "OGRWriter-2D-LoD22",
+            "geometries"
+          ]
+        ]
+      },
+      "marked_inputs": {
+        "jsonl_features_str": false,
+        "jsonl_metadata_str": false
+      },
+      "marked_outputs": {
+        "attributes": false,
+        "feature_type": false,
+        "meshes": false,
+        "roofparts": false
+      },
+      "parameters": {
+        "3bag_buildings_mode": true,
+        "atribute_spec": "",
+        "cotypes": "",
+        "lod_filter": {},
+        "optimal_lod": false,
+        "optimal_lod_value": "2.2"
+      },
+      "position": [
+        751.0,
+        339.0
+      ],
+      "type": [
+        "CoreIO",
+        "CityJSONL2Mesh"
+      ]
+    },
+    "CityJSONLinesWriter": {
+      "marked_inputs": {
+        "features": false,
+        "first_line": false
+      },
+      "parameters": {
+        "filepath": "{{TILE_CJ_OUTPUT}}.city.json",
+        "optimal_lod": false,
+        "prettyPrint": false
+      },
+      "position": [
+        787.0,
+        88.0
+      ],
+      "type": [
+        "CoreIO",
+        "CityJSONLinesWriter"
+      ]
+    },
+    "MetaDataReader": {
+      "connections": {
+        "value": [
+          [
+            "CityJSONL2Mesh-LoD13",
+            "jsonl_metadata_str"
+          ],
+          [
+            "CityJSONL2Mesh-LoD12",
+            "jsonl_metadata_str"
+          ],
+          [
+            "CityJSONL2Mesh-LoD22",
+            "jsonl_metadata_str"
+          ],
+          [
+            "CityJSONLinesWriter",
+            "first_line"
+          ]
+        ]
+      },
+      "marked_outputs": {
+        "value": false
+      },
+      "parameters": {
+        "filepath": "{{JSONL_METADATA_PATH}}",
+        "limit": 0,
+        "split": false
+      },
+      "position": [
+        563.0,
+        14.0
+      ],
+      "type": [
+        "Core",
+        "TextReader"
+      ]
+    },
+    "NestedFlowchart": {
+      "connections": {
+        "JSONReader.value": [
+          [
+            "CityJSONL2Mesh-LoD13",
+            "jsonl_features_str"
+          ],
+          [
+            "CityJSONL2Mesh-LoD12",
+            "jsonl_features_str"
+          ],
+          [
+            "CityJSONL2Mesh-LoD22",
+            "jsonl_features_str"
+          ],
+          [
+            "CityJSONLinesWriter",
+            "features"
+          ],
+          [
+            "reconstruction_success",
+            "attributes"
+          ]
+        ]
+      },
+      "marked_inputs": {
+        "NestedFlowchart.globals": false,
+        "NestedFlowchart.wait": false
+      },
+      "marked_outputs": {
+        "JSONReader.value": false,
+        "NestedFlowchart.timings": false
+      },
+      "parameters": {
+        "filepath": "createMulti_.json",
+        "push_any_for_empty_sfterminal": true,
+        "require_input_globals": true,
+        "require_input_wait": false
+      },
+      "position": [
+        184.0,
+        168.0
+      ],
+      "type": [
+        "Core",
+        "NestedFlowchart"
+      ]
+    },
+    "OBJVecWriter-3D-LoD22": {
+      "marked_inputs": {
+        "attributes": false,
+        "triangles": false
+      },
+      "parameters": {
+        "Headerline": "Generated by Geoflow",
+        "attribute_name": "identificatie",
+        "filepath": "{{TILE_CJ_OUTPUT}}-LoD22-3D.obj",
+        "no_offset": false,
+        "precision": 5
+      },
+      "position": [
+        1373.0,
+        191.0
+      ],
+      "type": [
+        "CoreIO",
+        "OBJVecWriter"
+      ]
+    },
+    "OGRLoader": {
+      "connections": {
+        "attributes": [
+          [
+            "NestedFlowchart",
+            "NestedFlowchart.globals"
+          ],
+          [
+            "OBJVecWriter-3D-LoD22",
+            "attributes"
+          ],
+          [
+            "OGRWriter-ReconstructionStatus",
+            "attributes"
+          ]
+        ],
+        "linear_rings": [
+          [
+            "OGRWriter-ReconstructionStatus",
+            "geometries"
+          ]
+        ]
+      },
+      "marked_outputs": {
+        "area": false,
+        "attributes": false,
+        "is_valid": false,
+        "line_strings": false,
+        "linear_rings": false
+      },
+      "parameters": {
+        "attribute_filter": "tile_id = {{TILE_ID}}",
+        "base_elevation": 0.0,
+        "filepath": "{{TILE_INDEX_PATH}}",
+        "layer_id": 0,
+        "layer_name": "footprints",
+        "output_fid": false
+      },
+      "position": [
+        -53.0,
+        220.0
+      ],
+      "type": [
+        "io-gdal",
+        "OGRLoader"
+      ]
+    },
+    "OGRWriter-2D-LoD12": {
+      "marked_inputs": {
+        "attributes": false,
+        "geometries": false
+      },
+      "parameters": {
+        "CRS": "{{OUTPUT_CRS}}",
+        "create_directories": true,
+        "do_transactions": false,
+        "filepath": "{{TILE_CJ_OUTPUT}}-LoD12-2D.gpkg",
+        "gdaldriver": "GPKG",
+        "layername": "geom",
+        "only_output_mapped_attrs": false,
+        "output_attribute_names": {
+          "CityJSONL2Mesh-LoD12.BID": "BID",
+          "CityJSONL2Mesh-LoD12.area_m": "area_m",
+          "CityJSONL2Mesh-LoD12.feature_type": "feature_type",
+          "CityJSONL2Mesh-LoD12.floors": "floors",
+          "CityJSONL2Mesh-LoD12.height": "height",
+          "CityJSONL2Mesh-LoD12.max_z": "max_z",
+          "CityJSONL2Mesh-LoD12.method": "method",
+          "CityJSONL2Mesh-LoD12.min_roof_z": "min_roof_z",
+          "CityJSONL2Mesh-LoD12.min_z": "min_z",
+          "CityJSONL2Mesh-LoD12.optimal_lod": "optimal_lod",
+          "CityJSONL2Mesh-LoD12.pt_density": "pt_density",
+          "CityJSONL2Mesh-LoD12.r_nodata": "r_nodata",
+          "CityJSONL2Mesh-LoD12.rmse_lod12": "rmse_lod12",
+          "CityJSONL2Mesh-LoD12.rmse_lod13": "rmse_lod13",
+          "CityJSONL2Mesh-LoD12.rmse_lod22": "rmse_lod22",
+          "CityJSONL2Mesh-LoD12.roof_type": "roof_type",
+          "CityJSONL2Mesh-LoD12.source": "source",
+          "CityJSONL2Mesh-LoD12.survey_date": "survey_date",
+          "CityJSONL2Mesh-LoD12.textures": "textures",
+          "CityJSONL2Mesh-LoD12.val3dity_codes_lod12": "val3dity_codes_lod12",
+          "CityJSONL2Mesh-LoD12.val3dity_codes_lod13": "val3dity_codes_lod13",
+          "CityJSONL2Mesh-LoD12.val3dity_codes_lod22": "val3dity_codes_lod22"
+        },
+        "overwrite_file": true,
+        "overwrite_layer": false,
+        "require_attributes": true,
+        "transaction_batch_size_": 1000
+      },
+      "position": [
+        1309.0,
+        522.0
+      ],
+      "type": [
+        "io-gdal",
+        "OGRWriter"
+      ]
+    },
+    "OGRWriter-2D-LoD13": {
+      "marked_inputs": {
+        "attributes": false,
+        "geometries": false
+      },
+      "parameters": {
+        "CRS": "{{OUTPUT_CRS}}",
+        "create_directories": true,
+        "do_transactions": false,
+        "filepath": "{{TILE_CJ_OUTPUT}}-LoD13-2D.gpkg",
+        "gdaldriver": "GPKG",
+        "layername": "geom",
+        "only_output_mapped_attrs": false,
+        "output_attribute_names": {
+          "CityJSONL2Mesh-LoD13.BID": "BID",
+          "CityJSONL2Mesh-LoD13.area_m": "area_m",
+          "CityJSONL2Mesh-LoD13.feature_type": "feature_type",
+          "CityJSONL2Mesh-LoD13.floors": "floors",
+          "CityJSONL2Mesh-LoD13.max_z": "max_z",
+          "CityJSONL2Mesh-LoD13.method": "method",
+          "CityJSONL2Mesh-LoD13.min_roof_z": "min_roof_z",
+          "CityJSONL2Mesh-LoD13.min_z": "min_z",
+          "CityJSONL2Mesh-LoD13.optimal_lod": "optimal_lod",
+          "CityJSONL2Mesh-LoD13.pt_density": "pt_density",
+          "CityJSONL2Mesh-LoD13.r_nodata": "r_nodata",
+          "CityJSONL2Mesh-LoD13.rmse_lod12": "rmse_lod12",
+          "CityJSONL2Mesh-LoD13.rmse_lod13": "rmse_lod13",
+          "CityJSONL2Mesh-LoD13.rmse_lod22": "rmse_lod22",
+          "CityJSONL2Mesh-LoD13.roof_type": "roof_type",
+          "CityJSONL2Mesh-LoD13.source": "source",
+          "CityJSONL2Mesh-LoD13.survey_date": "survey_date",
+          "CityJSONL2Mesh-LoD13.textures": "textures",
+          "CityJSONL2Mesh-LoD13.val3dity_codes_lod12": "val3dity_codes_lod12",
+          "CityJSONL2Mesh-LoD13.val3dity_codes_lod13": "val3dity_codes_lod13",
+          "CityJSONL2Mesh-LoD13.val3dity_codes_lod22": "val3dity_codes_lod22"
+        },
+        "overwrite_file": true,
+        "overwrite_layer": false,
+        "require_attributes": true,
+        "transaction_batch_size_": 1000
+      },
+      "position": [
+        1307.0,
+        425.0
+      ],
+      "type": [
+        "io-gdal",
+        "OGRWriter"
+      ]
+    },
+    "OGRWriter-2D-LoD22": {
+      "marked_inputs": {
+        "attributes": false,
+        "geometries": false
+      },
+      "parameters": {
+        "CRS": "{{OUTPUT_CRS}}",
+        "create_directories": true,
+        "do_transactions": false,
+        "filepath": "{{TILE_CJ_OUTPUT}}-LoD22-2D.gpkg",
+        "gdaldriver": "GPKG",
+        "layername": "geom",
+        "only_output_mapped_attrs": false,
+        "output_attribute_names": {
+          "CityJSONL2Mesh-LoD22.BID": "BID",
+          "CityJSONL2Mesh-LoD22.area_m": "area_m",
+          "CityJSONL2Mesh-LoD22.feature_type": "feature_type",
+          "CityJSONL2Mesh-LoD22.floors": "floors",
+          "CityJSONL2Mesh-LoD22.max_z": "max_z",
+          "CityJSONL2Mesh-LoD22.method": "method",
+          "CityJSONL2Mesh-LoD22.min_roof_z": "min_roof_z",
+          "CityJSONL2Mesh-LoD22.min_z": "min_z",
+          "CityJSONL2Mesh-LoD22.optimal_lod": "optimal_lod",
+          "CityJSONL2Mesh-LoD22.pt_density": "pt_density",
+          "CityJSONL2Mesh-LoD22.r_nodata": "r_nodata",
+          "CityJSONL2Mesh-LoD22.rmse_lod12": "rmse_lod12",
+          "CityJSONL2Mesh-LoD22.rmse_lod13": "rmse_lod13",
+          "CityJSONL2Mesh-LoD22.rmse_lod22": "rmse_lod22",
+          "CityJSONL2Mesh-LoD22.roof_type": "roof_type",
+          "CityJSONL2Mesh-LoD22.source": "source",
+          "CityJSONL2Mesh-LoD22.survey_date": "survey_date",
+          "CityJSONL2Mesh-LoD22.textures": "textures",
+          "CityJSONL2Mesh-LoD22.val3dity_codes_lod12": "val3dity_codes_lod12",
+          "CityJSONL2Mesh-LoD22.val3dity_codes_lod13": "val3dity_codes_lod13",
+          "CityJSONL2Mesh-LoD22.val3dity_codes_lod22": "val3dity_codes_lod22"
+        },
+        "overwrite_file": true,
+        "overwrite_layer": false,
+        "require_attributes": true,
+        "transaction_batch_size_": 1000
+      },
+      "position": [
+        1311.0,
+        336.0
+      ],
+      "type": [
+        "io-gdal",
+        "OGRWriter"
+      ]
+    },
+    "OGRWriter-3D-LoD12": {
+      "marked_inputs": {
+        "attributes": false,
+        "geometries": false
+      },
+      "parameters": {
+        "CRS": "{{OUTPUT_CRS}}",
+        "create_directories": true,
+        "do_transactions": false,
+        "filepath": "{{TILE_CJ_OUTPUT}}-LoD12-3D.gpkg",
+        "gdaldriver": "GPKG",
+        "layername": "geom",
+        "only_output_mapped_attrs": false,
+        "output_attribute_names": {
+          "CityJSONL2Mesh-LoD12.BID": "BID",
+          "CityJSONL2Mesh-LoD12.area_m": "area_m",
+          "CityJSONL2Mesh-LoD12.feature_type": "feature_type",
+          "CityJSONL2Mesh-LoD12.floors": "floors",
+          "CityJSONL2Mesh-LoD12.height": "height",
+          "CityJSONL2Mesh-LoD12.max_z": "max_z",
+          "CityJSONL2Mesh-LoD12.method": "method",
+          "CityJSONL2Mesh-LoD12.min_roof_z": "min_roof_z",
+          "CityJSONL2Mesh-LoD12.min_z": "min_z",
+          "CityJSONL2Mesh-LoD12.optimal_lod": "optimal_lod",
+          "CityJSONL2Mesh-LoD12.pt_density": "pt_density",
+          "CityJSONL2Mesh-LoD12.r_nodata": "r_nodata",
+          "CityJSONL2Mesh-LoD12.rmse_lod12": "rmse_lod12",
+          "CityJSONL2Mesh-LoD12.rmse_lod13": "rmse_lod13",
+          "CityJSONL2Mesh-LoD12.rmse_lod22": "rmse_lod22",
+          "CityJSONL2Mesh-LoD12.roof_type": "roof_type",
+          "CityJSONL2Mesh-LoD12.source": "source",
+          "CityJSONL2Mesh-LoD12.survey_date": "survey_date",
+          "CityJSONL2Mesh-LoD12.textures": "textures",
+          "CityJSONL2Mesh-LoD12.val3dity_codes_lod12": "val3dity_codes_lod12",
+          "CityJSONL2Mesh-LoD12.val3dity_codes_lod13": "val3dity_codes_lod13",
+          "CityJSONL2Mesh-LoD12.val3dity_codes_lod22": "val3dity_codes_lod22"
+        },
+        "overwrite_file": true,
+        "overwrite_layer": false,
+        "require_attributes": true,
+        "transaction_batch_size_": 1000
+      },
+      "position": [
+        1113.0,
+        561.0
+      ],
+      "type": [
+        "io-gdal",
+        "OGRWriter"
+      ]
+    },
+    "OGRWriter-3D-LoD13": {
+      "marked_inputs": {
+        "attributes": false,
+        "geometries": false
+      },
+      "parameters": {
+        "CRS": "{{OUTPUT_CRS}}",
+        "create_directories": true,
+        "do_transactions": false,
+        "filepath": "{{TILE_CJ_OUTPUT}}-LoD13-3D.gpkg",
+        "gdaldriver": "GPKG",
+        "layername": "geom",
+        "only_output_mapped_attrs": false,
+        "output_attribute_names": {
+          "CityJSONL2Mesh-LoD13.BID": "BID",
+          "CityJSONL2Mesh-LoD13.area_m": "area_m",
+          "CityJSONL2Mesh-LoD13.feature_type": "feature_type",
+          "CityJSONL2Mesh-LoD13.floors": "floors",
+          "CityJSONL2Mesh-LoD13.height": "height",
+          "CityJSONL2Mesh-LoD13.max_z": "max_z",
+          "CityJSONL2Mesh-LoD13.method": "method",
+          "CityJSONL2Mesh-LoD13.min_roof_z": "min_roof_z",
+          "CityJSONL2Mesh-LoD13.min_z": "min_z",
+          "CityJSONL2Mesh-LoD13.optimal_lod": "optimal_lod",
+          "CityJSONL2Mesh-LoD13.pt_density": "pt_density",
+          "CityJSONL2Mesh-LoD13.r_nodata": "r_nodata",
+          "CityJSONL2Mesh-LoD13.rmse_lod12": "rmse_lod12",
+          "CityJSONL2Mesh-LoD13.rmse_lod13": "rmse_lod13",
+          "CityJSONL2Mesh-LoD13.rmse_lod22": "rmse_lod22",
+          "CityJSONL2Mesh-LoD13.roof_type": "roof_type",
+          "CityJSONL2Mesh-LoD13.source": "source",
+          "CityJSONL2Mesh-LoD13.survey_date": "survey_date",
+          "CityJSONL2Mesh-LoD13.textures": "textures",
+          "CityJSONL2Mesh-LoD13.val3dity_codes_lod12": "val3dity_codes_lod12",
+          "CityJSONL2Mesh-LoD13.val3dity_codes_lod13": "val3dity_codes_lod13",
+          "CityJSONL2Mesh-LoD13.val3dity_codes_lod22": "val3dity_codes_lod22"
+        },
+        "overwrite_file": true,
+        "overwrite_layer": false,
+        "require_attributes": true,
+        "transaction_batch_size_": 1000
+      },
+      "position": [
+        1113.0,
+        459.0
+      ],
+      "type": [
+        "io-gdal",
+        "OGRWriter"
+      ]
+    },
+    "OGRWriter-3D-LoD22": {
+      "marked_inputs": {
+        "attributes": false,
+        "geometries": false
+      },
+      "parameters": {
+        "CRS": "{{OUTPUT_CRS}}",
+        "create_directories": true,
+        "do_transactions": false,
+        "filepath": "{{TILE_CJ_OUTPUT}}-LoD22-3D.gpkg",
+        "gdaldriver": "GPKG",
+        "layername": "geom",
+        "only_output_mapped_attrs": false,
+        "output_attribute_names": {
+          "CityJSONL2Mesh-LoD22.BID": "BID",
+          "CityJSONL2Mesh-LoD22.area_m": "area_m",
+          "CityJSONL2Mesh-LoD22.feature_type": "feature_type",
+          "CityJSONL2Mesh-LoD22.floors": "floors",
+          "CityJSONL2Mesh-LoD22.height": "height",
+          "CityJSONL2Mesh-LoD22.max_z": "max_z",
+          "CityJSONL2Mesh-LoD22.method": "method",
+          "CityJSONL2Mesh-LoD22.min_roof_z": "min_roof_z",
+          "CityJSONL2Mesh-LoD22.min_z": "min_z",
+          "CityJSONL2Mesh-LoD22.optimal_lod": "optimal_lod",
+          "CityJSONL2Mesh-LoD22.pt_density": "pt_density",
+          "CityJSONL2Mesh-LoD22.r_nodata": "r_nodata",
+          "CityJSONL2Mesh-LoD22.rmse_lod12": "rmse_lod12",
+          "CityJSONL2Mesh-LoD22.rmse_lod13": "rmse_lod13",
+          "CityJSONL2Mesh-LoD22.rmse_lod22": "rmse_lod22",
+          "CityJSONL2Mesh-LoD22.roof_type": "roof_type",
+          "CityJSONL2Mesh-LoD22.source": "source",
+          "CityJSONL2Mesh-LoD22.survey_date": "survey_date",
+          "CityJSONL2Mesh-LoD22.textures": "textures",
+          "CityJSONL2Mesh-LoD22.val3dity_codes_lod12": "val3dity_codes_lod12",
+          "CityJSONL2Mesh-LoD22.val3dity_codes_lod13": "val3dity_codes_lod13",
+          "CityJSONL2Mesh-LoD22.val3dity_codes_lod22": "val3dity_codes_lod22"
+        },
+        "overwrite_file": true,
+        "overwrite_layer": false,
+        "require_attributes": true,
+        "transaction_batch_size_": 1000
+      },
+      "position": [
+        1106.0,
+        362.0
+      ],
+      "type": [
+        "io-gdal",
+        "OGRWriter"
+      ]
+    },
+    "OGRWriter-ReconstructionStatus": {
+      "marked_inputs": {
+        "attributes": false,
+        "geometries": false
+      },
+      "parameters": {
+        "CRS": "{{OUTPUT_CRS}}",
+        "create_directories": true,
+        "do_transactions": true,
+        "filepath": "{{TILE_CJ_OUTPUT}}.gpkg",
+        "gdaldriver": "GPKG",
+        "layername": "geom",
+        "only_output_mapped_attrs": false,
+        "output_attribute_names": {
+          "reconstruction_success.reconstruction_succes": "reconstruction_success"
+        },
+        "overwrite_file": true,
+        "overwrite_layer": false,
+        "require_attributes": true,
+        "transaction_batch_size_": 1000
+      },
+      "position": [
+        363.0,
+        316.0
+      ],
+      "type": [
+        "io-gdal",
+        "OGRWriter"
+      ]
+    },
+    "PolygonTriangulator-LoD22": {
+      "connections": {
+        "multi_triangle_collections": [
+          [
+            "OBJVecWriter-3D-LoD22",
+            "triangles"
+          ]
+        ]
+      },
+      "marked_inputs": {
+        "polygons": false
+      },
+      "marked_outputs": {
+        "multi_triangle_collections": false,
+        "normals": false,
+        "ring_ids": false,
+        "triangles": false
+      },
+      "parameters": {
+        "dupe_threshold_exp": 6,
+        "output_all_triangles": false
+      },
+      "position": [
+        1006.0,
+        170.0
+      ],
+      "type": [
+        "building-reconstruction",
+        "PolygonTriangulator"
+      ]
+    },
+    "reconstruction_success": {
+      "connections": {
+        "attributes": [
+          [
+            "OGRWriter-ReconstructionStatus",
+            "attributes"
+          ]
+        ]
+      },
+      "marked_inputs": {
+        "attributes": false
+      },
+      "marked_outputs": {
+        "attributes": false
+      },
+      "parameters": {
+        "as_string": false,
+        "attribute_expressions": {
+          "reconstruction_succes": "a.NestedFlowchart.JSONReader.value!=''"
+        }
+      },
+      "position": [
+        369.0,
+        259.0
+      ],
+      "type": [
+        "Core",
+        "AttributeCalc"
+      ]
+    }
+  }
+}
