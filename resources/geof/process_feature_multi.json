@@ -1,0 +1,327 @@
+{
+  "globals": {
+    "GF_PROCESS_OFFSET_OVERRIDE": [
+      "",
+      "bool",
+      true
+    ],
+    "cotypes": [
+      "",
+      "str",
+      ""
+    ],
+    "max_x": [
+      "",
+      "float",
+      194964.0
+    ],
+    "max_y": [
+      "",
+      "float",
+      466309.0
+    ],
+    "max_z": [
+      "",
+      "float",
+      30.0
+    ],
+    "min_x": [
+      "",
+      "float",
+      194447.0
+    ],
+    "min_y": [
+      "",
+      "float",
+      465847.0
+    ],
+    "min_z": [
+      "",
+      "float",
+      0.0
+    ],
+    "path_metadata": [
+      "CityJSON features metadata file",
+      "str",
+      "/mnt/Data/LocalData/Kadaster/db3dnl_features/metadata.city.json"
+    ],
+    "simplify_ratio": [
+      "",
+      "float",
+      0.10000000149011612
+    ],
+    "skip_clip": [
+      "",
+      "bool",
+      false
+    ]
+  },
+  "nodes": {
+    "CJFeatureReader": {
+      "connections": {
+        "value": [
+          [
+            "CityJSONL2Mesh-LoD13",
+            "jsonl_features_str"
+          ],
+          [
+            "CityJSONL2Mesh-LoD12",
+            "jsonl_features_str"
+          ],
+          [
+            "CityJSONL2Mesh-LoD22",
+            "jsonl_features_str"
+          ]
+        ]
+      },
+      "marked_outputs": {
+        "value": true
+      },
+      "parameters": {
+        "filepath": "{{value}}",
+        "limit": 0,
+        "split": false
+      },
+      "position": [
+        252.0,
+        146.0
+      ],
+      "type": [
+        "Core",
+        "TextReader"
+      ]
+    },
+    "CJMetadata": {
+      "connections": {
+        "value": [
+          [
+            "CityJSONL2Mesh-LoD13",
+            "jsonl_metadata_str"
+          ],
+          [
+            "CityJSONL2Mesh-LoD12",
+            "jsonl_metadata_str"
+          ],
+          [
+            "CityJSONL2Mesh-LoD22",
+            "jsonl_metadata_str"
+          ]
+        ]
+      },
+      "marked_outputs": {
+        "value": true
+      },
+      "parameters": {
+        "filepath": "{{path_metadata}}",
+        "limit": 0,
+        "split": false
+      },
+      "position": [
+        250.0,
+        205.0
+      ],
+      "type": [
+        "Core",
+        "TextReader"
+      ]
+    },
+    "CityJSONL2Mesh-LoD12": {
+      "connections": {
+        "meshes": [
+          [
+            "PolygonTriangulator-LoD12",
+            "polygons"
+          ]
+        ]
+      },
+      "marked_inputs": {
+        "jsonl_features_str": false,
+        "jsonl_metadata_str": false
+      },
+      "marked_outputs": {
+        "attributes": true,
+        "feature_type": false,
+        "meshes": true,
+        "roofparts": true
+      },
+      "parameters": {
+        "3bag_buildings_mode": true,
+        "atribute_spec": "",
+        "cotypes": "",
+        "lod_filter": {},
+        "optimal_lod": false,
+        "optimal_lod_value": "1.2"
+      },
+      "position": [
+        456.0,
+        392.0
+      ],
+      "type": [
+        "CoreIO",
+        "CityJSONL2Mesh"
+      ]
+    },
+    "CityJSONL2Mesh-LoD13": {
+      "connections": {
+        "meshes": [
+          [
+            "PolygonTriangulator-LoD13",
+            "polygons"
+          ]
+        ]
+      },
+      "marked_inputs": {
+        "jsonl_features_str": false,
+        "jsonl_metadata_str": false
+      },
+      "marked_outputs": {
+        "attributes": true,
+        "feature_type": false,
+        "meshes": true,
+        "roofparts": true
+      },
+      "parameters": {
+        "3bag_buildings_mode": true,
+        "atribute_spec": "",
+        "cotypes": "",
+        "lod_filter": {},
+        "optimal_lod": false,
+        "optimal_lod_value": "1.3"
+      },
+      "position": [
+        457.0,
+        270.0
+      ],
+      "type": [
+        "CoreIO",
+        "CityJSONL2Mesh"
+      ]
+    },
+    "CityJSONL2Mesh-LoD22": {
+      "connections": {
+        "meshes": [
+          [
+            "PolygonTriangulator-LoD22",
+            "polygons"
+          ]
+        ]
+      },
+      "marked_inputs": {
+        "jsonl_features_str": false,
+        "jsonl_metadata_str": false
+      },
+      "marked_outputs": {
+        "attributes": true,
+        "feature_type": false,
+        "meshes": true,
+        "roofparts": true
+      },
+      "parameters": {
+        "3bag_buildings_mode": false,
+        "atribute_spec": "{{attribute_spec}}",
+        "cotypes": "{{cotypes}}",
+        "lod_filter": {
+          "Bridge": "{{lodBridge}}",
+          "BridgeConstructionElement": "{{lodBridgeConstructionElement}}",
+          "BridgeInstallation": "{{lodBridgeInstallation}}",
+          "BridgePart": "{{lodBridgePart}}",
+          "Building": "{{lodBuilding}}",
+          "BuildingInstallation": "{{lodBuildingInstallation}}",
+          "BuildingPart": "{{lodBuildingPart}}",
+          "CityFurniture": "{{lodCityFurniture}}",
+          "GenericCityObject": "{{lodGenericCityObject}}",
+          "LandUse": "{{lodLandUse}}",
+          "PlantCover": "{{lodPlantCover}}",
+          "Railway": "{{lodRailway}}",
+          "Road": "{{lodRoad}}",
+          "SolitaryVegetationObject": "{{lodSolitaryVegetationObject}}",
+          "TINRelief": "{{lodTINRelief}}",
+          "TransportSquare": "{{lodTransportSquare}}",
+          "Tunnel": "{{lodTunnel}}",
+          "TunnelInstallation": "{{lodTunnelInstallation}}",
+          "TunnelPart": "{{lodTunnelPart}}",
+          "WaterBody": "{{lodWaterBody}}"
+        },
+        "optimal_lod": false,
+        "optimal_lod_value": "2.2"
+      },
+      "position": [
+        458.0,
+        153.0
+      ],
+      "type": [
+        "CoreIO",
+        "CityJSONL2Mesh"
+      ]
+    },
+    "PolygonTriangulator-LoD12": {
+      "marked_inputs": {
+        "polygons": false
+      },
+      "marked_outputs": {
+        "multi_triangle_collections": true,
+        "normals": false,
+        "ring_ids": false,
+        "triangles": false
+      },
+      "parameters": {
+        "dupe_threshold_exp": 6,
+        "output_all_triangles": false
+      },
+      "position": [
+        881.0,
+        393.0
+      ],
+      "type": [
+        "building-reconstruction",
+        "PolygonTriangulator"
+      ]
+    },
+    "PolygonTriangulator-LoD13": {
+      "marked_inputs": {
+        "polygons": false
+      },
+      "marked_outputs": {
+        "multi_triangle_collections": true,
+        "normals": false,
+        "ring_ids": false,
+        "triangles": false
+      },
+      "parameters": {
+        "dupe_threshold_exp": 6,
+        "output_all_triangles": false
+      },
+      "position": [
+        879.0,
+        270.0
+      ],
+      "type": [
+        "building-reconstruction",
+        "PolygonTriangulator"
+      ]
+    },
+    "PolygonTriangulator-LoD22": {
+      "marked_inputs": {
+        "polygons": false
+      },
+      "marked_outputs": {
+        "multi_triangle_collections": true,
+        "normals": false,
+        "ring_ids": false,
+        "triangles": false
+      },
+      "parameters": {
+        "dupe_threshold_exp": 6,
+        "output_all_triangles": false
+      },
+      "position": [
+        877.0,
+        153.0
+      ],
+      "type": [
+        "building-reconstruction",
+        "PolygonTriangulator"
+      ]
+    }
+  }
+}
