@@ -68,8 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Since we have a default value, we can safely unwrap.
     let grid_cellsize = cli.grid_cellsize.unwrap();
     let geometric_error_above_leaf = cli.geometric_error_above_leaf.unwrap();
-    let format = Formats::_3DTiles; // override --format
-    let subprocess_config = match format {
+    let subprocess_config = match &cli.format {
         Formats::_3DTiles => {
             let mut exe = PathBuf::new();
             if let Some(exe_g) = cli.exe_geof {
@@ -175,7 +174,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             spatial_structs::QuadTreeCapacity::Vertices(cli.qtree_capacity.unwrap())
         }
     };
-    let metadata_class: String = match format {
+    let metadata_class: String = match &cli.format {
         Formats::_3DTiles => {
             if cli.cesium3dtiles_metadata_class.is_none() {
                 panic!("metadata_class must be set for writing 3D Tiles")
@@ -253,7 +252,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(attributes) => attributes.join(","),
     };
 
-    match format {
+    match &cli.format {
         Formats::_3DTiles => {
             // 3D Tiles
             info!("Generating 3D Tiles tileset");
@@ -358,7 +357,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .arg(&subprocess_config.script)
                         .arg(format!(
                             "--output_format={}",
-                            &format.to_string().to_lowercase()
+                            &cli.format.to_string().to_lowercase()
                         ))
                         .arg(format!("--output_file={}", &output_file.to_str().unwrap()))
                         .arg(format!(
@@ -380,7 +379,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .arg(format!("--attribute_spec={}", &attribute_spec))
                         .arg(format!("--geometric_error={}", &tile.geometric_error));
 
-                    if format == Formats::_3DTiles {
+                    if cli.format == Formats::_3DTiles {
                         // geof specific args
                         // colors
                         if !cli.color_building.is_none() {
@@ -737,6 +736,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let tileid_string = tileid.to_string();
                     let file_name = tileid_string;
                     let output_dir = path_output_tiles.join(&file_name);
+                    let output_file_stub = output_dir.join(tileid.fmt_dash());
+                    fs::create_dir_all(&output_dir).unwrap_or_else(|_| {
+                        panic!("should be able to create the directory {:?}", &output_dir)
+                    });
                     // We write the list of feature paths for a tile into a text file, instead of passing
                     // super long paths-string to the subprocess, because with very long arguments we can
                     // get an 'Argument list too long' error.
@@ -777,7 +780,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // TODO: maybe replace the subprocess carte with std::process to remove the dependency
                     let mut cmd = Exec::cmd(&subprocess_config.exe)
                         .arg(&subprocess_config.script)
-                        .arg(format!("--output_dir={}", &output_dir.to_str().unwrap()))
+                        .arg(format!(
+                            "--output_file={}",
+                            &output_file_stub.to_str().unwrap()
+                        ))
                         .arg(format!(
                             "--path_metadata={}",
                             &world.path_metadata.to_str().unwrap()
@@ -786,7 +792,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             "--path_features_input_file={}",
                             &path_features_input_file.to_str().unwrap()
                         ));
-                    // TODO: add TILE_CJ_OUTPUT
 
                     if log_enabled!(Level::Debug) {
                         cmd = cmd.arg("--verbose");

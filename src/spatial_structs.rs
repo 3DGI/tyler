@@ -256,9 +256,15 @@ impl QuadTreeNodeId {
     pub fn new(x: usize, y: usize, level: u16) -> Self {
         Self { x, y, level }
     }
+
+    /// Format the ID as `level-x-y`.
+    pub fn fmt_dash(&self) -> String {
+        format!("{}-{}-{}", self.level, self.x, self.y)
+    }
 }
 
 impl Display for QuadTreeNodeId {
+    /// Format the ID as `level/x/y`.
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}/{}/{}", self.level, self.x, self.y)
     }
