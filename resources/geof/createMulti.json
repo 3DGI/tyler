@@ -273,7 +273,7 @@
     "output_file": [
       "output (glb) file",
       "str",
-      "/dev/shm/3dtiles-terrain/tiles/6/28/23.glb"
+      "/dev/shm/test_all_out/tiles/0/0/0/0-0-0"
     ],
     "output_format": [
       "glb or city.json",
@@ -283,12 +283,12 @@
     "path_features_input_file": [
       "text file with on each line an input CityJSON feature path",
       "str",
-      "/dev/shm/3dtiles-terrain/inputs/6/28/23.input"
+      "/dev/shm/test_all_out/inputs/0/0/0.input"
     ],
     "path_metadata": [
       "CityJSON features metadata file",
       "str",
-      "/mnt/Data/LocalData/Kadaster/3dbasisvoorziening_dh/features/metadata.city.json"
+      "/dev/shm/test_all/0/metadata.json"
     ],
     "simplify_ratio": [
       "0-1 lower for more simplification",
@@ -328,13 +328,13 @@
         "TextReader"
       ]
     },
-    "CityJSONLinesWriter-x0gkpk": {
+    "CityJSONLinesWriter": {
       "marked_inputs": {
         "features": false,
         "first_line": false
       },
       "parameters": {
-        "filepath": "",
+        "filepath": "{{output_file}}.city.json",
         "optimal_lod": false,
         "prettyPrint": false
       },
@@ -582,13 +582,13 @@
       "connections": {
         "CJFeatureReader.value": [
           [
-            "CityJSONLinesWriter-x0gkpk",
+            "CityJSONLinesWriter",
             "features"
           ]
         ],
         "CJMetadata.value": [
           [
-            "CityJSONLinesWriter-x0gkpk",
+            "CityJSONLinesWriter",
             "first_line"
           ]
         ],
@@ -714,7 +714,7 @@
         "filepath": "process_feature_multi.json",
         "push_any_for_empty_sfterminal": false,
         "require_input_globals": true,
-        "require_input_wait": true
+        "require_input_wait": false
       },
       "position": [
         416.0,
