@@ -221,6 +221,7 @@ impl QuadTree {
         )
     }
 
+    /// Export the full quadtree.
     pub fn export(&self, grid: &SquareGrid) -> std::io::Result<()> {
         let mut file_grid = File::create("quadtree.tsv")?;
         let mut q = VecDeque::new();
@@ -239,6 +240,25 @@ impl QuadTree {
                 .expect("cannot write quadtree node");
             for child in &node.children {
                 q.push_back(child);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn export_leaves_with_data(&self, grid: &SquareGrid) -> std::io::Result<()> {
+        let mut file_leaves = File::create("quadtree_leaves_with_data.tsv")?;
+        let leaves = self.collect_leaves();
+        for leaf in leaves {
+            let nr_items_i64 = leaf.nr_items as i64;
+            if nr_items_i64 > 0 {
+                let wkt = leaf.to_wkt(&grid);
+                let tile_id = leaf.id.to_string();
+                file_leaves
+                    .write_all(
+                        format!("{}\t{}\t{}\t{}\n", tile_id, leaf.id.level, nr_items_i64, wkt)
+                            .as_bytes(),
+                    )
+                    .expect("cannot write quadtree leaf");
             }
         }
         Ok(())
