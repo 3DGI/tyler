@@ -122,13 +122,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let wkt = leaf.to_wkt(&world.grid);
         let tile_id = leaf.id.to_string();
         let nr_items_i64 = leaf.nr_items as i64;
-        client.execute(&statement_tiles, &[&tile_id, &nr_items_i64, &wkt])?;
+        if nr_items_i64 > 0 {
+            client.execute(&statement_tiles, &[&tile_id, &nr_items_i64, &wkt])?;
 
-        for cellid in leaf.cells() {
-            let cell = world.grid.cell(cellid);
-            for feature_id in &cell.feature_ids {
-                let pk = world.features[*feature_id].primary_key;
-                client.execute(&statement_index, &[&pk, &tile_id])?;
+            for cellid in leaf.cells() {
+                let cell = world.grid.cell(cellid);
+                for feature_id in &cell.feature_ids {
+                    let pk = world.features[*feature_id].primary_key;
+                    client.execute(&statement_index, &[&pk, &tile_id])?;
+                }
             }
         }
     }
