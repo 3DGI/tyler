@@ -7,6 +7,7 @@
 
 ### Added
 - Multi-format output, for outputting Wavefront OBJ, GeoPackage and CityJSON files from the generated tiles.
+- `--grid-export` includes the leaf information in the `quadtree.tsv`
 
 
 ## tyler 0.3.2 (2023-05-05)

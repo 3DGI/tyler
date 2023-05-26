@@ -227,7 +227,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if cli.grid_export {
         debug!("Exporting the quadtree to the working directory");
         quadtree.export(&world.grid)?;
-        quadtree.export_leaves_with_data(&world.grid)?;
     }
 
     // Export by calling a subprocess to merge the .jsonl files and convert them to the
