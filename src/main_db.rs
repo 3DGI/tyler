@@ -104,10 +104,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "CREATE TABLE {table_tiles} (tile_id text, cnt bigint, boundary geometry(Polygon, {}))",
         world.grid.epsg
     );
+    let q =
+        format!("COMMENT ON TABLE {table_tiles} IS 'Tile boundaries, generated with tyler-db.'",);
     client.batch_execute(&q)?;
     let q = format!(
         "CREATE TABLE {table_index} ({} int, tile_id text)",
         &cli.primary_key
+    );
+    client.batch_execute(&q)?;
+    let q = format!(
+        "COMMENT ON TABLE {table_index} IS 'Feature-Tile index, generated with tyler-db.'",
     );
     client.batch_execute(&q)?;
     let q_tiles = format!(

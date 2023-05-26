@@ -1354,7 +1354,7 @@ dependencies = [
 
 [[package]]
 name = "tyler"
-version = "0.3.4-db"
+version = "0.3.4-db-alpha3"
 dependencies = [
  "bitvec",
  "clap 4.0.32",
