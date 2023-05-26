@@ -115,23 +115,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         world.grid.epsg
     );
     let statement_tiles = client.prepare(&q_tiles)?;
-    let q_index = format!("INSERT INTO {table_index} VALUES ($1, $2)");
-    let statement_index = client.prepare(&q_index)?;
+    let statement_copy = client.prepare(format!("COPY {table_index} FROM STDIN").as_str())?;
+
     let leaves = quadtree.collect_leaves();
     for leaf in leaves {
         let wkt = leaf.to_wkt(&world.grid);
         let tile_id = leaf.id.to_string();
         let nr_items_i64 = leaf.nr_items as i64;
-        if nr_items_i64 > 0 {
-            client.execute(&statement_tiles, &[&tile_id, &nr_items_i64, &wkt])?;
-
-            for cellid in leaf.cells() {
-                let cell = world.grid.cell(cellid);
-                for feature_id in &cell.feature_ids {
-                    let pk = world.features[*feature_id].primary_key;
-                    client.execute(&statement_index, &[&pk, &tile_id])?;
-                }
+        let mut nr_features_inserted = 0;
+        let mut data = String::new();
+        for cellid in leaf.cells() {
+            let cell = world.grid.cell(cellid);
+            for feature_id in &cell.feature_ids {
+                let pk = world.features[*feature_id].primary_key;
+                data.push_str(format!("{}\t{}\n", &pk, &tile_id).as_str());
+                nr_features_inserted += 1;
             }
+        }
+        if nr_features_inserted > 0 {
+            let mut writer = client.copy_in(&statement_copy)?;
+            writer.write_all(data.as_bytes())?;
+            writer.finish()?;
+            client.execute(&statement_tiles, &[&tile_id, &nr_items_i64, &wkt])?;
         }
     }
     info!("Done");
