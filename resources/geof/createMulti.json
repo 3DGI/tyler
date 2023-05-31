@@ -507,6 +507,34 @@
         "OGRWriter"
       ]
     },
+    "OGRWriter-3D-LoD12-tri": {
+      "marked_inputs": {
+        "attributes": false,
+        "geometries": false
+      },
+      "parameters": {
+        "CRS": "{{OUTPUT_CRS}}",
+        "create_directories": true,
+        "do_transactions": false,
+        "filepath": "{{output_file}}-LoD12-2D-tri.gpkg",
+        "gdaldriver": "GPKG",
+        "layername": "geom",
+        "only_output_mapped_attrs": false,
+        "output_attribute_names": {},
+        "overwrite_file": true,
+        "overwrite_layer": false,
+        "require_attributes": true,
+        "transaction_batch_size_": 1000
+      },
+      "position": [
+        1421.0,
+        60.0
+      ],
+      "type": [
+        "io-gdal",
+        "OGRWriter"
+      ]
+    },
     "OGRWriter-3D-LoD13": {
       "marked_inputs": {
         "attributes": false,
@@ -529,6 +557,34 @@
       "position": [
         1300.0,
         186.0
+      ],
+      "type": [
+        "io-gdal",
+        "OGRWriter"
+      ]
+    },
+    "OGRWriter-3D-LoD13-tri": {
+      "marked_inputs": {
+        "attributes": false,
+        "geometries": false
+      },
+      "parameters": {
+        "CRS": "{{OUTPUT_CRS}}",
+        "create_directories": true,
+        "do_transactions": false,
+        "filepath": "{{output_file}}-LoD13-2D-tri.gpkg",
+        "gdaldriver": "GPKG",
+        "layername": "geom",
+        "only_output_mapped_attrs": false,
+        "output_attribute_names": {},
+        "overwrite_file": true,
+        "overwrite_layer": false,
+        "require_attributes": true,
+        "transaction_batch_size_": 1000
+      },
+      "position": [
+        1441.0,
+        187.0
       ],
       "type": [
         "io-gdal",
@@ -563,6 +619,34 @@
         "OGRWriter"
       ]
     },
+    "OGRWriter-3D-LoD22-tri": {
+      "marked_inputs": {
+        "attributes": false,
+        "geometries": false
+      },
+      "parameters": {
+        "CRS": "{{OUTPUT_CRS}}",
+        "create_directories": true,
+        "do_transactions": false,
+        "filepath": "{{output_file}}-LoD22-2D-tri.gpkg",
+        "gdaldriver": "GPKG",
+        "layername": "geom",
+        "only_output_mapped_attrs": false,
+        "output_attribute_names": {},
+        "overwrite_file": true,
+        "overwrite_layer": false,
+        "require_attributes": true,
+        "transaction_batch_size_": 1000
+      },
+      "position": [
+        1471.0,
+        323.0
+      ],
+      "type": [
+        "io-gdal",
+        "OGRWriter"
+      ]
+    },
     "processFeatures": {
       "connections": {
         "CJFeatureReader.value": [
@@ -588,6 +672,10 @@
           ],
           [
             "OGRWriter-3D-LoD12",
+            "attributes"
+          ],
+          [
+            "OGRWriter-3D-LoD12-tri",
             "attributes"
           ]
         ],
@@ -615,6 +703,10 @@
           [
             "OGRWriter-3D-LoD13",
             "attributes"
+          ],
+          [
+            "OGRWriter-3D-LoD13-tri",
+            "attributes"
           ]
         ],
         "CityJSONL2Mesh-LoD13.meshes": [
@@ -641,6 +733,10 @@
           [
             "OGRWriter-3D-LoD22",
             "attributes"
+          ],
+          [
+            "OGRWriter-3D-LoD22-tri",
+            "attributes"
           ]
         ],
         "CityJSONL2Mesh-LoD22.meshes": [
@@ -659,18 +755,30 @@
           [
             "OBJVecWriter-LoD12",
             "triangles"
+          ],
+          [
+            "OGRWriter-3D-LoD12-tri",
+            "geometries"
           ]
         ],
         "PolygonTriangulator-LoD13.multi_triangle_collections": [
           [
             "OBJVecWriter-LoD13",
             "triangles"
+          ],
+          [
+            "OGRWriter-3D-LoD13-tri",
+            "geometries"
           ]
         ],
         "PolygonTriangulator-LoD22.multi_triangle_collections": [
           [
             "OBJVecWriter-LoD22",
             "triangles"
+          ],
+          [
+            "OGRWriter-3D-LoD22-tri",
+            "geometries"
           ]
         ]
       },
