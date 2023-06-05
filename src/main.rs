@@ -187,7 +187,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let proj_data = match env::var("PROJ_DATA") {
         Ok(val) => {
-            debug!("PROJ_DATA: {val:?}");
+            debug!("PROJ_DATA: {}", &val);
             Some(val)
         }
         Err(val) => {

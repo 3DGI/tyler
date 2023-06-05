@@ -6,9 +6,11 @@
 - The `--format` argument is mandatory.
 
 ### Added
-- Multi-format output, for outputting Wavefront OBJ, GeoPackage and CityJSON files from the generated tiles.
+- Multi-format output with `--format multi`, for outputting Wavefront OBJ, GeoPackage and CityJSON files from the generated tiles.
 - `--grid-export` includes the leaf information in the `quadtree.tsv`
 
+### Fixed
+- Fixed infinite loop when there is no CityJSONFeature file in the `--features` directory.
 
 ## tyler 0.3.2 (2023-05-05)
 
