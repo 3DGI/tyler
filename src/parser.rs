@@ -102,7 +102,7 @@ impl World {
 
     /// Compute the extent (in quantized coordinates), the number of features and the
     /// CityObject types that are present in the data but not selected.
-    fn extent_qc<P: AsRef<Path>>(
+    fn extent_qc<P: AsRef<Path> + std::fmt::Debug>(
         path_features: P,
         cityobject_types: Option<&Vec<CityObjectType>>,
     ) -> (BboxQc, usize, Vec<CityObjectType>) {
@@ -139,6 +139,11 @@ impl World {
                 } else {
                     error!("Failed to parse {:?}", &feature_path)
                 }
+            } else {
+                panic!(
+                    "Did not find any CityJSONFeature file in {:?}",
+                    &path_features
+                );
             }
         }
         if !found_feature_type {
