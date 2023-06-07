@@ -241,11 +241,13 @@
         "multi_triangle_collections": true,
         "normals": false,
         "ring_ids": false,
-        "triangles": false
+        "triangles": false,
+        "volumes": true
       },
       "parameters": {
         "dupe_threshold_exp": 6,
-        "output_all_triangles": false
+        "output_all_triangles": false,
+        "output_mtc_for_every_input": true
       },
       "position": [
         881.0,
@@ -264,11 +266,13 @@
         "multi_triangle_collections": true,
         "normals": false,
         "ring_ids": false,
-        "triangles": false
+        "triangles": false,
+        "volumes": false
       },
       "parameters": {
         "dupe_threshold_exp": 6,
-        "output_all_triangles": false
+        "output_all_triangles": false,
+        "output_mtc_for_every_input": true
       },
       "position": [
         879.0,
@@ -287,11 +291,13 @@
         "multi_triangle_collections": true,
         "normals": false,
         "ring_ids": false,
-        "triangles": false
+        "triangles": false,
+        "volumes": false
       },
       "parameters": {
         "dupe_threshold_exp": 6,
-        "output_all_triangles": false
+        "output_all_triangles": false,
+        "output_mtc_for_every_input": true
       },
       "position": [
         877.0,
