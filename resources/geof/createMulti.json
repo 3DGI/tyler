@@ -85,8 +85,8 @@
         "min_z": "{{min_z}}"
       },
       "position": [
-        226.0,
-        172.0
+        223.0,
+        269.0
       ],
       "type": [
         "Core",
@@ -111,8 +111,46 @@
         "split": true
       },
       "position": [
-        208.0,
-        106.0
+        210.0,
+        197.0
+      ],
+      "type": [
+        "Core",
+        "TextReader"
+      ]
+    },
+    "CJMetadata": {
+      "connections": {
+        "value": [
+          [
+            "CityJSONLinesWriter",
+            "first_line"
+          ],
+          [
+            "processFeatures",
+            "CityJSONL2Mesh-LoD13.jsonl_metadata_str"
+          ],
+          [
+            "processFeatures",
+            "CityJSONL2Mesh-LoD22.jsonl_metadata_str"
+          ],
+          [
+            "processFeatures",
+            "CityJSONL2Mesh-LoD12.jsonl_metadata_str"
+          ]
+        ]
+      },
+      "marked_outputs": {
+        "value": true
+      },
+      "parameters": {
+        "filepath": "{{path_metadata}}",
+        "limit": 0,
+        "split": false
+      },
+      "position": [
+        212.0,
+        101.0
       ],
       "type": [
         "Core",
@@ -127,7 +165,8 @@
       "parameters": {
         "filepath": "{{output_file}}.city.json",
         "optimal_lod": false,
-        "prettyPrint": false
+        "prettyPrint": false,
+        "recompute_offset": true
       },
       "position": [
         1266.0,
@@ -461,12 +500,6 @@
             "features"
           ]
         ],
-        "CJMetadata.value": [
-          [
-            "CityJSONLinesWriter",
-            "first_line"
-          ]
-        ],
         "CityJSONL2Mesh-LoD12.attributes": [
           [
             "OBJVecWriter-LoD12",
@@ -589,12 +622,14 @@
         ]
       },
       "marked_inputs": {
+        "CityJSONL2Mesh-LoD12.jsonl_metadata_str": false,
+        "CityJSONL2Mesh-LoD13.jsonl_metadata_str": false,
+        "CityJSONL2Mesh-LoD22.jsonl_metadata_str": false,
         "processFeatures.globals": false,
         "processFeatures.wait": false
       },
       "marked_outputs": {
         "CJFeatureReader.value": false,
-        "CJMetadata.value": false,
         "CityJSONL2Mesh-LoD12.attributes": false,
         "CityJSONL2Mesh-LoD12.meshes": false,
         "CityJSONL2Mesh-LoD12.roofparts": false,

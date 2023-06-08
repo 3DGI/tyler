@@ -91,40 +91,6 @@
         "TextReader"
       ]
     },
-    "CJMetadata": {
-      "connections": {
-        "value": [
-          [
-            "CityJSONL2Mesh-LoD13",
-            "jsonl_metadata_str"
-          ],
-          [
-            "CityJSONL2Mesh-LoD12",
-            "jsonl_metadata_str"
-          ],
-          [
-            "CityJSONL2Mesh-LoD22",
-            "jsonl_metadata_str"
-          ]
-        ]
-      },
-      "marked_outputs": {
-        "value": true
-      },
-      "parameters": {
-        "filepath": "{{path_metadata}}",
-        "limit": 0,
-        "split": false
-      },
-      "position": [
-        250.0,
-        205.0
-      ],
-      "type": [
-        "Core",
-        "TextReader"
-      ]
-    },
     "CityJSONL2Mesh-LoD12": {
       "connections": {
         "meshes": [
@@ -136,7 +102,7 @@
       },
       "marked_inputs": {
         "jsonl_features_str": false,
-        "jsonl_metadata_str": false
+        "jsonl_metadata_str": true
       },
       "marked_outputs": {
         "attributes": true,
@@ -172,7 +138,7 @@
       },
       "marked_inputs": {
         "jsonl_features_str": false,
-        "jsonl_metadata_str": false
+        "jsonl_metadata_str": true
       },
       "marked_outputs": {
         "attributes": true,
@@ -208,7 +174,7 @@
       },
       "marked_inputs": {
         "jsonl_features_str": false,
-        "jsonl_metadata_str": false
+        "jsonl_metadata_str": true
       },
       "marked_outputs": {
         "attributes": true,
