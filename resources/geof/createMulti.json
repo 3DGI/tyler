@@ -10,216 +10,6 @@
       "str",
       "EPSG:7415"
     ],
-    "attribute_spec": [
-      "Attribute names and types to output. Format: <attribute_name>:<attribute_type>,... eg: name1:string,name2:int,name3:float,name",
-      "str",
-      "objectid:int,bronhouder:string,bgt_fysiekvoorkomen:string"
-    ],
-    "colorBridge": [
-      "colorBridge hex color (eg #AABBCC)",
-      "str",
-      "#4F4A6A"
-    ],
-    "colorBridgeConstructionElement": [
-      "colorBridgeConstructionElement hex color (eg #AABBCC)",
-      "str",
-      "#4F4A6A"
-    ],
-    "colorBridgeInstallation": [
-      "colorBridgeInstallation hex color (eg #AABBCC)",
-      "str",
-      "#4F4A6A"
-    ],
-    "colorBridgePart": [
-      "colorBridgePart hex color (eg #AABBCC)",
-      "str",
-      "#4F4A6A"
-    ],
-    "colorBuilding": [
-      "colorBuilding hex color (eg #AABBCC)",
-      "str",
-      "#EC7658"
-    ],
-    "colorBuildingInstallation": [
-      "colorBuildingInstallation hex color (eg #AABBCC)",
-      "str",
-      "#EC7658"
-    ],
-    "colorBuildingPart": [
-      "colorBuildingPart hex color (eg #AABBCC)",
-      "str",
-      "#EC7658"
-    ],
-    "colorCityFurniture": [
-      "colorCityFurniture hex color (eg #AABBCC)",
-      "str",
-      "#4F4A6A"
-    ],
-    "colorGenericCityObject": [
-      "colorGenericCityObject hex color (eg #AABBCC)",
-      "str",
-      "#4F4A6A"
-    ],
-    "colorLandUse": [
-      "colorLandUse hex color (eg #AABBCC)",
-      "str",
-      "#C3DBB5"
-    ],
-    "colorPlantCover": [
-      "colorPlantCover hex color (eg #AABBCC)",
-      "str",
-      "#A6CD59"
-    ],
-    "colorRailway": [
-      "colorRailway hex color (eg #AABBCC)",
-      "str",
-      "#474447"
-    ],
-    "colorRoad": [
-      "colorRoad hex color (eg #AABBCC)",
-      "str",
-      "#474447"
-    ],
-    "colorSolitaryVegetationObject": [
-      "colorSolitaryVegetationObject hex color (eg #AABBCC)",
-      "str",
-      "#A6CD59"
-    ],
-    "colorTINRelief": [
-      "colorTINRelief hex color (eg #AABBCC)",
-      "str",
-      "#A6CD59"
-    ],
-    "colorTransportSquare": [
-      "colorTransportSquare hex color (eg #AABBCC)",
-      "str",
-      "#474447"
-    ],
-    "colorTunnel": [
-      "colorTunnel hex color (eg #AABBCC)",
-      "str",
-      "#4F4A6A"
-    ],
-    "colorTunnelInstallation": [
-      "colorTunnelInstallation hex color (eg #AABBCC)",
-      "str",
-      "#4F4A6A"
-    ],
-    "colorTunnelPart": [
-      "colorTunnelPart hex color (eg #AABBCC)",
-      "str",
-      "#4F4A6A"
-    ],
-    "colorWaterBody": [
-      "colorWaterBody hex color (eg #AABBCC)",
-      "str",
-      "#293A4A"
-    ],
-    "cotypes": [
-      "comma separated list of cityobject types. Leave empty for no filter.",
-      "str",
-      "LandUse,PlantCover,WaterBody,Road,GenericCityObject,Bridge"
-    ],
-    "lodBridge": [
-      "lod filter for Bridge features",
-      "str",
-      ""
-    ],
-    "lodBridgeConstructionElement": [
-      "lod filter for BridgeConstructionElement features",
-      "str",
-      ""
-    ],
-    "lodBridgeInstallation": [
-      "lod filter for BridgeInstallation features",
-      "str",
-      ""
-    ],
-    "lodBridgePart": [
-      "lod filter for BridgePart features",
-      "str",
-      ""
-    ],
-    "lodBuilding": [
-      "lod filter for Building features",
-      "str",
-      ""
-    ],
-    "lodBuildingInstallation": [
-      "lod filter for BuildingInstallation features",
-      "str",
-      ""
-    ],
-    "lodBuildingPart": [
-      "lod filter for BuildingPart features",
-      "str",
-      ""
-    ],
-    "lodCityFurniture": [
-      "lod filter for CityFurniture features",
-      "str",
-      ""
-    ],
-    "lodGenericCityObject": [
-      "lod filter for GenericCityObject features",
-      "str",
-      ""
-    ],
-    "lodLandUse": [
-      "lod filter for LandUse features",
-      "str",
-      ""
-    ],
-    "lodPlantCover": [
-      "lod filter for PlantCover features",
-      "str",
-      ""
-    ],
-    "lodRailway": [
-      "lod filter for Railway features",
-      "str",
-      ""
-    ],
-    "lodRoad": [
-      "lod filter for Road features",
-      "str",
-      ""
-    ],
-    "lodSolitaryVegetationObject": [
-      "lod filter for SolitaryVegetationObject features",
-      "str",
-      ""
-    ],
-    "lodTINRelief": [
-      "lod filter for TINRelief features",
-      "str",
-      ""
-    ],
-    "lodTransportSquare": [
-      "lod filter for TransportSquare features",
-      "str",
-      ""
-    ],
-    "lodTunnel": [
-      "lod filter for Tunnel features",
-      "str",
-      ""
-    ],
-    "lodTunnelInstallation": [
-      "lod filter for TunnelInstallation features",
-      "str",
-      ""
-    ],
-    "lodTunnelPart": [
-      "lod filter for TunnelPart features",
-      "str",
-      ""
-    ],
-    "lodWaterBody": [
-      "lod filter for WaterBody features",
-      "str",
-      ""
-    ],
     "max_x": [
       "",
       "float",
@@ -234,11 +24,6 @@
       "",
       "float",
       310.0
-    ],
-    "metadata_class": [
-      "The name of the metadata class to create (for EXT_structural_metadata).",
-      "str",
-      "terrain"
     ],
     "min_x": [
       "",
@@ -258,7 +43,7 @@
     "output_file": [
       "output (glb) file",
       "str",
-      "/dev/shm/test_all_out/tiles/0/0/0/0-0-0"
+      "/fastssd/NL.IMBAG.Pand.0503100000005395/reconstruct/tyler/tiles/0/0/0/0-0-0"
     ],
     "output_format": [
       "glb or city.json",
@@ -268,25 +53,46 @@
     "path_features_input_file": [
       "text file with on each line an input CityJSON feature path",
       "str",
-      "/dev/shm/test_all_out/inputs/0/0/0.input"
+      "/fastssd/NL.IMBAG.Pand.0503100000005395/reconstruct/tyler/inputs/0/0/0.input"
     ],
     "path_metadata": [
       "CityJSON features metadata file",
       "str",
-      "/dev/shm/test_all/0/metadata.json"
-    ],
-    "simplify_ratio": [
-      "0-1 lower for more simplification",
-      "float",
-      0.05000000074505806
-    ],
-    "skip_clip": [
-      "",
-      "bool",
-      false
+      "/home/ravi/git/tyler/resources/geof/metadata.json"
     ]
   },
   "nodes": {
+    "Box": {
+      "connections": {
+        "ping": [
+          [
+            "processFeatures",
+            "processFeatures.wait"
+          ]
+        ]
+      },
+      "marked_outputs": {
+        "box": false,
+        "ping": false
+      },
+      "parameters": {
+        "inCRS": "epsg:7415",
+        "max_x": "{{max_x}}",
+        "max_y": "{{max_y}}",
+        "max_z": "{{max_z}}",
+        "min_x": "{{min_x}}",
+        "min_y": "{{min_y}}",
+        "min_z": "{{min_z}}"
+      },
+      "position": [
+        226.0,
+        172.0
+      ],
+      "type": [
+        "Core",
+        "Box"
+      ]
+    },
     "CJFeature_paths": {
       "connections": {
         "value": [
@@ -410,7 +216,7 @@
         "only_output_mapped_attrs": false,
         "output_attribute_names": {},
         "overwrite_file": true,
-        "overwrite_layer": false,
+        "overwrite_layer": true,
         "require_attributes": true,
         "transaction_batch_size_": 1000
       },
@@ -438,7 +244,7 @@
         "only_output_mapped_attrs": false,
         "output_attribute_names": {},
         "overwrite_file": true,
-        "overwrite_layer": false,
+        "overwrite_layer": true,
         "require_attributes": true,
         "transaction_batch_size_": 1000
       },
@@ -466,7 +272,7 @@
         "only_output_mapped_attrs": false,
         "output_attribute_names": {},
         "overwrite_file": true,
-        "overwrite_layer": false,
+        "overwrite_layer": true,
         "require_attributes": true,
         "transaction_batch_size_": 1000
       },
@@ -494,7 +300,7 @@
         "only_output_mapped_attrs": false,
         "output_attribute_names": {},
         "overwrite_file": true,
-        "overwrite_layer": false,
+        "overwrite_layer": true,
         "require_attributes": true,
         "transaction_batch_size_": 1000
       },
@@ -522,7 +328,7 @@
         "only_output_mapped_attrs": false,
         "output_attribute_names": {},
         "overwrite_file": true,
-        "overwrite_layer": false,
+        "overwrite_layer": true,
         "require_attributes": true,
         "transaction_batch_size_": 1000
       },
@@ -550,7 +356,7 @@
         "only_output_mapped_attrs": false,
         "output_attribute_names": {},
         "overwrite_file": true,
-        "overwrite_layer": false,
+        "overwrite_layer": true,
         "require_attributes": true,
         "transaction_batch_size_": 1000
       },
@@ -578,7 +384,7 @@
         "only_output_mapped_attrs": false,
         "output_attribute_names": {},
         "overwrite_file": true,
-        "overwrite_layer": false,
+        "overwrite_layer": true,
         "require_attributes": true,
         "transaction_batch_size_": 1000
       },
@@ -606,7 +412,7 @@
         "only_output_mapped_attrs": false,
         "output_attribute_names": {},
         "overwrite_file": true,
-        "overwrite_layer": false,
+        "overwrite_layer": true,
         "require_attributes": true,
         "transaction_batch_size_": 1000
       },
@@ -634,7 +440,7 @@
         "only_output_mapped_attrs": false,
         "output_attribute_names": {},
         "overwrite_file": true,
-        "overwrite_layer": false,
+        "overwrite_layer": true,
         "require_attributes": true,
         "transaction_batch_size_": 1000
       },
@@ -802,6 +608,7 @@
         "PolygonTriangulator-LoD12.volumes": false,
         "PolygonTriangulator-LoD13.multi_triangle_collections": false,
         "PolygonTriangulator-LoD22.multi_triangle_collections": false,
+        "PolygonTriangulator-LoD22.triangles": false,
         "processFeatures.timings": false
       },
       "parameters": {

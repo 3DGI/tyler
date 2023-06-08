@@ -218,7 +218,7 @@
       },
       "parameters": {
         "3bag_buildings_mode": true,
-        "atribute_spec": "{{attribute_spec}}",
+        "atribute_spec": "",
         "cotypes": "",
         "lod_filter": {},
         "optimal_lod": false,
@@ -291,7 +291,7 @@
         "multi_triangle_collections": true,
         "normals": false,
         "ring_ids": false,
-        "triangles": false,
+        "triangles": true,
         "volumes": false
       },
       "parameters": {
