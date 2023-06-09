@@ -95,9 +95,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let table_tiles = format!("{}.tiles", cli.output_schema);
     let table_index = format!("{}.index", cli.output_schema);
     if cli.drop_existing {
-        let q = format!("DROP TABLE IF EXISTS {table_tiles} CASCADE",);
-        client.batch_execute(&q)?;
         let q = format!("DROP TABLE IF EXISTS {table_index} CASCADE",);
+        client.batch_execute(&q)?;
+        let q = format!("DROP TABLE IF EXISTS {table_tiles} CASCADE",);
         client.batch_execute(&q)?;
     }
     let q = format!(
