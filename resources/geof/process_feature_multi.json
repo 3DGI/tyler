@@ -83,8 +83,42 @@
         "split": false
       },
       "position": [
-        252.0,
-        146.0
+        246.0,
+        224.0
+      ],
+      "type": [
+        "Core",
+        "TextReader"
+      ]
+    },
+    "CJMetadata": {
+      "connections": {
+        "value": [
+          [
+            "CityJSONL2Mesh-LoD13",
+            "jsonl_metadata_str"
+          ],
+          [
+            "CityJSONL2Mesh-LoD12",
+            "jsonl_metadata_str"
+          ],
+          [
+            "CityJSONL2Mesh-LoD22",
+            "jsonl_metadata_str"
+          ]
+        ]
+      },
+      "marked_outputs": {
+        "value": true
+      },
+      "parameters": {
+        "filepath": "{{path_metadata}}",
+        "limit": 0,
+        "split": false
+      },
+      "position": [
+        247.0,
+        283.0
       ],
       "type": [
         "Core",
@@ -102,7 +136,7 @@
       },
       "marked_inputs": {
         "jsonl_features_str": false,
-        "jsonl_metadata_str": true
+        "jsonl_metadata_str": false
       },
       "marked_outputs": {
         "attributes": true,
@@ -138,7 +172,7 @@
       },
       "marked_inputs": {
         "jsonl_features_str": false,
-        "jsonl_metadata_str": true
+        "jsonl_metadata_str": false
       },
       "marked_outputs": {
         "attributes": true,
@@ -174,7 +208,7 @@
       },
       "marked_inputs": {
         "jsonl_features_str": false,
-        "jsonl_metadata_str": true
+        "jsonl_metadata_str": false
       },
       "marked_outputs": {
         "attributes": true,
@@ -257,7 +291,7 @@
         "multi_triangle_collections": true,
         "normals": false,
         "ring_ids": false,
-        "triangles": true,
+        "triangles": false,
         "volumes": false
       },
       "parameters": {

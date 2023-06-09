@@ -119,44 +119,6 @@
         "TextReader"
       ]
     },
-    "CJMetadata": {
-      "connections": {
-        "value": [
-          [
-            "CityJSONLinesWriter",
-            "first_line"
-          ],
-          [
-            "processFeatures",
-            "CityJSONL2Mesh-LoD13.jsonl_metadata_str"
-          ],
-          [
-            "processFeatures",
-            "CityJSONL2Mesh-LoD22.jsonl_metadata_str"
-          ],
-          [
-            "processFeatures",
-            "CityJSONL2Mesh-LoD12.jsonl_metadata_str"
-          ]
-        ]
-      },
-      "marked_outputs": {
-        "value": true
-      },
-      "parameters": {
-        "filepath": "{{path_metadata}}",
-        "limit": 0,
-        "split": false
-      },
-      "position": [
-        212.0,
-        101.0
-      ],
-      "type": [
-        "Core",
-        "TextReader"
-      ]
-    },
     "CityJSONLinesWriter": {
       "marked_inputs": {
         "features": false,
@@ -500,6 +462,12 @@
             "features"
           ]
         ],
+        "CJMetadata.value": [
+          [
+            "CityJSONLinesWriter",
+            "first_line"
+          ]
+        ],
         "CityJSONL2Mesh-LoD12.attributes": [
           [
             "OBJVecWriter-LoD12",
@@ -630,6 +598,7 @@
       },
       "marked_outputs": {
         "CJFeatureReader.value": false,
+        "CJMetadata.value": false,
         "CityJSONL2Mesh-LoD12.attributes": false,
         "CityJSONL2Mesh-LoD12.meshes": false,
         "CityJSONL2Mesh-LoD12.roofparts": false,
