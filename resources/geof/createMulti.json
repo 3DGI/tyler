@@ -126,8 +126,8 @@
         "recompute_offset": true
       },
       "position": [
-        1266.0,
-        -74.0
+        1170.0,
+        -78.0
       ],
       "type": [
         "CoreIO",
@@ -208,51 +208,12 @@
         "do_transactions": false,
         "filepath": "{{output_file}}.gpkg",
         "gdaldriver": "GPKG",
-        "layername": "LoD12-2D",
+        "layername": "lod12_2d",
         "only_output_mapped_attrs": true,
         "output_attribute_names": {
-          "processFeatures.b3_dak_type": "b3_dak_type",
-          "processFeatures.b3_h_dak_50p": "b3_h_dak_50p",
-          "processFeatures.b3_h_dak_70p": "b3_h_dak_70p",
-          "processFeatures.b3_h_dak_max": "b3_h_dak_max",
-          "processFeatures.b3_h_dak_min": "b3_h_dak_min",
-          "processFeatures.b3_h_maaiveld": "b3_h_maaiveld",
-          "processFeatures.b3_kas_warenhuis": "b3_kas_warenhuis",
-          "processFeatures.b3_mutatie_ahn3_ahn4": "b3_mutatie_ahn3_ahn4",
-          "processFeatures.b3_nodata_fractie_ahn3": "b3_nodata_fractie_ahn3",
-          "processFeatures.b3_nodata_fractie_ahn4": "b3_nodata_fractie_ahn4",
-          "processFeatures.b3_nodata_radius_ahn3": "b3_nodata_radius_ahn3",
-          "processFeatures.b3_nodata_radius_ahn4": "b3_nodata_radius_ahn4",
-          "processFeatures.b3_puntdichtheid_ahn3": "b3_puntdichtheid_ahn3",
-          "processFeatures.b3_puntdichtheid_ahn4": "b3_puntdichtheid_ahn4",
-          "processFeatures.b3_pw_datum": "b3_pw_datum",
-          "processFeatures.b3_pw_selectie_reden": "b3_pw_selectie_reden",
-          "processFeatures.b3_reconstructie_onvolledig": "b3_reconstructie_onvolledig",
-          "processFeatures.b3_rmse_lod12": "b3_rmse_lod12",
-          "processFeatures.b3_rmse_lod13": "b3_rmse_lod13",
-          "processFeatures.b3_rmse_lod22": "b3_rmse_lod22",
-          "processFeatures.b3_val3dity_lod12": "b3_val3dity_lod12",
-          "processFeatures.b3_val3dity_lod13": "b3_val3dity_lod13",
-          "processFeatures.b3_val3dity_lod22": "b3_val3dity_lod22",
-          "processFeatures.b3_volume_lod12": "b3_volume_lod12",
-          "processFeatures.b3_volume_lod13": "b3_volume_lod13",
-          "processFeatures.b3_volume_lod22": "b3_volume_lod22",
-          "processFeatures.begingeldigheid": "begingeldigheid",
-          "processFeatures.documentdatum": "documentdatum",
-          "processFeatures.documentnummer": "documentnummer",
-          "processFeatures.eindgeldigheid": "eindgeldigheid",
-          "processFeatures.eindregistratie": "eindregistratie",
-          "processFeatures.geconstateerd": "geconstateerd",
+          "processFeatures.dak_deel_id": "b3_dd_id",
           "processFeatures.identificatie": "identificatie",
-          "processFeatures.oorspronkelijkbouwjaar": "oorspronkelijkbouwjaar",
-          "processFeatures.status": "status",
-          "processFeatures.tijdstipeindregistratielv": "tijdstipeindregistratielv",
-          "processFeatures.tijdstipinactief": "tijdstipinactief",
-          "processFeatures.tijdstipinactieflv": "tijdstipinactieflv",
-          "processFeatures.tijdstipnietbaglv": "tijdstipnietbaglv",
-          "processFeatures.tijdstipregistratie": "tijdstipregistratie",
-          "processFeatures.tijdstipregistratielv": "tijdstipregistratielv",
-          "processFeatures.voorkomenidentificatie": "voorkomenidentificatie"
+          "processFeatures.pand_deel_id": "b3_pand_deel_id"
         },
         "overwrite_file": false,
         "overwrite_layer": true,
@@ -260,8 +221,8 @@
         "transaction_batch_size_": 1000
       },
       "position": [
-        1268.0,
-        123.0
+        1516.0,
+        -9.0
       ],
       "type": [
         "io-gdal",
@@ -279,51 +240,12 @@
         "do_transactions": false,
         "filepath": "{{output_file}}.gpkg",
         "gdaldriver": "GPKG",
-        "layername": "LoD13-2D",
+        "layername": "lod13_2d",
         "only_output_mapped_attrs": true,
         "output_attribute_names": {
-          "processFeatures.b3_dak_type": "b3_dak_type",
-          "processFeatures.b3_h_dak_50p": "b3_h_dak_50p",
-          "processFeatures.b3_h_dak_70p": "b3_h_dak_70p",
-          "processFeatures.b3_h_dak_max": "b3_h_dak_max",
-          "processFeatures.b3_h_dak_min": "b3_h_dak_min",
-          "processFeatures.b3_h_maaiveld": "b3_h_maaiveld",
-          "processFeatures.b3_kas_warenhuis": "b3_kas_warenhuis",
-          "processFeatures.b3_mutatie_ahn3_ahn4": "b3_mutatie_ahn3_ahn4",
-          "processFeatures.b3_nodata_fractie_ahn3": "b3_nodata_fractie_ahn3",
-          "processFeatures.b3_nodata_fractie_ahn4": "b3_nodata_fractie_ahn4",
-          "processFeatures.b3_nodata_radius_ahn3": "b3_nodata_radius_ahn3",
-          "processFeatures.b3_nodata_radius_ahn4": "b3_nodata_radius_ahn4",
-          "processFeatures.b3_puntdichtheid_ahn3": "b3_puntdichtheid_ahn3",
-          "processFeatures.b3_puntdichtheid_ahn4": "b3_puntdichtheid_ahn4",
-          "processFeatures.b3_pw_datum": "b3_pw_datum",
-          "processFeatures.b3_pw_selectie_reden": "b3_pw_selectie_reden",
-          "processFeatures.b3_reconstructie_onvolledig": "b3_reconstructie_onvolledig",
-          "processFeatures.b3_rmse_lod12": "b3_rmse_lod12",
-          "processFeatures.b3_rmse_lod13": "b3_rmse_lod13",
-          "processFeatures.b3_rmse_lod22": "b3_rmse_lod22",
-          "processFeatures.b3_val3dity_lod12": "b3_val3dity_lod12",
-          "processFeatures.b3_val3dity_lod13": "b3_val3dity_lod13",
-          "processFeatures.b3_val3dity_lod22": "b3_val3dity_lod22",
-          "processFeatures.b3_volume_lod12": "b3_volume_lod12",
-          "processFeatures.b3_volume_lod13": "b3_volume_lod13",
-          "processFeatures.b3_volume_lod22": "b3_volume_lod22",
-          "processFeatures.begingeldigheid": "begingeldigheid",
-          "processFeatures.documentdatum": "documentdatum",
-          "processFeatures.documentnummer": "documentnummer",
-          "processFeatures.eindgeldigheid": "eindgeldigheid",
-          "processFeatures.eindregistratie": "eindregistratie",
-          "processFeatures.geconstateerd": "geconstateerd",
+          "processFeatures.dak_deel_id": "b3_dd_id",
           "processFeatures.identificatie": "identificatie",
-          "processFeatures.oorspronkelijkbouwjaar": "oorspronkelijkbouwjaar",
-          "processFeatures.status": "status",
-          "processFeatures.tijdstipeindregistratielv": "tijdstipeindregistratielv",
-          "processFeatures.tijdstipinactief": "tijdstipinactief",
-          "processFeatures.tijdstipinactieflv": "tijdstipinactieflv",
-          "processFeatures.tijdstipnietbaglv": "tijdstipnietbaglv",
-          "processFeatures.tijdstipregistratie": "tijdstipregistratie",
-          "processFeatures.tijdstipregistratielv": "tijdstipregistratielv",
-          "processFeatures.voorkomenidentificatie": "voorkomenidentificatie"
+          "processFeatures.pand_deel_id": "b3_pand_deel_id"
         },
         "overwrite_file": false,
         "overwrite_layer": true,
@@ -331,8 +253,8 @@
         "transaction_batch_size_": 1000
       },
       "position": [
-        1297.0,
-        249.0
+        1516.0,
+        50.0
       ],
       "type": [
         "io-gdal",
@@ -350,51 +272,12 @@
         "do_transactions": false,
         "filepath": "{{output_file}}.gpkg",
         "gdaldriver": "GPKG",
-        "layername": "LoD22-2D",
+        "layername": "lod22_2d",
         "only_output_mapped_attrs": true,
         "output_attribute_names": {
-          "processFeatures.b3_dak_type": "b3_dak_type",
-          "processFeatures.b3_h_dak_50p": "b3_h_dak_50p",
-          "processFeatures.b3_h_dak_70p": "b3_h_dak_70p",
-          "processFeatures.b3_h_dak_max": "b3_h_dak_max",
-          "processFeatures.b3_h_dak_min": "b3_h_dak_min",
-          "processFeatures.b3_h_maaiveld": "b3_h_maaiveld",
-          "processFeatures.b3_kas_warenhuis": "b3_kas_warenhuis",
-          "processFeatures.b3_mutatie_ahn3_ahn4": "b3_mutatie_ahn3_ahn4",
-          "processFeatures.b3_nodata_fractie_ahn3": "b3_nodata_fractie_ahn3",
-          "processFeatures.b3_nodata_fractie_ahn4": "b3_nodata_fractie_ahn4",
-          "processFeatures.b3_nodata_radius_ahn3": "b3_nodata_radius_ahn3",
-          "processFeatures.b3_nodata_radius_ahn4": "b3_nodata_radius_ahn4",
-          "processFeatures.b3_puntdichtheid_ahn3": "b3_puntdichtheid_ahn3",
-          "processFeatures.b3_puntdichtheid_ahn4": "b3_puntdichtheid_ahn4",
-          "processFeatures.b3_pw_datum": "b3_pw_datum",
-          "processFeatures.b3_pw_selectie_reden": "b3_pw_selectie_reden",
-          "processFeatures.b3_reconstructie_onvolledig": "b3_reconstructie_onvolledig",
-          "processFeatures.b3_rmse_lod12": "b3_rmse_lod12",
-          "processFeatures.b3_rmse_lod13": "b3_rmse_lod13",
-          "processFeatures.b3_rmse_lod22": "b3_rmse_lod22",
-          "processFeatures.b3_val3dity_lod12": "b3_val3dity_lod12",
-          "processFeatures.b3_val3dity_lod13": "b3_val3dity_lod13",
-          "processFeatures.b3_val3dity_lod22": "b3_val3dity_lod22",
-          "processFeatures.b3_volume_lod12": "b3_volume_lod12",
-          "processFeatures.b3_volume_lod13": "b3_volume_lod13",
-          "processFeatures.b3_volume_lod22": "b3_volume_lod22",
-          "processFeatures.begingeldigheid": "begingeldigheid",
-          "processFeatures.documentdatum": "documentdatum",
-          "processFeatures.documentnummer": "documentnummer",
-          "processFeatures.eindgeldigheid": "eindgeldigheid",
-          "processFeatures.eindregistratie": "eindregistratie",
-          "processFeatures.geconstateerd": "geconstateerd",
+          "processFeatures.dak_deel_id": "b3_dd_id",
           "processFeatures.identificatie": "identificatie",
-          "processFeatures.oorspronkelijkbouwjaar": "oorspronkelijkbouwjaar",
-          "processFeatures.status": "status",
-          "processFeatures.tijdstipeindregistratielv": "tijdstipeindregistratielv",
-          "processFeatures.tijdstipinactief": "tijdstipinactief",
-          "processFeatures.tijdstipinactieflv": "tijdstipinactieflv",
-          "processFeatures.tijdstipnietbaglv": "tijdstipnietbaglv",
-          "processFeatures.tijdstipregistratie": "tijdstipregistratie",
-          "processFeatures.tijdstipregistratielv": "tijdstipregistratielv",
-          "processFeatures.voorkomenidentificatie": "voorkomenidentificatie"
+          "processFeatures.pand_deel_id": "b3_pand_deel_id"
         },
         "overwrite_file": false,
         "overwrite_layer": true,
@@ -402,8 +285,8 @@
         "transaction_batch_size_": 1000
       },
       "position": [
-        1327.0,
-        383.0
+        1515.0,
+        107.0
       ],
       "type": [
         "io-gdal",
@@ -421,51 +304,11 @@
         "do_transactions": false,
         "filepath": "{{output_file}}.gpkg",
         "gdaldriver": "GPKG",
-        "layername": "LoD12-3D",
+        "layername": "lod12_3d",
         "only_output_mapped_attrs": true,
         "output_attribute_names": {
-          "processFeatures.b3_dak_type": "b3_dak_type",
-          "processFeatures.b3_h_dak_50p": "b3_h_dak_50p",
-          "processFeatures.b3_h_dak_70p": "b3_h_dak_70p",
-          "processFeatures.b3_h_dak_max": "b3_h_dak_max",
-          "processFeatures.b3_h_dak_min": "b3_h_dak_min",
-          "processFeatures.b3_h_maaiveld": "b3_h_maaiveld",
-          "processFeatures.b3_kas_warenhuis": "b3_kas_warenhuis",
-          "processFeatures.b3_mutatie_ahn3_ahn4": "b3_mutatie_ahn3_ahn4",
-          "processFeatures.b3_nodata_fractie_ahn3": "b3_nodata_fractie_ahn3",
-          "processFeatures.b3_nodata_fractie_ahn4": "b3_nodata_fractie_ahn4",
-          "processFeatures.b3_nodata_radius_ahn3": "b3_nodata_radius_ahn3",
-          "processFeatures.b3_nodata_radius_ahn4": "b3_nodata_radius_ahn4",
-          "processFeatures.b3_puntdichtheid_ahn3": "b3_puntdichtheid_ahn3",
-          "processFeatures.b3_puntdichtheid_ahn4": "b3_puntdichtheid_ahn4",
-          "processFeatures.b3_pw_datum": "b3_pw_datum",
-          "processFeatures.b3_pw_selectie_reden": "b3_pw_selectie_reden",
-          "processFeatures.b3_reconstructie_onvolledig": "b3_reconstructie_onvolledig",
-          "processFeatures.b3_rmse_lod12": "b3_rmse_lod12",
-          "processFeatures.b3_rmse_lod13": "b3_rmse_lod13",
-          "processFeatures.b3_rmse_lod22": "b3_rmse_lod22",
-          "processFeatures.b3_val3dity_lod12": "b3_val3dity_lod12",
-          "processFeatures.b3_val3dity_lod13": "b3_val3dity_lod13",
-          "processFeatures.b3_val3dity_lod22": "b3_val3dity_lod22",
-          "processFeatures.b3_volume_lod12": "b3_volume_lod12",
-          "processFeatures.b3_volume_lod13": "b3_volume_lod13",
-          "processFeatures.b3_volume_lod22": "b3_volume_lod22",
-          "processFeatures.begingeldigheid": "begingeldigheid",
-          "processFeatures.documentdatum": "documentdatum",
-          "processFeatures.documentnummer": "documentnummer",
-          "processFeatures.eindgeldigheid": "eindgeldigheid",
-          "processFeatures.eindregistratie": "eindregistratie",
-          "processFeatures.geconstateerd": "geconstateerd",
           "processFeatures.identificatie": "identificatie",
-          "processFeatures.oorspronkelijkbouwjaar": "oorspronkelijkbouwjaar",
-          "processFeatures.status": "status",
-          "processFeatures.tijdstipeindregistratielv": "tijdstipeindregistratielv",
-          "processFeatures.tijdstipinactief": "tijdstipinactief",
-          "processFeatures.tijdstipinactieflv": "tijdstipinactieflv",
-          "processFeatures.tijdstipnietbaglv": "tijdstipnietbaglv",
-          "processFeatures.tijdstipregistratie": "tijdstipregistratie",
-          "processFeatures.tijdstipregistratielv": "tijdstipregistratielv",
-          "processFeatures.voorkomenidentificatie": "voorkomenidentificatie"
+          "processFeatures.pand_deel_id": "b3_pand_deel_id"
         },
         "overwrite_file": false,
         "overwrite_layer": true,
@@ -473,8 +316,8 @@
         "transaction_batch_size_": 1000
       },
       "position": [
-        1272.0,
-        62.0
+        1554.0,
+        421.0
       ],
       "type": [
         "io-gdal",
@@ -544,7 +387,7 @@
         "transaction_batch_size_": 1000
       },
       "position": [
-        1636.0,
+        1642.0,
         219.0
       ],
       "type": [
@@ -563,51 +406,11 @@
         "do_transactions": false,
         "filepath": "{{output_file}}.gpkg",
         "gdaldriver": "GPKG",
-        "layername": "LoD13-3D",
+        "layername": "lod13_3d",
         "only_output_mapped_attrs": true,
         "output_attribute_names": {
-          "processFeatures.b3_dak_type": "b3_dak_type",
-          "processFeatures.b3_h_dak_50p": "b3_h_dak_50p",
-          "processFeatures.b3_h_dak_70p": "b3_h_dak_70p",
-          "processFeatures.b3_h_dak_max": "b3_h_dak_max",
-          "processFeatures.b3_h_dak_min": "b3_h_dak_min",
-          "processFeatures.b3_h_maaiveld": "b3_h_maaiveld",
-          "processFeatures.b3_kas_warenhuis": "b3_kas_warenhuis",
-          "processFeatures.b3_mutatie_ahn3_ahn4": "b3_mutatie_ahn3_ahn4",
-          "processFeatures.b3_nodata_fractie_ahn3": "b3_nodata_fractie_ahn3",
-          "processFeatures.b3_nodata_fractie_ahn4": "b3_nodata_fractie_ahn4",
-          "processFeatures.b3_nodata_radius_ahn3": "b3_nodata_radius_ahn3",
-          "processFeatures.b3_nodata_radius_ahn4": "b3_nodata_radius_ahn4",
-          "processFeatures.b3_puntdichtheid_ahn3": "b3_puntdichtheid_ahn3",
-          "processFeatures.b3_puntdichtheid_ahn4": "b3_puntdichtheid_ahn4",
-          "processFeatures.b3_pw_datum": "b3_pw_datum",
-          "processFeatures.b3_pw_selectie_reden": "b3_pw_selectie_reden",
-          "processFeatures.b3_reconstructie_onvolledig": "b3_reconstructie_onvolledig",
-          "processFeatures.b3_rmse_lod12": "b3_rmse_lod12",
-          "processFeatures.b3_rmse_lod13": "b3_rmse_lod13",
-          "processFeatures.b3_rmse_lod22": "b3_rmse_lod22",
-          "processFeatures.b3_val3dity_lod12": "b3_val3dity_lod12",
-          "processFeatures.b3_val3dity_lod13": "b3_val3dity_lod13",
-          "processFeatures.b3_val3dity_lod22": "b3_val3dity_lod22",
-          "processFeatures.b3_volume_lod12": "b3_volume_lod12",
-          "processFeatures.b3_volume_lod13": "b3_volume_lod13",
-          "processFeatures.b3_volume_lod22": "b3_volume_lod22",
-          "processFeatures.begingeldigheid": "begingeldigheid",
-          "processFeatures.documentdatum": "documentdatum",
-          "processFeatures.documentnummer": "documentnummer",
-          "processFeatures.eindgeldigheid": "eindgeldigheid",
-          "processFeatures.eindregistratie": "eindregistratie",
-          "processFeatures.geconstateerd": "geconstateerd",
           "processFeatures.identificatie": "identificatie",
-          "processFeatures.oorspronkelijkbouwjaar": "oorspronkelijkbouwjaar",
-          "processFeatures.status": "status",
-          "processFeatures.tijdstipeindregistratielv": "tijdstipeindregistratielv",
-          "processFeatures.tijdstipinactief": "tijdstipinactief",
-          "processFeatures.tijdstipinactieflv": "tijdstipinactieflv",
-          "processFeatures.tijdstipnietbaglv": "tijdstipnietbaglv",
-          "processFeatures.tijdstipregistratie": "tijdstipregistratie",
-          "processFeatures.tijdstipregistratielv": "tijdstipregistratielv",
-          "processFeatures.voorkomenidentificatie": "voorkomenidentificatie"
+          "processFeatures.pand_deel_id": "b3_pand_deel_id"
         },
         "overwrite_file": false,
         "overwrite_layer": true,
@@ -615,8 +418,8 @@
         "transaction_batch_size_": 1000
       },
       "position": [
-        1300.0,
-        186.0
+        1554.0,
+        484.0
       ],
       "type": [
         "io-gdal",
@@ -705,51 +508,11 @@
         "do_transactions": false,
         "filepath": "{{output_file}}.gpkg",
         "gdaldriver": "GPKG",
-        "layername": "LoD22-3D",
+        "layername": "lod22_3d",
         "only_output_mapped_attrs": true,
         "output_attribute_names": {
-          "processFeatures.b3_dak_type": "b3_dak_type",
-          "processFeatures.b3_h_dak_50p": "b3_h_dak_50p",
-          "processFeatures.b3_h_dak_70p": "b3_h_dak_70p",
-          "processFeatures.b3_h_dak_max": "b3_h_dak_max",
-          "processFeatures.b3_h_dak_min": "b3_h_dak_min",
-          "processFeatures.b3_h_maaiveld": "b3_h_maaiveld",
-          "processFeatures.b3_kas_warenhuis": "b3_kas_warenhuis",
-          "processFeatures.b3_mutatie_ahn3_ahn4": "b3_mutatie_ahn3_ahn4",
-          "processFeatures.b3_nodata_fractie_ahn3": "b3_nodata_fractie_ahn3",
-          "processFeatures.b3_nodata_fractie_ahn4": "b3_nodata_fractie_ahn4",
-          "processFeatures.b3_nodata_radius_ahn3": "b3_nodata_radius_ahn3",
-          "processFeatures.b3_nodata_radius_ahn4": "b3_nodata_radius_ahn4",
-          "processFeatures.b3_puntdichtheid_ahn3": "b3_puntdichtheid_ahn3",
-          "processFeatures.b3_puntdichtheid_ahn4": "b3_puntdichtheid_ahn4",
-          "processFeatures.b3_pw_datum": "b3_pw_datum",
-          "processFeatures.b3_pw_selectie_reden": "b3_pw_selectie_reden",
-          "processFeatures.b3_reconstructie_onvolledig": "b3_reconstructie_onvolledig",
-          "processFeatures.b3_rmse_lod12": "b3_rmse_lod12",
-          "processFeatures.b3_rmse_lod13": "b3_rmse_lod13",
-          "processFeatures.b3_rmse_lod22": "b3_rmse_lod22",
-          "processFeatures.b3_val3dity_lod12": "b3_val3dity_lod12",
-          "processFeatures.b3_val3dity_lod13": "b3_val3dity_lod13",
-          "processFeatures.b3_val3dity_lod22": "b3_val3dity_lod22",
-          "processFeatures.b3_volume_lod12": "b3_volume_lod12",
-          "processFeatures.b3_volume_lod13": "b3_volume_lod13",
-          "processFeatures.b3_volume_lod22": "b3_volume_lod22",
-          "processFeatures.begingeldigheid": "begingeldigheid",
-          "processFeatures.documentdatum": "documentdatum",
-          "processFeatures.documentnummer": "documentnummer",
-          "processFeatures.eindgeldigheid": "eindgeldigheid",
-          "processFeatures.eindregistratie": "eindregistratie",
-          "processFeatures.geconstateerd": "geconstateerd",
           "processFeatures.identificatie": "identificatie",
-          "processFeatures.oorspronkelijkbouwjaar": "oorspronkelijkbouwjaar",
-          "processFeatures.status": "status",
-          "processFeatures.tijdstipeindregistratielv": "tijdstipeindregistratielv",
-          "processFeatures.tijdstipinactief": "tijdstipinactief",
-          "processFeatures.tijdstipinactieflv": "tijdstipinactieflv",
-          "processFeatures.tijdstipnietbaglv": "tijdstipnietbaglv",
-          "processFeatures.tijdstipregistratie": "tijdstipregistratie",
-          "processFeatures.tijdstipregistratielv": "tijdstipregistratielv",
-          "processFeatures.voorkomenidentificatie": "voorkomenidentificatie"
+          "processFeatures.pand_deel_id": "b3_pand_deel_id"
         },
         "overwrite_file": false,
         "overwrite_layer": true,
@@ -757,8 +520,8 @@
         "transaction_batch_size_": 1000
       },
       "position": [
-        1328.0,
-        321.0
+        1556.0,
+        549.0
       ],
       "type": [
         "io-gdal",
@@ -828,8 +591,79 @@
         "transaction_batch_size_": 1000
       },
       "position": [
-        1637.0,
-        339.0
+        1643.0,
+        345.0
+      ],
+      "type": [
+        "io-gdal",
+        "OGRWriter"
+      ]
+    },
+    "OGRWriter-pand": {
+      "marked_inputs": {
+        "attributes": false,
+        "geometries": false
+      },
+      "parameters": {
+        "CRS": "{{OUTPUT_CRS}}",
+        "create_directories": true,
+        "do_transactions": false,
+        "filepath": "{{output_file}}.gpkg",
+        "gdaldriver": "GPKG",
+        "layername": "pand",
+        "only_output_mapped_attrs": true,
+        "output_attribute_names": {
+          "processFeatures.b3_dak_type": "b3_dak_type",
+          "processFeatures.b3_h_dak_50p": "b3_h_dak_50p",
+          "processFeatures.b3_h_dak_70p": "b3_h_dak_70p",
+          "processFeatures.b3_h_dak_max": "b3_h_dak_max",
+          "processFeatures.b3_h_dak_min": "b3_h_dak_min",
+          "processFeatures.b3_h_maaiveld": "b3_h_maaiveld",
+          "processFeatures.b3_kas_warenhuis": "b3_kas_warenhuis",
+          "processFeatures.b3_mutatie_ahn3_ahn4": "b3_mutatie_ahn3_ahn4",
+          "processFeatures.b3_nodata_fractie_ahn3": "b3_nodata_fractie_ahn3",
+          "processFeatures.b3_nodata_fractie_ahn4": "b3_nodata_fractie_ahn4",
+          "processFeatures.b3_nodata_radius_ahn3": "b3_nodata_radius_ahn3",
+          "processFeatures.b3_nodata_radius_ahn4": "b3_nodata_radius_ahn4",
+          "processFeatures.b3_puntdichtheid_ahn3": "b3_puntdichtheid_ahn3",
+          "processFeatures.b3_puntdichtheid_ahn4": "b3_puntdichtheid_ahn4",
+          "processFeatures.b3_pw_datum": "b3_pw_datum",
+          "processFeatures.b3_pw_selectie_reden": "b3_pw_selectie_reden",
+          "processFeatures.b3_reconstructie_onvolledig": "b3_reconstructie_onvolledig",
+          "processFeatures.b3_rmse_lod12": "b3_rmse_lod12",
+          "processFeatures.b3_rmse_lod13": "b3_rmse_lod13",
+          "processFeatures.b3_rmse_lod22": "b3_rmse_lod22",
+          "processFeatures.b3_val3dity_lod12": "b3_val3dity_lod12",
+          "processFeatures.b3_val3dity_lod13": "b3_val3dity_lod13",
+          "processFeatures.b3_val3dity_lod22": "b3_val3dity_lod22",
+          "processFeatures.b3_volume_lod12": "b3_volume_lod12",
+          "processFeatures.b3_volume_lod13": "b3_volume_lod13",
+          "processFeatures.b3_volume_lod22": "b3_volume_lod22",
+          "processFeatures.begingeldigheid": "begingeldigheid",
+          "processFeatures.documentdatum": "documentdatum",
+          "processFeatures.documentnummer": "documentnummer",
+          "processFeatures.eindgeldigheid": "eindgeldigheid",
+          "processFeatures.eindregistratie": "eindregistratie",
+          "processFeatures.geconstateerd": "geconstateerd",
+          "processFeatures.identificatie": "identificatie",
+          "processFeatures.oorspronkelijkbouwjaar": "oorspronkelijkbouwjaar",
+          "processFeatures.status": "status",
+          "processFeatures.tijdstipeindregistratielv": "tijdstipeindregistratielv",
+          "processFeatures.tijdstipinactief": "tijdstipinactief",
+          "processFeatures.tijdstipinactieflv": "tijdstipinactieflv",
+          "processFeatures.tijdstipnietbaglv": "tijdstipnietbaglv",
+          "processFeatures.tijdstipregistratie": "tijdstipregistratie",
+          "processFeatures.tijdstipregistratielv": "tijdstipregistratielv",
+          "processFeatures.voorkomenidentificatie": "voorkomenidentificatie"
+        },
+        "overwrite_file": false,
+        "overwrite_layer": true,
+        "require_attributes": true,
+        "transaction_batch_size_": 1000
+      },
+      "position": [
+        1268.0,
+        7.0
       ],
       "type": [
         "io-gdal",
@@ -852,20 +686,14 @@
         ],
         "CityJSONL2Mesh-LoD12.attributes": [
           [
-            "OBJVecWriter-LoD12",
+            "OGRWriter-pand",
             "attributes"
-          ],
+          ]
+        ],
+        "CityJSONL2Mesh-LoD12.lod0_2d": [
           [
-            "OGRWriter-2D-LoD12",
-            "attributes"
-          ],
-          [
-            "OGRWriter-3D-LoD12",
-            "attributes"
-          ],
-          [
-            "OGRWriter-3D-LoD12-tri",
-            "attributes"
+            "OGRWriter-pand",
+            "geometries"
           ]
         ],
         "CityJSONL2Mesh-LoD12.meshes": [
@@ -874,27 +702,25 @@
             "geometries"
           ]
         ],
-        "CityJSONL2Mesh-LoD12.roofparts": [
+        "CityJSONL2Mesh-LoD12.meshes_attributes": [
+          [
+            "OBJVecWriter-LoD12",
+            "attributes"
+          ],
+          [
+            "OGRWriter-3D-LoD12",
+            "attributes"
+          ]
+        ],
+        "CityJSONL2Mesh-LoD12.roofparts_lr": [
           [
             "OGRWriter-2D-LoD12",
             "geometries"
           ]
         ],
-        "CityJSONL2Mesh-LoD13.attributes": [
+        "CityJSONL2Mesh-LoD12.roofparts_lr_attributes": [
           [
-            "OBJVecWriter-LoD13",
-            "attributes"
-          ],
-          [
-            "OGRWriter-2D-LoD13",
-            "attributes"
-          ],
-          [
-            "OGRWriter-3D-LoD13",
-            "attributes"
-          ],
-          [
-            "OGRWriter-3D-LoD13-tri",
+            "OGRWriter-2D-LoD12",
             "attributes"
           ]
         ],
@@ -904,23 +730,35 @@
             "geometries"
           ]
         ],
-        "CityJSONL2Mesh-LoD13.roofparts": [
+        "CityJSONL2Mesh-LoD13.meshes_attributes": [
+          [
+            "OBJVecWriter-LoD13",
+            "attributes"
+          ],
+          [
+            "OGRWriter-3D-LoD13",
+            "attributes"
+          ]
+        ],
+        "CityJSONL2Mesh-LoD13.roofparts_lr": [
           [
             "OGRWriter-2D-LoD13",
             "geometries"
           ]
         ],
+        "CityJSONL2Mesh-LoD13.roofparts_lr_attributes": [
+          [
+            "OGRWriter-2D-LoD13",
+            "attributes"
+          ]
+        ],
         "CityJSONL2Mesh-LoD22.attributes": [
           [
-            "OBJVecWriter-LoD22",
+            "OGRWriter-3D-LoD13-tri",
             "attributes"
           ],
           [
-            "OGRWriter-2D-LoD22",
-            "attributes"
-          ],
-          [
-            "OGRWriter-3D-LoD22",
+            "OGRWriter-3D-LoD12-tri",
             "attributes"
           ],
           [
@@ -934,10 +772,26 @@
             "geometries"
           ]
         ],
-        "CityJSONL2Mesh-LoD22.roofparts": [
+        "CityJSONL2Mesh-LoD22.meshes_attributes": [
+          [
+            "OBJVecWriter-LoD22",
+            "attributes"
+          ],
+          [
+            "OGRWriter-3D-LoD22",
+            "attributes"
+          ]
+        ],
+        "CityJSONL2Mesh-LoD22.roofparts_lr": [
           [
             "OGRWriter-2D-LoD22",
             "geometries"
+          ]
+        ],
+        "CityJSONL2Mesh-LoD22.roofparts_lr_attributes": [
+          [
+            "OGRWriter-2D-LoD22",
+            "attributes"
           ]
         ],
         "PolygonTriangulator-LoD12.multi_triangle_collections": [
@@ -979,14 +833,24 @@
         "CJFeatureReader.value": false,
         "CJMetadata.value": false,
         "CityJSONL2Mesh-LoD12.attributes": false,
+        "CityJSONL2Mesh-LoD12.lod0_2d": false,
         "CityJSONL2Mesh-LoD12.meshes": false,
+        "CityJSONL2Mesh-LoD12.meshes_attributes": false,
         "CityJSONL2Mesh-LoD12.roofparts": false,
+        "CityJSONL2Mesh-LoD12.roofparts_lr": false,
+        "CityJSONL2Mesh-LoD12.roofparts_lr_attributes": false,
         "CityJSONL2Mesh-LoD13.attributes": false,
         "CityJSONL2Mesh-LoD13.meshes": false,
+        "CityJSONL2Mesh-LoD13.meshes_attributes": false,
         "CityJSONL2Mesh-LoD13.roofparts": false,
+        "CityJSONL2Mesh-LoD13.roofparts_lr": false,
+        "CityJSONL2Mesh-LoD13.roofparts_lr_attributes": false,
         "CityJSONL2Mesh-LoD22.attributes": false,
         "CityJSONL2Mesh-LoD22.meshes": false,
+        "CityJSONL2Mesh-LoD22.meshes_attributes": false,
         "CityJSONL2Mesh-LoD22.roofparts": false,
+        "CityJSONL2Mesh-LoD22.roofparts_lr": false,
+        "CityJSONL2Mesh-LoD22.roofparts_lr_attributes": false,
         "PolygonTriangulator-LoD12.multi_triangle_collections": false,
         "PolygonTriangulator-LoD12.volumes": false,
         "PolygonTriangulator-LoD13.multi_triangle_collections": false,
