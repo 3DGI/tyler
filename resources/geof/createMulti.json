@@ -213,7 +213,11 @@
         "output_attribute_names": {
           "processFeatures.dak_deel_id": "b3_dd_id",
           "processFeatures.identificatie": "identificatie",
-          "processFeatures.pand_deel_id": "b3_pand_deel_id"
+          "processFeatures.pand_deel_id": "b3_pand_deel_id",
+          "processFeatures.h_50p": "b3_h_50p",
+          "processFeatures.h_70p": "b3_h_70p",
+          "processFeatures.h_max": "b3_h_max",
+          "processFeatures.h_min": "b3_h_min"
         },
         "overwrite_file": false,
         "overwrite_layer": true,
@@ -245,7 +249,11 @@
         "output_attribute_names": {
           "processFeatures.dak_deel_id": "b3_dd_id",
           "processFeatures.identificatie": "identificatie",
-          "processFeatures.pand_deel_id": "b3_pand_deel_id"
+          "processFeatures.pand_deel_id": "b3_pand_deel_id",
+          "processFeatures.h_50p": "b3_h_50p",
+          "processFeatures.h_70p": "b3_h_70p",
+          "processFeatures.h_max": "b3_h_max",
+          "processFeatures.h_min": "b3_h_min"
         },
         "overwrite_file": false,
         "overwrite_layer": true,
@@ -276,6 +284,10 @@
         "only_output_mapped_attrs": true,
         "output_attribute_names": {
           "processFeatures.dak_deel_id": "b3_dd_id",
+          "processFeatures.h_50p": "b3_h_50p",
+          "processFeatures.h_70p": "b3_h_70p",
+          "processFeatures.h_max": "b3_h_max",
+          "processFeatures.h_min": "b3_h_min",
           "processFeatures.identificatie": "identificatie",
           "processFeatures.pand_deel_id": "b3_pand_deel_id"
         },
@@ -823,6 +835,24 @@
             "OGRWriter-3D-LoD22-tri",
             "geometries"
           ]
+        ],
+        "h_calc.lod12_hattr": [
+          [
+            "OGRWriter-2D-LoD12",
+            "attributes"
+          ]
+        ],
+        "h_calc.lod13_hattr": [
+          [
+            "OGRWriter-2D-LoD13",
+            "attributes"
+          ]
+        ],
+        "h_calc.lod22_hattr": [
+          [
+            "OGRWriter-2D-LoD22",
+            "attributes"
+          ]
         ]
       },
       "marked_inputs": {
@@ -855,6 +885,9 @@
         "PolygonTriangulator-LoD12.volumes": false,
         "PolygonTriangulator-LoD13.multi_triangle_collections": false,
         "PolygonTriangulator-LoD22.multi_triangle_collections": false,
+        "h_calc.lod12_hattr": false,
+        "h_calc.lod13_hattr": false,
+        "h_calc.lod22_hattr": false,
         "processFeatures.timings": false
       },
       "parameters": {

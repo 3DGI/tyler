@@ -132,6 +132,12 @@
             "PolygonTriangulator-LoD12",
             "polygons"
           ]
+        ],
+        "roofparts_lr": [
+          [
+            "h_calc",
+            "lod12_roofparts"
+          ]
         ]
       },
       "marked_inputs": {
@@ -158,8 +164,8 @@
         "optimal_lod_value": "1.2"
       },
       "position": [
-        451.0,
-        479.0
+        454.0,
+        150.0
       ],
       "type": [
         "CoreIO",
@@ -172,6 +178,12 @@
           [
             "PolygonTriangulator-LoD13",
             "polygons"
+          ]
+        ],
+        "roofparts_lr": [
+          [
+            "h_calc",
+            "lod13_roofparts"
           ]
         ]
       },
@@ -214,6 +226,12 @@
             "PolygonTriangulator-LoD22",
             "polygons"
           ]
+        ],
+        "roofparts_lr": [
+          [
+            "h_calc",
+            "lod22_roofparts"
+          ]
         ]
       },
       "marked_inputs": {
@@ -240,8 +258,8 @@
         "optimal_lod_value": "2.2"
       },
       "position": [
-        453.0,
-        153.0
+        456.0,
+        475.0
       ],
       "type": [
         "CoreIO",
@@ -265,8 +283,8 @@
         "output_mtc_for_every_input": true
       },
       "position": [
-        881.0,
-        393.0
+        1111.0,
+        147.0
       ],
       "type": [
         "building-reconstruction",
@@ -290,8 +308,8 @@
         "output_mtc_for_every_input": true
       },
       "position": [
-        879.0,
-        270.0
+        1107.0,
+        295.0
       ],
       "type": [
         "building-reconstruction",
@@ -315,12 +333,35 @@
         "output_mtc_for_every_input": true
       },
       "position": [
-        877.0,
-        153.0
+        1124.0,
+        411.0
       ],
       "type": [
         "building-reconstruction",
         "PolygonTriangulator"
+      ]
+    },
+    "h_calc": {
+      "marked_inputs": {
+        "lod12_roofparts": false,
+        "lod13_roofparts": false,
+        "lod22_roofparts": false
+      },
+      "marked_outputs": {
+        "lod12_hattr": true,
+        "lod13_hattr": true,
+        "lod22_hattr": true
+      },
+      "parameters": {
+        "cellsize": 0.5
+      },
+      "position": [
+        976.0,
+        22.0
+      ],
+      "type": [
+        "building-reconstruction",
+        "RoofPartition3DBAGRasterise"
       ]
     }
   }
