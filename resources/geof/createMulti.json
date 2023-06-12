@@ -351,10 +351,6 @@
         "only_output_mapped_attrs": true,
         "output_attribute_names": {
           "processFeatures.b3_dak_type": "b3_dak_type",
-          "processFeatures.b3_h_dak_50p": "b3_h_dak_50p",
-          "processFeatures.b3_h_dak_70p": "b3_h_dak_70p",
-          "processFeatures.b3_h_dak_max": "b3_h_dak_max",
-          "processFeatures.b3_h_dak_min": "b3_h_dak_min",
           "processFeatures.b3_h_maaiveld": "b3_h_maaiveld",
           "processFeatures.b3_kas_warenhuis": "b3_kas_warenhuis",
           "processFeatures.b3_mutatie_ahn3_ahn4": "b3_mutatie_ahn3_ahn4",
@@ -453,10 +449,6 @@
         "only_output_mapped_attrs": true,
         "output_attribute_names": {
           "processFeatures.b3_dak_type": "b3_dak_type",
-          "processFeatures.b3_h_dak_50p": "b3_h_dak_50p",
-          "processFeatures.b3_h_dak_70p": "b3_h_dak_70p",
-          "processFeatures.b3_h_dak_max": "b3_h_dak_max",
-          "processFeatures.b3_h_dak_min": "b3_h_dak_min",
           "processFeatures.b3_h_maaiveld": "b3_h_maaiveld",
           "processFeatures.b3_kas_warenhuis": "b3_kas_warenhuis",
           "processFeatures.b3_mutatie_ahn3_ahn4": "b3_mutatie_ahn3_ahn4",
@@ -555,10 +547,6 @@
         "only_output_mapped_attrs": true,
         "output_attribute_names": {
           "processFeatures.b3_dak_type": "b3_dak_type",
-          "processFeatures.b3_h_dak_50p": "b3_h_dak_50p",
-          "processFeatures.b3_h_dak_70p": "b3_h_dak_70p",
-          "processFeatures.b3_h_dak_max": "b3_h_dak_max",
-          "processFeatures.b3_h_dak_min": "b3_h_dak_min",
           "processFeatures.b3_h_maaiveld": "b3_h_maaiveld",
           "processFeatures.b3_kas_warenhuis": "b3_kas_warenhuis",
           "processFeatures.b3_mutatie_ahn3_ahn4": "b3_mutatie_ahn3_ahn4",
@@ -626,10 +614,6 @@
         "only_output_mapped_attrs": true,
         "output_attribute_names": {
           "processFeatures.b3_dak_type": "b3_dak_type",
-          "processFeatures.b3_h_dak_50p": "b3_h_dak_50p",
-          "processFeatures.b3_h_dak_70p": "b3_h_dak_70p",
-          "processFeatures.b3_h_dak_max": "b3_h_dak_max",
-          "processFeatures.b3_h_dak_min": "b3_h_dak_min",
           "processFeatures.b3_h_maaiveld": "b3_h_maaiveld",
           "processFeatures.b3_kas_warenhuis": "b3_kas_warenhuis",
           "processFeatures.b3_mutatie_ahn3_ahn4": "b3_mutatie_ahn3_ahn4",
