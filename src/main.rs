@@ -57,7 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --- Begin argument parsing
     let cli = crate::cli::Cli::parse();
-    debug!("tyler version: {}", clap::crate_version!());
+    info!("tyler version: {}", clap::crate_version!());
     if !cli.output.is_dir() {
         fs::create_dir_all(&cli.output)?;
         info!("Created output directory {:#?}", &cli.output);
@@ -84,7 +84,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .stderr(Redirection::Merge)
                 .capture();
             if let Ok(capture_data) = res {
-                debug!("geof version:\n{}", capture_data.stdout_str());
+                info!("geof version:\n{}", capture_data.stdout_str());
             } else if let Err(popen_error) = res {
                 panic!(
                     "Could not execute geof ({:?}):\n{}",
