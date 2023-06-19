@@ -1,5 +1,14 @@
 # Changelog
 
+## tyler 0.3.3 (2023-06-19)
+
+### Fixed
+- Infinite loop in the glb conversion in geoflow-bundle, in a rare case during the mesh simplification
+- Infinite loop in case there is not a single CityJSONFeature file in the directory tree
+
+### Changed
+- tyler and geoflow versions are reported as info
+
 ## tyler 0.3.2 (2023-05-05)
 
 ### Fixed
