@@ -1,5 +1,10 @@
 # Changelog
 
+## tyler 0.3.4 (2023-06-22)
+
+### Fixed
+- geoflow-bundle version in the docker image
+
 ## tyler 0.3.3 (2023-06-19)
 
 ### Fixed
