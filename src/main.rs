@@ -17,6 +17,7 @@ mod parser;
 mod proj;
 mod spatial_structs;
 
+use core::time::Duration;
 use std::env;
 use std::fs;
 use std::fs::File;
@@ -34,6 +35,7 @@ struct SubprocessConfig {
     output_extension: String,
     exe: PathBuf,
     script: PathBuf,
+    timeout: Option<Duration>,
 }
 
 #[derive(Debug, Clone, clap::ValueEnum, Eq, PartialEq)]
@@ -111,10 +113,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .join("geof")
                     .join("createGLB.json"),
             };
+            let timeout = match cli.timeout {
+                None => None,
+                Some(t) => Some(Duration::new(5, 0)),
+            };
             SubprocessConfig {
                 output_extension: "glb".to_string(),
                 exe,
                 script: geof_flowchart_path,
+                timeout,
             }
         }
         Formats::CityJSON => {
@@ -617,37 +624,55 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     cmd = cmd.env("PROJ_DATA", pd);
                 }
 
-                debug!("{}", cmd.to_cmdline_lossy());
-                let res_exit_status = cmd
-                    .stdout(Redirection::Pipe)
-                    .stderr(Redirection::Merge)
-                    .capture();
-                if let Ok(capturedata) = res_exit_status {
-                    let stdout = capturedata.stdout_str();
-                    if !capturedata.success() {
-                        warn!("{} conversion subprocess stdout: {}", &tileid, stdout);
-                        warn!(
-                            "{} conversion subprocess stderr: {}",
-                            &tileid,
-                            capturedata.stderr_str()
-                        );
-                    } else if !stdout.is_empty() && stdout != "\n" {
-                        debug!(
-                            "{} conversion subproces stdout {}",
-                            &tileid,
-                            capturedata.stdout_str()
-                        );
+                let cmd_string = cmd.to_cmdline_lossy();
+                let exec = cmd.stdout(Redirection::Pipe).stderr(Redirection::Merge);
+                let popen_res = exec.popen();
+                match popen_res {
+                    Ok(mut popen) => {
+                        let (mut stdout_opt, mut stderr_opt): (Option<String>, Option<String>) =
+                            (None, None);
+                        let mut exit_status = subprocess::ExitStatus::Undetermined;
+                        if let Some(timeout) = subprocess_config.timeout {
+                            let mut communicator = popen.communicate_start(None);
+                            if let Some(status) = popen.wait_timeout(timeout).unwrap() {
+                                if let Ok(s) = communicator.read_string() {
+                                    (stdout_opt, stderr_opt) = s;
+                                };
+                                // (stdout_opt, stderr_opt) = popen.communicate(None).unwrap();
+                                exit_status = status;
+                            } else {
+                                warn!(
+                                    "tile {} timed out, conversion subprocess command:\n{}",
+                                    &tile.id, cmd_string
+                                );
+                                popen.kill().unwrap();
+                                popen.wait().unwrap();
+                                exit_status = popen.exit_status().unwrap();
+                            }
+                        } else {
+                            (stdout_opt, stderr_opt) = popen.communicate(None).unwrap();
+                            exit_status = popen.wait().unwrap();
+                        }
+
+                        let stdout = stdout_opt.unwrap_or_default();
+                        // The stderr is Redirection::Merge-d into the stdout
+                        if !exit_status.success() {
+                            warn!("{} conversion subprocess failed\ncommand: {}\nwith stdout and stderr:\n{}", &tileid, &cmd_string, &stdout);
+                        } else if !stdout.is_empty() && stdout != "\n" {
+                            debug!("{} conversion subproces stdout {}", &tileid, &stdout);
+                        }
+                        if !output_file.exists() {
+                            warn!(
+                                "{} output {:?} was not written by the subprocess, conversion subprocess command:\n{}",
+                                &tileid, &output_file, &cmd_string
+                            );
+                            tile_failed = Some(tile);
+                        }
                     }
-                    if !output_file.exists() {
-                        warn!(
-                            "{} output {:?} was not written by the subprocess",
-                            &tileid, &output_file
-                        );
+                    Err(popen_error) => {
+                        warn!("{}", popen_error);
                         tile_failed = Some(tile);
                     }
-                } else if let Err(popen_error) = res_exit_status {
-                    warn!("{}", popen_error);
-                    tile_failed = Some(tile);
                 }
                 tile_failed
             })

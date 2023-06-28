@@ -4,6 +4,7 @@
 
 ### Added
 - Option to only generate and write the 3D Tiles tileset, without running the glTF export. Enable with `--3dtiles-tileset-only`.
+- Timeout `--timeout` in seconds for the converter subprocesses. If speficied, tyler will kill the subprocess after the provided seconds, otherwise it will wait for the process to finish.
 
 ### Fixed
 - geoflow version reporting

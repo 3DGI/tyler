@@ -85,6 +85,9 @@ pub struct Cli {
     /// Use mesh simplification to reduce the number of vertices per object by this fraction. Value should be a float between 0.0 (100% reduction) and 1.0 (do not use simplification). Ignored for building object types.
     #[arg(long, default_value = "0.05")]
     pub reduce_vertices: Option<f64>,
+    /// Wait for the tile conversion process to finish, or terminate it if it is not finished after the provided number of seconds.
+    #[arg(long)]
+    pub timeout: Option<u64>,
     /// LoD to use in output for Building features
     #[arg(long)]
     pub lod_building: Option<String>,
