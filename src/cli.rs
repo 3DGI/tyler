@@ -52,8 +52,11 @@ pub struct Cli {
     /// By default, explicit tiling is created for the 3D Tiles output.
     #[arg(long = "3dtiles-implicit")]
     pub cesium3dtiles_implicit: bool,
+    /// Generate and write the Tileset only, without exporting the glTF tiles, when the output format is 3D Tiles (https://docs.ogc.org/cs/22-025r4/22-025r4.html#toc31).
+    #[arg(long = "3dtiles-tileset-only")]
+    pub cesium3dtiles_tileset_only: bool,
     /// Set the geometric error (see 3D Tiles specification) on the parent nodes of leafs. This controls at what
-    /// camera distance leaf nodes become visible. Higher values make content visible earlier when zooming in. 
+    /// camera distance leaf nodes become visible. Higher values make content visible earlier when zooming in.
     #[arg(long, short = 'e', default_value = "12")]
     pub geometric_error_above_leaf: Option<f64>,
     /// Set the 2D cell size for the grid that is used for constructing the quadtree. In input units (eg. meters).

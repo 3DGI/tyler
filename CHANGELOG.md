@@ -1,5 +1,10 @@
 # Changelog
 
+## tyler 0.3.5 (2023-06-28)
+
+### Added
+- Option to only generate and write the 3D Tiles tileset, without running the glTF export. Enable with `--3dtiles-tileset-only`.
+
 ## tyler 0.3.4 (2023-06-22)
 
 ### Fixed
