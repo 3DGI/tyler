@@ -5,6 +5,9 @@
 ### Added
 - Option to only generate and write the 3D Tiles tileset, without running the glTF export. Enable with `--3dtiles-tileset-only`.
 
+### Fixed
+- geoflow version reporting
+
 ## tyler 0.3.4 (2023-06-22)
 
 ### Fixed

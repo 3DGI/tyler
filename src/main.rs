@@ -79,12 +79,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 exe = PathBuf::from("geof");
             }
             let res = Exec::cmd(&exe)
-                .arg("-p")
+                .arg("--version")
+                .arg("--verbose")
+                .stdout(Redirection::Pipe)
+                .stderr(Redirection::Merge)
+                .capture();
+            let res_plugins = Exec::cmd(&exe)
+                .arg("--list-plugins")
+                .arg("--verbose")
                 .stdout(Redirection::Pipe)
                 .stderr(Redirection::Merge)
                 .capture();
             if let Ok(capture_data) = res {
-                info!("geof version:\n{}", capture_data.stdout_str());
+                let plugins_stdout_str = res_plugins.unwrap().stdout_str();
+                info!(
+                    "geof version:\n{}{}",
+                    capture_data.stdout_str(),
+                    plugins_stdout_str
+                );
             } else if let Err(popen_error) = res {
                 panic!(
                     "Could not execute geof ({:?}):\n{}",
