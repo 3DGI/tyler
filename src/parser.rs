@@ -75,7 +75,7 @@ impl World {
         info!("Ignored feature types: {:?}", &cityobject_types_ignored);
         debug!("extent_qc: {:?}", &extent_qc);
         let extent_rw = extent_qc.to_bbox(&transform, arg_minz, arg_maxz);
-        debug!(
+        info!(
             "Computed extent from features in real-world coordinates: {:?}",
             &extent_rw
         );
