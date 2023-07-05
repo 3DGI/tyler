@@ -113,7 +113,7 @@ For example `export TYLER_RESOURCES_DIR=/some_path/resources`.
 ### Exporting 3D Tiles
 
 An example command for generating 3D Tiles. 
-The agrument details are explained in the text below.
+The argument details are explained in the text below.
 
 ```shell
 tyler \
@@ -216,6 +216,24 @@ The argument value is the hexadecimal rgb color value. For instance “#FF0000�
 For example:
 
 `tyler … --color-building-part #FF0000`
+
+### Calculating the extent and counting features
+
+The input features (`CityJSONFeature`) are passed in with the `--features` argument, and their type (`CityObject` type) can be restricted with the `--object-type` argument. See above for the details.
+
+Firstly, *tyler* calculates the complete extent of the input from the bounding box of each feature (of the specified type) that it can find in the `--features` directory tree.
+The result of this operation is reported in the logs.
+The example below shows that *tyler* found `436` features of type `Building` and `BuildingPart` in `--features`.
+The extent of the input data were calculated from these `436` features.
+The computed extent is a 3D bounding box in the CRS of the input data, and it is also reported in the logs. 
+In the example below, the coordinates are in *RD New (EPSG: 7415)*.
+
+```commandline
+[2023-07-05T08:52:06Z INFO  tyler::parser] Found 436 features of type Some([Building, BuildingPart])
+[2023-07-05T08:52:06Z INFO  tyler::parser] Ignored feature types: []
+[2023-07-05T08:52:06Z DEBUG tyler::parser] extent_qc: BboxQc([-86804720, -26383186, -5333, -86155251, -25703867, 52882])
+[2023-07-05T08:52:06Z DEBUG tyler::parser] Computed extent from features in real-world coordinates: [84995.28, 446316.814, -5.333, 85644.749, 446996.133, 52.882]
+```
 
 ## Funding
 
