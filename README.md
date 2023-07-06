@@ -235,6 +235,18 @@ In the example below, the coordinates are in *RD New (EPSG: 7415)*.
 [2023-07-05T08:52:06Z DEBUG tyler::parser] Computed extent from features in real-world coordinates: [84995.28, 446316.814, -5.333, 85644.749, 446996.133, 52.882]
 ```
 
+## Roadmap
+
+- [ ] Parallel extent computation
+- [ ] Parallel grid indexing
+- [ ] Integrate the glTF converter to remove the geoflow dependency
+- [ ] Integrate cjlib (when it's ready)
+- [ ] Read regular CityJSON files, not only CityJSONFeatures
+- [ ] Additional export formats:
+  - [ ] CityJSON
+  - [ ] Wavefront OBJ
+  - [ ] GeoPackage
+
 ## Funding
 
 Version 0.3 (3D Tiles) was funded by the [Dutch Kadaster](https://www.kadaster.nl/).
