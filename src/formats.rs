@@ -1465,7 +1465,7 @@ pub mod cesium3dtiles {
             .unwrap();
             world.index_with_grid();
 
-            world.export_grid();
+            world.export_grid(false);
 
             let quadtree = QuadTree::from_world(&world, QuadTreeCapacity::Vertices(15000));
             quadtree.export(&world.grid).unwrap();

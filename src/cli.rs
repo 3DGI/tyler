@@ -72,10 +72,14 @@ pub struct Cli {
     /// coordinates. In input units (eg. meters).
     #[arg(long)]
     pub grid_maxz: Option<i32>,
-    /// Export the grid and the feature centroids in to .tsv files in the working
+    /// Export the grid into .tsv files in the working
     /// directory. Used for debugging.
     #[arg(long)]
     pub grid_export: bool,
+    /// Export the grid, and also the feature centroids into .tsv files in the working
+    /// directory. Used for debugging.
+    #[arg(long)]
+    pub grid_export_features: bool,
     /// The maximum number of vertices in a leaf of the quadtree.
     #[arg(long, default_value = "42000")]
     pub qtree_capacity: Option<usize>,

@@ -194,7 +194,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Debug
     if cli.grid_export {
         debug!("Exporting the grid to the working directory");
-        world.export_grid()?;
+        world.export_grid(cli.grid_export_features)?;
     }
 
     // Build quadtree

@@ -313,9 +313,13 @@ impl World {
     }
 
     // Export the grid of the World into the working directory.
-    pub fn export_grid(&self) -> std::io::Result<()> {
-        self.grid
-            .export(Some(&self.features), Some(&self.transform))
+    pub fn export_grid(&self, export_features: bool) -> std::io::Result<()> {
+        if export_features {
+            self.grid
+                .export(Some(&self.features), Some(&self.transform))
+        } else {
+            self.grid.export(None, None)
+        }
     }
 }
 
