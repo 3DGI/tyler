@@ -455,13 +455,17 @@ pub mod cesium3dtiles {
             grid: &SquareGrid,
             qtree: &QuadTree,
             grid_export: bool,
+            subtrees_dir: Option<&str>,
         ) -> (Vec<(Tile, TileId)>, Vec<(TileId, Vec<u8>)>) {
             let mut subtrees_vec: Vec<(TileId, Vec<u8>)> = Vec::new();
             let mut flat_tiles_with_content: Vec<(Tile, TileId)> = Vec::new();
             let subtree_sections: usize = 1;
             let subtree_levels =
                 (self.available_levels() as f32 / subtree_sections as f32).ceil() as u16;
-            let subtrees = Subtrees::default();
+            let subtrees = match subtrees_dir {
+                None => Subtrees::default(),
+                Some(dirname) => Subtrees::new(dirname),
+            };
             let implicittiling = ImplicitTiling {
                 subdivision_scheme: SubdivisionScheme::Quadtree,
                 subtree_levels,
@@ -1365,6 +1369,14 @@ pub mod cesium3dtiles {
         fn default() -> Self {
             Self {
                 uri: String::from("subtrees/{level}/{x}/{y}.subtree"),
+            }
+        }
+    }
+
+    impl Subtrees {
+        fn new(subtrees_dir: &str) -> Self {
+            Self {
+                uri: format!("{}/{{level}}/{{x}}/{{y}}.subtree", subtrees_dir),
             }
         }
     }

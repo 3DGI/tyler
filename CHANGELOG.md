@@ -4,6 +4,7 @@
 
 ### Changed
 - The `--grid-export` switch does not export the feature centroids anymore. Use the `--grid-export-features` if you want to export the feature centroids together with the grid cells.
+- Write both pruned and unpruned tilesets (for debugging).
 
 ## tyler 0.3.5 (2023-06-28)
 
