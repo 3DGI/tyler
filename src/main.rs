@@ -720,8 +720,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // The stderr is Redirection::Merge-d into the stdout
                         if !exit_status.success() {
                             warn!("{} conversion subprocess failed\ncommand: {}\nwith stdout and stderr:\n{}", &tileid, &cmd_string, &stdout);
-                        } else if !stdout.is_empty() && stdout != "\n" {
-                            debug!("{} conversion subproces stdout {}", &tileid, &stdout);
                         }
                         if !output_file.exists() {
                             warn!(
@@ -759,7 +757,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let tiles_failed_file = File::create("tiles_failed.bincode")?;
             bincode::serialize_into(tiles_failed_file, &tiles_failed)?;
         }
-        info!("Pruning tileset of empty tiles");
+        info!(
+            "Pruning tileset of failed tiles (failed: {})",
+            tiles_failed.len()
+        );
         for (i, failed) in tiles_failed.iter().enumerate() {
             debug!("{}, removing failed from the tileset: {}", i, failed.id);
         }
