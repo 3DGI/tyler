@@ -83,6 +83,11 @@ pub struct Cli {
     /// directory. Used for debugging.
     #[arg(long)]
     pub grid_export_features: bool,
+    /// Load instances from this directory.
+    /// In debug mode, tyler writes the generated world, quadtree etc. instances to .bincode files, which later can be used for debugging.
+    /// When this argument is specified, tyler will load the instances from the .bincode files that are available in the directory.
+    #[arg(long, value_parser = existing_canonical_path)]
+    pub debug_load_data: Option<PathBuf>,
     /// The maximum number of vertices in a leaf of the quadtree.
     #[arg(long, default_value = "42000")]
     pub qtree_capacity: Option<usize>,

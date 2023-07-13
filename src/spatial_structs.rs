@@ -248,7 +248,7 @@ impl QuadTree {
 
     pub fn export_bincode(&self, name: Option<&str>) -> bincode::Result<()> {
         let file_name: &str = name.unwrap_or("quadtree");
-        let mut file = File::create(format!("{file_name}.bincode"))?;
+        let file = File::create(format!("{file_name}.bincode"))?;
         bincode::serialize_into(file, self)
     }
 }

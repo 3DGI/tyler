@@ -21,7 +21,7 @@ use core::time::Duration;
 use std::env;
 use std::fs;
 use std::fs::File;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 
 use crate::formats::cesium3dtiles::{Tile, TileId};
@@ -52,6 +52,14 @@ impl ToString for Formats {
             Formats::CityJSON => "CityJSON".to_string(),
         }
     }
+}
+
+#[derive(Default, Debug)]
+struct DebugData {
+    world: Option<PathBuf>,
+    quadtree: Option<PathBuf>,
+    tileset: Option<PathBuf>,
+    tiles_failed: Option<PathBuf>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -173,6 +181,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             None
         }
     };
+    let debug_data = match cli.debug_load_data {
+        None => DebugData::default(),
+        Some(dir_path) => {
+            if dir_path.is_dir() {
+                let world_path = dir_path.join("world.bincode");
+                let quadtree_path = dir_path.join("quadtree.bincode");
+                let tileset_path = dir_path.join("tileset.bincode");
+                let tiles_failed_path = dir_path.join("tiles_failed.bincode");
+                DebugData {
+                    world: world_path.exists().then_some(world_path),
+                    quadtree: quadtree_path.exists().then_some(quadtree_path),
+                    tileset: tileset_path.exists().then_some(tileset_path),
+                    tiles_failed: tiles_failed_path.exists().then_some(tiles_failed_path),
+                }
+            } else {
+                warn!(
+                    "debug_load_data {dir_path:?} is not a directory, cannot load .bincode files"
+                );
+                DebugData::default()
+            }
+        }
+    };
+    debug!("{:?}", debug_data);
     // --- end of argument parsing
 
     // Populate the World with features
@@ -181,52 +212,59 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // types are best passed by reference, because it is "expensive" to Clone them
     // (they don't implement Copy). When we move a value, we explicitly transfer
     // ownership of the value (eg cli.object_type).
-    let mut world = parser::World::new(
-        &cli.metadata,
-        &cli.features,
-        grid_cellsize,
-        cli.object_type,
-        cli.grid_minz,
-        cli.grid_maxz,
-    )?;
-    world.index_with_grid();
+    let world: parser::World = match debug_data.world {
+        None => {
+            let mut world = parser::World::new(
+                &cli.metadata,
+                &cli.features,
+                grid_cellsize,
+                cli.object_type,
+                cli.grid_minz,
+                cli.grid_maxz,
+            )?;
+            world.index_with_grid();
+            world
+        }
+        Some(world_path) => {
+            info!("Loading world from {world_path:?}");
+            let world_file = File::open(world_path)?;
+            bincode::deserialize_from(world_file)?
+        }
+    };
 
     if cli.grid_export || log_enabled!(Level::Debug) {
         info!("Exporting the grid to the working directory");
         world.export_grid(cli.grid_export_features)?;
         debug!("Exporting the world instance to the working directory");
-        world.export_bincode(None)?;
+        world.export_bincode(Some("world"))?;
     }
 
     // Build quadtree
-    info!("Building quadtree");
-    let quadtree = spatial_structs::QuadTree::from_world(&world, quadtree_capacity);
+    let quadtree: spatial_structs::QuadTree = match debug_data.quadtree {
+        None => {
+            info!("Building quadtree");
+            spatial_structs::QuadTree::from_world(&world, quadtree_capacity)
+        }
+        Some(quadtree_path) => {
+            info!("Loading quadtree from {quadtree_path:?}");
+            // let quadtree_file = File::open(quadtree_path)?;
+            // bincode::deserialize_from(quadtree_file)?
+            let quadtree_data: Vec<u8> = fs::read(quadtree_path)?;
+            bincode::deserialize(&quadtree_data)?
+        }
+    };
 
     if cli.grid_export || log_enabled!(Level::Debug) {
         info!("Exporting the quadtree to the working directory");
         quadtree.export(&world.grid)?;
         debug!("Exporting the quadtree instance to the working directory");
-        quadtree.export_bincode(None)?;
+        quadtree.export_bincode(Some("quadtree"))?;
     }
 
-    // let tiles: Vec<&formats::cesium3dtiles::Tile> = Vec::new();
-    // if cli.format == Formats::_3DTiles {
-    //     // 3D Tiles
-    //     info!("Generating 3D Tiles tileset");
-    //     let tileset_path = cli.output.join("tileset.json");
-    //     let tileset = formats::cesium3dtiles::Tileset::from_quadtree(
-    //         &quadtree,
-    //         &world,
-    //         cli.grid_minz,
-    //         cli.grid_maxz,
-    //     );
-    //     tileset.to_file(tileset_path)?;
-    //     tiles = tileset.flatten(Some(4));
-    // }
     // 3D Tiles
-    info!("Generating 3D Tiles tileset");
     let tileset_path = cli.output.join("tileset.json");
     let tileset_path_pruned = cli.output.join("tileset_pruned.json");
+    info!("Generating 3D Tiles tileset");
     let mut tileset = formats::cesium3dtiles::Tileset::from_quadtree(
         &quadtree,
         &world,
@@ -235,15 +273,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         cli.grid_minz,
         cli.grid_maxz,
     );
-    if log_enabled!(Level::Debug) {
-        debug!("Exporting the tileset instance to the working directory");
-        tileset.export_bincode(None)?;
-    }
-
-    // // Select how many levels of tiles from the hierarchy do we want to export with
-    // // content.
-    // let qtree_export_levels = Some(0); //override cli.qtree_export_levels
-    // tileset.add_content(qtree_export_levels);
 
     let (tiles, subtrees) = match cli.cesium3dtiles_implicit {
         true => {
@@ -258,10 +287,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             info!("Writing 3D Tiles tileset");
             tileset_implicit.to_file(&tileset_path)?;
-            if log_enabled!(Level::Debug) {
-                debug!("Exporting the tileset_implicit instance to the working directory");
-                tileset_implicit.export_bincode(Some("tileset_implicit"))?;
-            }
 
             info!("Writing subtrees for implicit tiling");
             let subtrees_path = cli.output.join("subtrees");
@@ -284,7 +309,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             tiles_subtrees
         }
         false => {
-            // let just_tiles = tileset.flatten(qtree_export_levels);
             let just_tiles = tileset.collect_leaves();
             // FIXME: here we need Vec<(Tile, TileId)> instead of Vec<&Tile>, for the same reason
             //  as above
@@ -322,8 +346,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("Created output directory {:#?}", &path_output_tiles);
         fs::create_dir_all(&path_features_input_dir)?;
         info!("Created output directory {:#?}", &path_features_input_dir);
-        info!("Exporting and optimizing {} tiles", tiles.len());
-        let mut tiles_failed: Vec<Tile> = tiles
+
+        let tiles_len = tiles.len();
+        let tiles_failed_iter = tiles
             .into_par_iter()
             .map(|(tile, tileid)| {
                 let mut tile_failed: Option<Tile> = None;
@@ -713,11 +738,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 tile_failed
             })
-            .filter_map(|failed_tile| failed_tile)
-            .collect();
+            .filter_map(|failed_tile| failed_tile);
+
+        let tiles_failed: Vec<Tile> = match debug_data.tiles_failed {
+            None => {
+                info!("Exporting and optimizing {tiles_len} tiles");
+                tiles_failed_iter.collect()
+            }
+            Some(tiles_failed_path) => {
+                info!("Loading tiles_failed from {tiles_failed_path:?}");
+                let tiles_failed_file = File::open(tiles_failed_path)?;
+                bincode::deserialize_from(tiles_failed_file)?
+            }
+        };
         info!("Done");
+
         if !log_enabled!(Level::Debug) {
             fs::remove_dir_all(path_features_input_dir)?;
+        } else {
+            let tiles_failed_file = File::create("tiles_failed.bincode")?;
+            bincode::serialize_into(tiles_failed_file, &tiles_failed)?;
         }
         info!("Pruning tileset of empty tiles");
         for (i, failed) in tiles_failed.iter().enumerate() {
@@ -756,10 +796,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         info!("Writing pruned 3D Tiles tileset");
         tileset.to_file(&tileset_path_pruned)?;
-        if log_enabled!(Level::Debug) {
-            debug!("Exporting the pruned tileset instance to the working directory");
-            tileset.export_bincode(Some("tileset_pruned"))?;
-        }
     }
 
     Ok(())
