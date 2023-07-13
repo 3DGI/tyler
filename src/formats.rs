@@ -22,14 +22,14 @@ pub mod cesium3dtiles {
     use std::collections::VecDeque;
     use std::fmt::{Display, Formatter};
     use std::fs::File;
-    use std::io::{Seek, Write};
-    use std::path::{Path, PathBuf};
+    use std::io::Write;
+    use std::path::Path;
 
     use bitvec::prelude as bv;
     use log::{debug, error, warn};
     use morton_encoding::morton_encode;
-    use serde::{Serialize, Serializer};
-    use serde_repr::Serialize_repr;
+    use serde::{Deserialize, Serialize};
+    use serde_repr::{Deserialize_repr, Serialize_repr};
 
     use crate::proj::Proj;
     use crate::spatial_structs::{
@@ -39,7 +39,7 @@ pub mod cesium3dtiles {
     /// [Tileset](https://github.com/CesiumGS/3d-tiles/tree/main/specification#tileset).
     ///
     /// Not supported: `extras`.
-    #[derive(Serialize, Default, Debug, Clone)]
+    #[derive(Serialize, Deserialize, Default, Debug, Clone)]
     #[serde(rename_all = "camelCase")]
     pub struct Tileset {
         asset: Asset,
@@ -61,6 +61,12 @@ pub mod cesium3dtiles {
             let file_out = File::create(path.as_ref())?;
             serde_json::to_writer(&file_out, self)?;
             Ok(())
+        }
+
+        pub fn export_bincode(&self, name: Option<&str>) -> bincode::Result<()> {
+            let file_name: &str = name.unwrap_or("tileset");
+            let mut file = File::create(format!("{file_name}.bincode"))?;
+            bincode::serialize_into(file, self)
         }
 
         pub fn from_quadtree(
@@ -909,7 +915,7 @@ pub mod cesium3dtiles {
     /// [Asset](https://github.com/CesiumGS/3d-tiles/tree/main/specification#asset).
     ///
     /// Not supported: `extensions, extras`.
-    #[derive(Serialize, Debug, Clone)]
+    #[derive(Serialize, Deserialize, Debug, Clone)]
     #[serde(rename_all = "camelCase")]
     struct Asset {
         version: String,
@@ -933,7 +939,7 @@ pub mod cesium3dtiles {
     /// [Properties](https://github.com/CesiumGS/3d-tiles/tree/main/specification#properties).
     ///
     /// Not supported: `extras`.
-    #[derive(Serialize, Default, Debug, Clone)]
+    #[derive(Serialize, Deserialize, Default, Debug, Clone)]
     #[serde(rename_all = "camelCase")]
     struct Properties {
         maximum: f64,
@@ -942,7 +948,7 @@ pub mod cesium3dtiles {
 
     type Extensions = HashMap<ExtensionName, Extension>;
 
-    #[derive(Serialize, Default, Debug, Clone)]
+    #[derive(Serialize, Deserialize, Default, Debug, Clone)]
     #[serde(untagged)]
     enum Extension {
         #[default]
@@ -959,7 +965,7 @@ pub mod cesium3dtiles {
     }
 
     #[allow(dead_code)]
-    #[derive(Serialize, Default, Debug, Clone, PartialEq, Eq, Hash)]
+    #[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq, Hash)]
     enum ExtensionName {
         #[default]
         None,
@@ -974,7 +980,7 @@ pub mod cesium3dtiles {
     }
 
     /// [Tile](https://github.com/CesiumGS/3d-tiles/tree/main/specification#tile).
-    #[derive(Serialize, Default, Debug, Clone)]
+    #[derive(Serialize, Deserialize, Default, Debug, Clone)]
     #[serde(rename_all = "camelCase")]
     pub struct Tile {
         #[serde(skip)]
@@ -1177,7 +1183,7 @@ pub mod cesium3dtiles {
 
     /// [boundingVolume](https://github.com/CesiumGS/3d-tiles/tree/main/specification#bounding-volume).
     #[allow(dead_code)]
-    #[derive(Serialize, Debug, Copy, Clone)]
+    #[derive(Serialize, Deserialize, Debug, Copy, Clone)]
     #[serde(rename_all = "lowercase")]
     enum BoundingVolume {
         Box([f64; 12]),
@@ -1303,7 +1309,7 @@ pub mod cesium3dtiles {
 
     /// [Tile.refine](https://github.com/CesiumGS/3d-tiles/tree/main/specification#tilerefine).
     #[allow(dead_code)]
-    #[derive(Serialize, Debug, Clone)]
+    #[derive(Serialize, Deserialize, Debug, Clone)]
     #[serde(rename_all = "UPPERCASE")]
     enum Refinement {
         Add,
@@ -1311,7 +1317,7 @@ pub mod cesium3dtiles {
     }
 
     /// [Tile.transform](https://github.com/CesiumGS/3d-tiles/tree/main/specification#tiletransform)
-    #[derive(Serialize, Debug, Copy, Clone)]
+    #[derive(Serialize, Deserialize, Debug, Copy, Clone)]
     struct Transform([f64; 16]);
 
     impl Default for Transform {
@@ -1327,7 +1333,7 @@ pub mod cesium3dtiles {
     }
 
     /// [Tile.content](https://github.com/CesiumGS/3d-tiles/tree/main/specification#content).
-    #[derive(Serialize, Default, Debug, Clone)]
+    #[derive(Serialize, Deserialize, Default, Debug, Clone)]
     #[serde(rename_all = "camelCase")]
     struct Content {
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -1338,7 +1344,7 @@ pub mod cesium3dtiles {
     /// Implicit tiling object.
     /// https://github.com/CesiumGS/3d-tiles/tree/1.1/specification/ImplicitTiling#implicit-root-tile
     /// https://github.com/CesiumGS/3d-tiles/blob/1.1/specification/schema/tile.implicitTiling.schema.json
-    #[derive(Serialize, Default, Debug, Clone)]
+    #[derive(Serialize, Deserialize, Default, Debug, Clone)]
     #[serde(rename_all = "camelCase")]
     struct ImplicitTiling {
         subdivision_scheme: SubdivisionScheme,
@@ -1350,7 +1356,7 @@ pub mod cesium3dtiles {
     /// Implicit tiling subtree subdivision scheme.
     /// https://github.com/CesiumGS/3d-tiles/tree/1.1/specification/ImplicitTiling#subdivision-scheme
     #[allow(dead_code)]
-    #[derive(Serialize, Debug, Default, Clone)]
+    #[derive(Serialize, Deserialize, Debug, Default, Clone)]
     #[serde(rename_all = "UPPERCASE")]
     enum SubdivisionScheme {
         #[default]
@@ -1360,7 +1366,7 @@ pub mod cesium3dtiles {
 
     /// Implicit tiling subtrees.
     /// https://github.com/CesiumGS/3d-tiles/tree/1.1/specification/ImplicitTiling#subtrees
-    #[derive(Serialize, Debug, Clone)]
+    #[derive(Serialize, Deserialize, Debug, Clone)]
     struct Subtrees {
         uri: String,
     }
@@ -1384,7 +1390,7 @@ pub mod cesium3dtiles {
     /// Implicit tiling subtree object.
     /// Metadata is not supported.
     /// https://github.com/CesiumGS/3d-tiles/blob/1.1/specification/schema/Subtree/subtree.schema.json
-    #[derive(Serialize, Debug, Default)]
+    #[derive(Serialize, Deserialize, Debug, Default)]
     #[serde(rename_all = "camelCase")]
     struct Subtree {
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -1397,7 +1403,7 @@ pub mod cesium3dtiles {
         child_subtree_availability: Availability,
     }
 
-    #[derive(Serialize, Debug, Default)]
+    #[derive(Serialize, Deserialize, Debug, Default)]
     #[serde(rename_all = "camelCase")]
     struct Buffer {
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -1405,7 +1411,7 @@ pub mod cesium3dtiles {
         byte_length: usize,
     }
 
-    #[derive(Serialize, Debug, Default)]
+    #[derive(Serialize, Deserialize, Debug, Default)]
     #[serde(rename_all = "camelCase")]
     struct BufferView {
         buffer: u8,
@@ -1418,7 +1424,7 @@ pub mod cesium3dtiles {
     /// Implicit tiling subtree availability.
     /// https://github.com/CesiumGS/3d-tiles/tree/1.1/specification/ImplicitTiling#availability-1
     /// https://github.com/CesiumGS/3d-tiles/blob/1.1/specification/schema/Subtree/availability.schema.json
-    #[derive(Serialize, Debug, Default)]
+    #[derive(Serialize, Deserialize, Debug, Default)]
     #[serde(rename_all = "camelCase")]
     struct Availability {
         /// An integer index that identifies the buffer view containing the availability bitstream.
@@ -1432,7 +1438,7 @@ pub mod cesium3dtiles {
 
     /// Integer indicating whether all of the elements are Available (1) or all are Unavailable (0).
     #[allow(dead_code)]
-    #[derive(Debug, Default, Serialize_repr)]
+    #[derive(Debug, Default, Serialize_repr, Deserialize_repr)]
     #[repr(u8)]
     enum AvailabilityConstant {
         #[default]

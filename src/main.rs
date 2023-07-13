@@ -26,7 +26,7 @@ use std::path::PathBuf;
 
 use crate::formats::cesium3dtiles::{Tile, TileId};
 use clap::Parser;
-use log::{debug, error, info, log_enabled, warn, Level};
+use log::{debug, info, log_enabled, warn, Level};
 use rayon::prelude::*;
 use subprocess::{Exec, Redirection};
 
@@ -191,20 +191,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     world.index_with_grid();
 
-    // Debug
-    if cli.grid_export {
-        debug!("Exporting the grid to the working directory");
+    if cli.grid_export || log_enabled!(Level::Debug) {
+        info!("Exporting the grid to the working directory");
         world.export_grid(cli.grid_export_features)?;
+        debug!("Exporting the world instance to the working directory");
+        world.export_bincode(None)?;
     }
 
     // Build quadtree
     info!("Building quadtree");
     let quadtree = spatial_structs::QuadTree::from_world(&world, quadtree_capacity);
 
-    // Debug
-    if cli.grid_export {
-        debug!("Exporting the quadtree to the working directory");
+    if cli.grid_export || log_enabled!(Level::Debug) {
+        info!("Exporting the quadtree to the working directory");
         quadtree.export(&world.grid)?;
+        debug!("Exporting the quadtree instance to the working directory");
+        quadtree.export_bincode(None)?;
     }
 
     // let tiles: Vec<&formats::cesium3dtiles::Tile> = Vec::new();
@@ -233,6 +235,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         cli.grid_minz,
         cli.grid_maxz,
     );
+    if log_enabled!(Level::Debug) {
+        debug!("Exporting the tileset instance to the working directory");
+        tileset.export_bincode(None)?;
+    }
 
     // // Select how many levels of tiles from the hierarchy do we want to export with
     // // content.
@@ -252,6 +258,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             info!("Writing 3D Tiles tileset");
             tileset_implicit.to_file(&tileset_path)?;
+            if log_enabled!(Level::Debug) {
+                debug!("Exporting the tileset_implicit instance to the working directory");
+                tileset_implicit.export_bincode(Some("tileset_implicit"))?;
+            }
+
             info!("Writing subtrees for implicit tiling");
             let subtrees_path = cli.output.join("subtrees");
             fs::create_dir_all(&subtrees_path)?;
@@ -745,6 +756,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         info!("Writing pruned 3D Tiles tileset");
         tileset.to_file(&tileset_path_pruned)?;
+        if log_enabled!(Level::Debug) {
+            debug!("Exporting the pruned tileset instance to the working directory");
+            tileset.export_bincode(Some("tileset_pruned"))?;
+        }
     }
 
     Ok(())

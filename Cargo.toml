@@ -1,6 +1,6 @@
 [package]
 name = "tyler"
-version = "0.3.5"
+version = "0.3.6"
 edition = "2021"
 authors = ["Balázs Dukai <balazs.dukai@3dgi.nl>", "Ravi Peters <ravi.peters@3dgi.nl>"]
 description = "Create tiles from 3D city objects encoded as CityJSONFeatures."
@@ -36,3 +36,4 @@ libc = "0.2.119"
 thiserror = "1.0.30"
 bitvec = "1.0.1"
 morton-encoding = "2.0.1"
+bincode = "1.3.3"

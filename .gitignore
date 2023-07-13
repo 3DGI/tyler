@@ -1,10 +1,17 @@
 # build
 /target
+/target-windows
 
 # IDE
 .idea
 .run
 /resources/data/features_3dbag_5909/
+.vs
 
 # misc
 /tmp
+
+# Debug data
+*.tsv
+*.bincode
+*.log

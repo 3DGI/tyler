@@ -62,6 +62,9 @@ pub struct Cli {
     /// Set the 2D cell size for the grid that is used for constructing the quadtree. In input units (eg. meters).
     #[arg(long, default_value = "250")]
     pub grid_cellsize: Option<u16>,
+    /// Generate the quadtree directly from a grid.tsv file, skipping the extent computation and feature indexing. A grid.tsv file is created with the --grid-export option. Used for debugging.
+    #[arg(long)]
+    pub grid_file: Option<String>,
     /// Limit the minimum z coordinate for the bounding box that is computed from the
     /// features. Useful if the features contain errors with extremely small z
     /// coordinates. In input units (eg. meters).

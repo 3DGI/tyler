@@ -13,18 +13,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 use crate::parser::FeatureSet;
-use log::{debug, error, warn};
+use log::{debug, warn};
 use std::collections::VecDeque;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::prelude::*;
+
+use serde::{Deserialize, Serialize};
 
 use morton_encoding::{morton_decode, morton_encode};
 
 /// Quadtree
 ///
 /// We don't expect that the quadtree has more than 65535 levels (u16).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct QuadTree {
     pub id: QuadTreeNodeId,
     side_length: u64,
@@ -243,9 +245,15 @@ impl QuadTree {
         }
         Ok(())
     }
+
+    pub fn export_bincode(&self, name: Option<&str>) -> bincode::Result<()> {
+        let file_name: &str = name.unwrap_or("quadtree");
+        let mut file = File::create(format!("{file_name}.bincode"))?;
+        bincode::serialize_into(file, self)
+    }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct QuadTreeNodeId {
     pub x: usize,
     pub y: usize,
@@ -367,7 +375,7 @@ pub fn deinterleave(mortoncode: &u64) -> [u64; 2] {
 /// assert_eq!(grid_idx, [3_u64, 2_u64]);
 /// ```
 ///
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SquareGrid {
     origin: [f64; 3],
     pub bbox: Bbox,
@@ -616,7 +624,7 @@ impl<'squaregrid> Iterator for SquareGridIterator<'squaregrid> {
     }
 }
 
-#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Cell {
     pub feature_ids: Vec<usize>,
     pub nr_vertices: usize,
@@ -636,7 +644,7 @@ pub struct Cell {
 ///                       X
 /// ```
 ///
-#[derive(Copy, Clone, Hash, Debug, Ord, PartialOrd, PartialEq, Eq)]
+#[derive(Copy, Clone, Hash, Debug, Ord, PartialOrd, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CellId {
     // A row is along the y-axis
     pub row: usize,
@@ -658,7 +666,7 @@ pub type Bbox = [f64; 6];
 /// 3D bounding box with quantized coordinates.
 ///
 /// [min x, min y, min z, max x, max y, max z]
-#[derive(Debug, Default, Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Debug, Default, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BboxQc(pub [i64; 6]); // This `pub [i64; 6]` makes the BboxQc constructor public
 
 impl BboxQc {
