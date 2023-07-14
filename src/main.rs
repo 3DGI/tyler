@@ -235,6 +235,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if cli.grid_export || log_enabled!(Level::Debug) {
         info!("Exporting the grid to the working directory");
         world.export_grid(cli.grid_export_features)?;
+    }
+    if log_enabled!(Level::Debug) {
         debug!("Exporting the world instance to the working directory");
         world.export_bincode(Some("world"))?;
     }
@@ -247,16 +249,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Some(quadtree_path) => {
             info!("Loading quadtree from {quadtree_path:?}");
-            // let quadtree_file = File::open(quadtree_path)?;
-            // bincode::deserialize_from(quadtree_file)?
-            let quadtree_data: Vec<u8> = fs::read(quadtree_path)?;
-            bincode::deserialize(&quadtree_data)?
+            let quadtree_file = File::open(quadtree_path)?;
+            bincode::deserialize_from(quadtree_file)?
         }
     };
 
-    if cli.grid_export || log_enabled!(Level::Debug) {
+    if cli.grid_export {
         info!("Exporting the quadtree to the working directory");
         quadtree.export(&world.grid)?;
+    }
+    if log_enabled!(Level::Debug) {
         debug!("Exporting the quadtree instance to the working directory");
         quadtree.export_bincode(Some("quadtree"))?;
     }

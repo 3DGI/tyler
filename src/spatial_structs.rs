@@ -224,11 +224,16 @@ impl QuadTree {
     }
 
     pub fn export(&self, grid: &SquareGrid) -> std::io::Result<()> {
-        let mut file_grid = File::create("quadtree.tsv")?;
         let mut q = VecDeque::new();
         q.push_back(self);
+        let mut quadtree_level: u16 = self.id.level;
+        let mut file_grid = File::create(format!("quadtree_level-{quadtree_level}.tsv"))?;
 
         while let Some(node) = q.pop_front() {
+            if node.id.level != quadtree_level {
+                quadtree_level = node.id.level;
+                file_grid = File::create(format!("quadtree_level-{quadtree_level}.tsv"))?;
+            }
             let wkt = node.to_wkt(grid);
             file_grid
                 .write_all(
@@ -380,7 +385,7 @@ pub struct SquareGrid {
     origin: [f64; 3],
     pub bbox: Bbox,
     pub length: usize,
-    cellsize: u16,
+    cellsize: u32,
     pub data: Vec<Vec<Cell>>,
     pub epsg: u16,
 }
@@ -400,7 +405,7 @@ impl SquareGrid {
     /// The grid and the cells are square.
     /// The grid origin is the `extent` origin.
     /// The grid is returned as an origin coordinate and the number of cells.
-    pub fn new(extent: &Bbox, cellsize: u16, epsg: u16, buffer: Option<f64>) -> Self {
+    pub fn new(extent: &Bbox, cellsize: u32, epsg: u16, buffer: Option<f64>) -> Self {
         // Add some buffer to the extent, to make sure all points will be within the grid.
         let buffer: f64 = buffer.unwrap_or(0.0);
         // Add the buffer to the computed extent

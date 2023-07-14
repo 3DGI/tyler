@@ -53,7 +53,7 @@ impl World {
     pub fn new<P: AsRef<Path>>(
         path_metadata: P,
         path_features_root: P,
-        cellsize: u16,
+        cellsize: u32,
         cityobject_types: Option<Vec<CityObjectType>>,
         arg_minz: Option<i32>,
         arg_maxz: Option<i32>,
