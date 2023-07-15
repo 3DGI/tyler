@@ -276,7 +276,6 @@ pub mod cesium3dtiles {
                             if content_region[5] > region[5] {
                                 region[5] = content_region[5];
                             }
-                            debug!("Updated child tile {:?} (in input CRS) bounding region from content region, because the content was larger", &tile_bbox);
                         }
                         BoundingVolume::Sphere(_) => {}
                     },
@@ -549,8 +548,6 @@ pub mod cesium3dtiles {
                                     debug!("found empty tile {}", tileid);
                                 }
                             }
-                        } else {
-                            debug!("tile {} has no children", t.id);
                         }
                     }
 
