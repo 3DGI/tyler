@@ -67,7 +67,7 @@ impl World {
         // FIXME: if cityobject_types is None, then all cityobject are ignored, instead of included
         // Compute the extent of the features and the number of features.
         // We don't store the computed extent explicitly, because the grid contains that info.
-        for path in WalkDir::new(&path_features_root).max_depth(0) {}
+        for _path in WalkDir::new(&path_features_root).max_depth(0) {}
         let (extent_qc, nr_features, cityobject_types_ignored, nr_features_ignored) =
             Self::extent_qc(&path_features_root, cityobject_types.as_ref());
         info!(
@@ -332,7 +332,7 @@ impl World {
 
     pub fn export_bincode(&self, name: Option<&str>) -> bincode::Result<()> {
         let file_name: &str = name.unwrap_or("world");
-        let mut file = File::create(format!("{file_name}.bincode"))?;
+        let file = File::create(format!("{file_name}.bincode"))?;
         bincode::serialize_into(file, self)
     }
 }

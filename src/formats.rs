@@ -33,7 +33,7 @@ pub mod cesium3dtiles {
 
     use crate::proj::Proj;
     use crate::spatial_structs::{
-        Bbox, CellId, QuadTree, QuadTreeCapacity, QuadTreeNodeId, SquareGrid,
+        Bbox, CellId, QuadTree, QuadTreeNodeId, SquareGrid,
     };
 
     /// [Tileset](https://github.com/CesiumGS/3d-tiles/tree/main/specification#tileset).
@@ -65,7 +65,7 @@ pub mod cesium3dtiles {
 
         pub fn export_bincode(&self, name: Option<&str>) -> bincode::Result<()> {
             let file_name: &str = name.unwrap_or("tileset");
-            let mut file = File::create(format!("{file_name}.bincode"))?;
+            let file = File::create(format!("{file_name}.bincode"))?;
             bincode::serialize_into(file, self)
         }
 
@@ -87,7 +87,7 @@ pub mod cesium3dtiles {
             //     1.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
             // ]);
 
-            let root_bbox = quadtree.bbox(&world.grid);
+            let _root_bbox = quadtree.bbox(&world.grid);
 
             let root = Self::generate_tiles(
                 quadtree,
@@ -515,7 +515,7 @@ pub mod cesium3dtiles {
                 for level_subtree in 0..subtree_levels as u32 {
                     level_quadtree = level_subtree_root + level_subtree;
                     // The number of tiles on the current level of the full quadtree
-                    let nr_tiles = 4_usize.pow(level_quadtree);
+                    let _nr_tiles = 4_usize.pow(level_quadtree);
                     // The number of tiles on the current level within the subtree. Each subtree
                     //  with a single root tile, on level 0. Regardless where the subtree is in the
                     //  full quadtree hierarchy.
@@ -743,7 +743,7 @@ pub mod cesium3dtiles {
                 if remainder > 0 {
                     padding = 8 - remainder;
                 }
-                for i in 0..padding {
+                for _i in 0..padding {
                     subtree_json += " ";
                 }
                 let subtree_json_bytes = subtree_json.as_bytes();
@@ -789,7 +789,7 @@ pub mod cesium3dtiles {
 
         fn add_padding(buffer_vec: &mut Vec<u8>, align_by: usize) {
             let padding = (align_by - (buffer_vec.len() % align_by)) % align_by;
-            for i in 0..padding {
+            for _i in 0..padding {
                 buffer_vec.push(0);
             }
         }
@@ -875,8 +875,8 @@ pub mod cesium3dtiles {
                 .collect();
             mortoncodes.sort_by_key(|k| k.0);
 
-            for (i, (mc, cellid)) in mortoncodes.iter().enumerate() {
-                let [minx, miny, ..] = grid_for_level.cell_bbox(&cellid);
+            for (i, (_mc, cellid)) in mortoncodes.iter().enumerate() {
+                let [minx, miny, ..] = grid_for_level.cell_bbox(cellid);
                 // Since the input for grid_cellsize is u16 and expected to be in the range
                 //  of several (hundreds) of meters, we don't care about decimal precision.
                 let corner_coord_string = format!("{:.0},{:.0}", minx, miny);
@@ -901,8 +901,8 @@ pub mod cesium3dtiles {
                     &grid_for_level.length, &first_cell.0
                 ))
                 .unwrap();
-                for (i, (mc, cellid)) in mortoncodes.iter().enumerate() {
-                    let [minx, miny, ..] = grid_for_level.cell_bbox(&cellid);
+                for (i, (_mc, cellid)) in mortoncodes.iter().enumerate() {
+                    let [minx, miny, ..] = grid_for_level.cell_bbox(cellid);
                     writeln!(
                         file_grid_morton,
                         "{}\t{}\tPOINT({} {})",
@@ -1176,17 +1176,17 @@ pub mod cesium3dtiles {
         }
     }
 
-    impl Into<QuadTreeNodeId> for &TileId {
-        fn into(self) -> QuadTreeNodeId {
-            QuadTreeNodeId::new(self.x, self.y, self.level)
+    impl From<&TileId> for QuadTreeNodeId {
+        fn from(val: &TileId) -> Self {
+            QuadTreeNodeId::new(val.x, val.y, val.level)
         }
     }
 
-    impl Into<CellId> for &TileId {
-        fn into(self) -> CellId {
+    impl From<&TileId> for CellId {
+        fn from(val: &TileId) -> Self {
             CellId {
-                column: self.x,
-                row: self.y,
+                column: val.x,
+                row: val.y,
             }
         }
     }
