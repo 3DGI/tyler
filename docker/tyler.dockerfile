@@ -1,4 +1,4 @@
-FROM balazsdukai/geoflow-bundle-builder:2023.06.22 as builder
+FROM balazsdukai/geoflow-bundle-builder:2023.07.17 as builder
 
 USER root
 
