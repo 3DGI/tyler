@@ -67,13 +67,17 @@ impl World {
         // FIXME: if cityobject_types is None, then all cityobject are ignored, instead of included
         // Compute the extent of the features and the number of features.
         // We don't store the computed extent explicitly, because the grid contains that info.
-        let (extent_qc, nr_features, cityobject_types_ignored) =
+        for path in WalkDir::new(&path_features_root).max_depth(0) {}
+        let (extent_qc, nr_features, cityobject_types_ignored, nr_features_ignored) =
             Self::extent_qc(&path_features_root, cityobject_types.as_ref());
         info!(
             "Found {} features of type {:?}",
             nr_features, &cityobject_types
         );
-        info!("Ignored feature types: {:?}", &cityobject_types_ignored);
+        info!(
+            "Ignored {} features of type {:?}",
+            nr_features_ignored, &cityobject_types_ignored
+        );
         debug!("extent_qc: {:?}", &extent_qc);
         let extent_rw = extent_qc.to_bbox(&transform, arg_minz, arg_maxz);
         info!(
@@ -106,7 +110,7 @@ impl World {
     fn extent_qc<P: AsRef<Path> + std::fmt::Debug>(
         path_features: P,
         cityobject_types: Option<&Vec<CityObjectType>>,
-    ) -> (BboxQc, usize, Vec<CityObjectType>) {
+    ) -> (BboxQc, usize, Vec<CityObjectType>, usize) {
         info!(
             "Computing extent from the features of type {:?}",
             cityobject_types
@@ -120,6 +124,7 @@ impl World {
         let mut extent_qc = BboxQc([0, 0, 0, 0, 0, 0]);
         let mut found_feature_type = false;
         let mut nr_features = 0;
+        let mut nr_features_ignored = 0;
         let mut cotypes_ignored: Vec<CityObjectType> = Vec::new();
         debug!("Searching for the first feature of the requested type...");
         loop {
@@ -135,6 +140,7 @@ impl World {
                             if !cotypes_ignored.contains(&co.cotype) {
                                 cotypes_ignored.push(co.cotype);
                             }
+                            nr_features_ignored += 1;
                         }
                     }
                 } else {
@@ -179,13 +185,14 @@ impl World {
                         if !cotypes_ignored.contains(&co.cotype) {
                             cotypes_ignored.push(co.cotype);
                         }
+                        nr_features_ignored += 1;
                     }
                 }
             } else {
                 error!("Failed to parse {:?}", &feature_path);
             }
         }
-        (extent_qc, nr_features, cotypes_ignored)
+        (extent_qc, nr_features, cotypes_ignored, nr_features_ignored)
     }
 
     /// Return the file path if the 'DirEntry' is a .jsonl file (eg. .city.jsonl).
