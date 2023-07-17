@@ -255,8 +255,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // 3D Tiles
+
     let tileset_path = cli.output.join("tileset.json");
-    let tileset_path_pruned = cli.output.join("tileset_pruned.json");
+    let subtrees_path = cli.output.join("subtrees");
+    let tileset_path_unpruned = cli.output.join("tileset_unpruned.json");
+    let subtrees_path_unpruned = cli.output.join("subtrees_unpruned");
     info!("Generating 3D Tiles tileset");
     let mut tileset = formats::cesium3dtiles::Tileset::from_quadtree(
         &quadtree,
@@ -275,27 +278,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!("Converting to implicit tiling");
             // Tileset.make_implicit() outputs the tiles that have content. If only the leaves have
             //  content, then only the leaves are outputted.
-            let tiles_subtrees =
-                tileset_implicit.make_implicit(&world.grid, &quadtree, cli.grid_export, None);
+            let components: Vec<_> = subtrees_path_unpruned
+                .components()
+                .map(|comp| comp.as_os_str())
+                .collect();
+            let subtrees_dir_option = components.last().cloned().unwrap().to_str();
+            let tiles_subtrees = tileset_implicit.make_implicit(
+                &world.grid,
+                &quadtree,
+                cli.grid_export,
+                subtrees_dir_option,
+            );
 
-            info!("Writing 3D Tiles tileset");
-            tileset_implicit.to_file(&tileset_path)?;
+            if log_enabled!(Level::Debug) {
+                debug!("Writing unpruned 3D Tiles tileset");
+                tileset_implicit.to_file(&tileset_path_unpruned)?;
 
-            info!("Writing subtrees for implicit tiling");
-            let subtrees_path = cli.output.join("subtrees");
-            fs::create_dir_all(&subtrees_path)?;
-            for (subtree_id, subtree_bytes) in &tiles_subtrees.1 {
-                fs::create_dir_all(
-                    subtrees_path.join(format!("{}/{}", subtree_id.level, subtree_id.x)),
-                )
-                .unwrap();
-                let out_path = subtrees_path
-                    .join(&subtree_id.to_string())
-                    .with_extension("subtree");
-                let mut subtree_file = File::create(&out_path)
-                    .unwrap_or_else(|_| panic!("could not create {:?} for writing", &out_path));
-                if let Err(_e) = subtree_file.write_all(subtree_bytes) {
-                    warn!("Failed to write subtree {} content", subtree_id);
+                debug!("Writing unpruned subtrees for implicit tiling");
+                fs::create_dir_all(&subtrees_path_unpruned)?;
+                for (subtree_id, subtree_bytes) in &tiles_subtrees.1 {
+                    fs::create_dir_all(
+                        subtrees_path.join(format!("{}/{}", subtree_id.level, subtree_id.x)),
+                    )
+                    .unwrap();
+                    let out_path = subtrees_path
+                        .join(&subtree_id.to_string())
+                        .with_extension("subtree");
+                    let mut subtree_file = File::create(&out_path)
+                        .unwrap_or_else(|_| panic!("could not create {:?} for writing", &out_path));
+                    if let Err(_e) = subtree_file.write_all(subtree_bytes) {
+                        warn!("Failed to write subtree {} content", subtree_id);
+                    }
                 }
             }
 
@@ -310,8 +323,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|tile_ref| (tile_ref.clone(), tile_ref.id.clone()))
                 .collect();
 
-            info!("Writing 3D Tiles tileset");
-            tileset.to_file(&tileset_path)?;
+            info!("Writing unpruned 3D Tiles tileset");
+            tileset.to_file(&tileset_path_unpruned)?;
 
             (tiles, vec![])
         }
@@ -748,10 +761,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let tiles_failed_file = File::create("tiles_failed.bincode")?;
             bincode::serialize_into(tiles_failed_file, &tiles_failed)?;
         }
-        info!(
-            "Pruning tileset of failed tiles (failed: {})",
-            tiles_failed.len()
-        );
+        info!("Pruning tileset of {} failed tiles", tiles_failed.len());
         for (i, failed) in tiles_failed.iter().enumerate() {
             debug!("{}, removing failed from the tileset: {}", i, failed.id);
         }
@@ -762,14 +772,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             //  because it is simpler than flipping the bits of the unavailable tiles,
             //  because of the mixed up explicit/implicit tile IDs. But ideally, we
             //  flip the bits, so we won't need to duplicate the tileset here.
-            let (_, subtrees) = tileset.make_implicit(
-                &world.grid,
-                &quadtree,
-                cli.grid_export,
-                Some("subtrees_pruned"),
-            );
-            info!("Writing pruned subtrees for implicit tiling");
-            let subtrees_path = cli.output.join("subtrees_pruned");
+            let components: Vec<_> = subtrees_path
+                .components()
+                .map(|comp| comp.as_os_str())
+                .collect();
+            let subtrees_dir_option = components.last().cloned().unwrap().to_str();
+            let (_, subtrees) =
+                tileset.make_implicit(&world.grid, &quadtree, cli.grid_export, subtrees_dir_option);
+            info!("Writing subtrees for implicit tiling");
             fs::create_dir_all(&subtrees_path)?;
             for (subtree_id, subtree_bytes) in subtrees {
                 fs::create_dir_all(
@@ -786,8 +796,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
-        info!("Writing pruned 3D Tiles tileset");
-        tileset.to_file(&tileset_path_pruned)?;
+        info!("Writing 3D Tiles tileset");
+        tileset.to_file(&tileset_path)?;
     }
 
     Ok(())

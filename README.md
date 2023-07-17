@@ -262,6 +262,8 @@ You can enable the `.tsv` export with the `--grid-export` flag.
 With the `--grid-export-features` flag, also the feature feature centorids and their grid cell assignment will be exported. 
 Only use this for small amount of features.
 
+In debug mode, *tyler* will write the unpruned tileset too, together with the tileset that was pruned after the glTF conversion.
+
 
 ## Roadmap
 
