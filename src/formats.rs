@@ -120,7 +120,7 @@ pub mod cesium3dtiles {
         }
 
         fn generate_tiles(
-            quadtree: &crate::spatial_structs::QuadTree,
+            quadtree: &QuadTree,
             world: &crate::parser::World,
             transformer: &Proj,
             geometric_error_above_leaf: f64,
@@ -301,7 +301,7 @@ pub mod cesium3dtiles {
 
         #[allow(dead_code)]
         pub fn from_grid(
-            grid: &crate::spatial_structs::SquareGrid,
+            grid: &SquareGrid,
             citymodel: &crate::parser::CityJSONMetadata,
             feature_set: &crate::parser::FeatureSet,
         ) -> Self {
@@ -1493,16 +1493,16 @@ pub mod cesium3dtiles {
             .unwrap();
             world.index_with_grid();
 
-            world.export_grid(false);
+            world.export_grid(false).unwrap();
 
-            let quadtree = QuadTree::from_world(&world, QuadTreeCapacity::Vertices(15000));
+            let quadtree = QuadTree::from_world(&world, crate::spatial_structs::QuadTreeCapacity::Vertices(15000));
             quadtree.export(&world.grid).unwrap();
 
-            let mut tileset = Tileset::from_quadtree(&quadtree, &world, 16_f64, 200, None, None);
+            let tileset = Tileset::from_quadtree(&quadtree, &world, 16_f64, 200, None, None);
 
             // tileset.make_implicit(&world.grid, &quadtree, );
 
-            let mut i = ImplicitTiling::default();
+            let i = ImplicitTiling::default();
             println!("{}", serde_json::to_string(&i).unwrap());
         }
 
