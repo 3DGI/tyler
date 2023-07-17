@@ -230,10 +230,38 @@ In the example below, the coordinates are in *RD New (EPSG: 7415)*.
 
 ```commandline
 [2023-07-05T08:52:06Z INFO  tyler::parser] Found 436 features of type Some([Building, BuildingPart])
-[2023-07-05T08:52:06Z INFO  tyler::parser] Ignored feature types: []
+[2023-07-05T08:52:06Z INFO  tyler::parser] Ignored 0 features of type []
 [2023-07-05T08:52:06Z DEBUG tyler::parser] extent_qc: BboxQc([-86804720, -26383186, -5333, -86155251, -25703867, 52882])
 [2023-07-05T08:52:06Z DEBUG tyler::parser] Computed extent from features in real-world coordinates: [84995.28, 446316.814, -5.333, 85644.749, 446996.133, 52.882]
 ```
+
+## Debugging
+
+Run *tyler* in debug mode, by setting the logging level to `debug` in the `RUST_LOG` environment variable.
+
+```shell
+RUST_LOG=debug tyler ...
+```
+
+In debug mode, *tyler* will write the `world`, `quadtree` and `tiles_failed` instances to [bincode](https://crates.io/crates/bincode) to the working directory.
+In case of a large area and lots of features (eg. an entire country and multiple millions of features), the `world.bincode` file can become a couple GB in size.
+
+The bincode files can be loaded by passing the directory with the bincode files to the  `--debug-load-data` parameter. When *tyler* load the instance data from the file, it will skip the instance creation and use the loaded data instead.
+
+The order in which *tyler* creates the instances:
+
+1. world
+2. quadtree
+3. tileset
+4. (implicit tileset)
+5. tiles_failed
+6. pruned tileset
+
+In addition to the instance data, *tyler* can export the grid (part of the `world`), quadtree and tileset data to Tab-separated values (`.tsv`), which you can load into a GIS.
+You can enable the `.tsv` export with the `--grid-export` flag.
+With the `--grid-export-features` flag, also the feature feature centorids and their grid cell assignment will be exported. 
+Only use this for small amount of features.
+
 
 ## Roadmap
 

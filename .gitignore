@@ -7,6 +7,12 @@
 .run
 .vs
 /resources/data/features_3dbag_5909/
+.vs
 
 # misc
 /tmp
+
+# Debug data
+*.tsv
+*.bincode
+*.log

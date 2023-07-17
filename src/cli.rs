@@ -61,7 +61,10 @@ pub struct Cli {
     pub geometric_error_above_leaf: Option<f64>,
     /// Set the 2D cell size for the grid that is used for constructing the quadtree. In input units (eg. meters).
     #[arg(long, default_value = "250")]
-    pub grid_cellsize: Option<u16>,
+    pub grid_cellsize: Option<u32>,
+    /// Generate the quadtree directly from a grid.tsv file, skipping the extent computation and feature indexing. A grid.tsv file is created with the --grid-export option. Used for debugging.
+    #[arg(long)]
+    pub grid_file: Option<String>,
     /// Limit the minimum z coordinate for the bounding box that is computed from the
     /// features. Useful if the features contain errors with extremely small z
     /// coordinates. In input units (eg. meters).
@@ -72,10 +75,19 @@ pub struct Cli {
     /// coordinates. In input units (eg. meters).
     #[arg(long)]
     pub grid_maxz: Option<i32>,
-    /// Export the grid and the feature centroids in to .tsv files in the working
+    /// Export the grid into .tsv files in the working
     /// directory. Used for debugging.
     #[arg(long)]
     pub grid_export: bool,
+    /// Export the grid, and also the feature centroids into .tsv files in the working
+    /// directory. Used for debugging.
+    #[arg(long)]
+    pub grid_export_features: bool,
+    /// Load instances from this directory.
+    /// In debug mode, tyler writes the generated world, quadtree etc. instances to .bincode files, which later can be used for debugging.
+    /// When this argument is specified, tyler will load the instances from the .bincode files that are available in the directory.
+    #[arg(long, value_parser = existing_canonical_path)]
+    pub debug_load_data: Option<PathBuf>,
     /// The maximum number of vertices in a leaf of the quadtree.
     #[arg(long, default_value = "42000")]
     pub qtree_capacity: Option<usize>,

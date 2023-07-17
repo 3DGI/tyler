@@ -1,5 +1,19 @@
 # Changelog
 
+## tyler 0.3.6 (2023-07-17)
+
+### Changed
+- The `--grid-export` switch does not export the feature centroids anymore. Use the `--grid-export-features` if you want to export the feature centroids together with the grid cells.
+- Write both pruned and unpruned tilesets (for debugging).
+- Reduced the logging in debug mode.
+
+### Fixed
+- Invalid subtree for implicit tiling, in case of very large areas (eg. the Netherlands).
+
+### Added
+- Write the `world`, `quadtree` and `tiles_failed` instances to bincode when running in debug mode. The instances can be loaded for debugging with the `--debug-load-data`, in which case tyler will load the instance data instead of generating it.
+- Describe how to generate debug data.
+
 ## tyler 0.3.5 (2023-06-28)
 
 ### Added
@@ -17,8 +31,8 @@
 ## tyler 0.3.3 (2023-06-19)
 
 ### Fixed
-- Infinite loop in the glb conversion in geoflow-bundle, in a rare case during the mesh simplification
-- Infinite loop in case there is not a single CityJSONFeature file in the directory tree
+- Infinite loop in the glb conversion in geoflow-bundle, in a rare case during the mesh simplification.
+- Infinite loop in case there is not a single CityJSONFeature file in the directory tree.
 
 ### Changed
 - tyler and geoflow versions are reported as info

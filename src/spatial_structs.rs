@@ -13,18 +13,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 use crate::parser::FeatureSet;
-use log::{debug, error, warn};
+use log::{debug, warn};
 use std::collections::VecDeque;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::prelude::*;
+
+use serde::{Deserialize, Serialize};
 
 use morton_encoding::{morton_decode, morton_encode};
 
 /// Quadtree
 ///
 /// We don't expect that the quadtree has more than 65535 levels (u16).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct QuadTree {
     pub id: QuadTreeNodeId,
     side_length: u64,
@@ -113,7 +115,7 @@ impl QuadTree {
                 }
             }
             let id = QuadTreeNodeId::new(tiles[0].id.x, tiles[0].id.y, level);
-            let id_string = id.to_string();
+            let _id_string = id.to_string();
             // FIXME: this also adds the quadtree if sum_items == 0 so the parent will have 4
             //  children instead of 3. Probably should return Option<Quadtree>.
             //  Currently these empty tiles are removed in Tile.prune().
@@ -222,11 +224,16 @@ impl QuadTree {
     }
 
     pub fn export(&self, grid: &SquareGrid) -> std::io::Result<()> {
-        let mut file_grid = File::create("quadtree.tsv")?;
         let mut q = VecDeque::new();
         q.push_back(self);
+        let mut quadtree_level: u16 = self.id.level;
+        let mut file_grid = File::create(format!("quadtree_level-{quadtree_level}.tsv"))?;
 
         while let Some(node) = q.pop_front() {
+            if node.id.level != quadtree_level {
+                quadtree_level = node.id.level;
+                file_grid = File::create(format!("quadtree_level-{quadtree_level}.tsv"))?;
+            }
             let wkt = node.to_wkt(grid);
             file_grid
                 .write_all(
@@ -243,9 +250,15 @@ impl QuadTree {
         }
         Ok(())
     }
+
+    pub fn export_bincode(&self, name: Option<&str>) -> bincode::Result<()> {
+        let file_name: &str = name.unwrap_or("quadtree");
+        let file = File::create(format!("{file_name}.bincode"))?;
+        bincode::serialize_into(file, self)
+    }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct QuadTreeNodeId {
     pub x: usize,
     pub y: usize,
@@ -367,12 +380,12 @@ pub fn deinterleave(mortoncode: &u64) -> [u64; 2] {
 /// assert_eq!(grid_idx, [3_u64, 2_u64]);
 /// ```
 ///
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SquareGrid {
     origin: [f64; 3],
     pub bbox: Bbox,
     pub length: usize,
-    cellsize: u16,
+    cellsize: u32,
     pub data: Vec<Vec<Cell>>,
     pub epsg: u16,
 }
@@ -392,7 +405,7 @@ impl SquareGrid {
     /// The grid and the cells are square.
     /// The grid origin is the `extent` origin.
     /// The grid is returned as an origin coordinate and the number of cells.
-    pub fn new(extent: &Bbox, cellsize: u16, epsg: u16, buffer: Option<f64>) -> Self {
+    pub fn new(extent: &Bbox, cellsize: u32, epsg: u16, buffer: Option<f64>) -> Self {
         // Add some buffer to the extent, to make sure all points will be within the grid.
         let buffer: f64 = buffer.unwrap_or(0.0);
         // Add the buffer to the computed extent
@@ -616,7 +629,7 @@ impl<'squaregrid> Iterator for SquareGridIterator<'squaregrid> {
     }
 }
 
-#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Cell {
     pub feature_ids: Vec<usize>,
     pub nr_vertices: usize,
@@ -636,7 +649,7 @@ pub struct Cell {
 ///                       X
 /// ```
 ///
-#[derive(Copy, Clone, Hash, Debug, Ord, PartialOrd, PartialEq, Eq)]
+#[derive(Copy, Clone, Hash, Debug, Ord, PartialOrd, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CellId {
     // A row is along the y-axis
     pub row: usize,
@@ -658,7 +671,7 @@ pub type Bbox = [f64; 6];
 /// 3D bounding box with quantized coordinates.
 ///
 /// [min x, min y, min z, max x, max y, max z]
-#[derive(Debug, Default, Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Debug, Default, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BboxQc(pub [i64; 6]); // This `pub [i64; 6]` makes the BboxQc constructor public
 
 impl BboxQc {

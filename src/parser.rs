@@ -16,11 +16,11 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::fs::read_to_string;
+use std::fs::{read_to_string, File};
 use std::path::{Path, PathBuf};
 
 use log::{debug, error, info};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::from_str;
 use walkdir::WalkDir;
 
@@ -38,6 +38,7 @@ use crate::spatial_structs::BboxQc;
 /// (also called CityJSON metadata in *tyler*).
 ///
 /// `cityobject_types` - The World only contains features of these types.
+#[derive(Serialize, Deserialize)]
 pub struct World {
     pub cityobject_types: Option<Vec<CityObjectType>>,
     pub crs: Crs,
@@ -52,7 +53,7 @@ impl World {
     pub fn new<P: AsRef<Path>>(
         path_metadata: P,
         path_features_root: P,
-        cellsize: u16,
+        cellsize: u32,
         cityobject_types: Option<Vec<CityObjectType>>,
         arg_minz: Option<i32>,
         arg_maxz: Option<i32>,
@@ -66,13 +67,17 @@ impl World {
         // FIXME: if cityobject_types is None, then all cityobject are ignored, instead of included
         // Compute the extent of the features and the number of features.
         // We don't store the computed extent explicitly, because the grid contains that info.
-        let (extent_qc, nr_features, cityobject_types_ignored) =
+        for _path in WalkDir::new(&path_features_root).max_depth(0) {}
+        let (extent_qc, nr_features, cityobject_types_ignored, nr_features_ignored) =
             Self::extent_qc(&path_features_root, cityobject_types.as_ref());
         info!(
             "Found {} features of type {:?}",
             nr_features, &cityobject_types
         );
-        info!("Ignored feature types: {:?}", &cityobject_types_ignored);
+        info!(
+            "Ignored {} features of type {:?}",
+            nr_features_ignored, &cityobject_types_ignored
+        );
         debug!("extent_qc: {:?}", &extent_qc);
         let extent_rw = extent_qc.to_bbox(&transform, arg_minz, arg_maxz);
         info!(
@@ -105,7 +110,7 @@ impl World {
     fn extent_qc<P: AsRef<Path> + std::fmt::Debug>(
         path_features: P,
         cityobject_types: Option<&Vec<CityObjectType>>,
-    ) -> (BboxQc, usize, Vec<CityObjectType>) {
+    ) -> (BboxQc, usize, Vec<CityObjectType>, usize) {
         info!(
             "Computing extent from the features of type {:?}",
             cityobject_types
@@ -119,6 +124,7 @@ impl World {
         let mut extent_qc = BboxQc([0, 0, 0, 0, 0, 0]);
         let mut found_feature_type = false;
         let mut nr_features = 0;
+        let mut nr_features_ignored = 0;
         let mut cotypes_ignored: Vec<CityObjectType> = Vec::new();
         debug!("Searching for the first feature of the requested type...");
         loop {
@@ -134,6 +140,7 @@ impl World {
                             if !cotypes_ignored.contains(&co.cotype) {
                                 cotypes_ignored.push(co.cotype);
                             }
+                            nr_features_ignored += 1;
                         }
                     }
                 } else {
@@ -178,13 +185,14 @@ impl World {
                         if !cotypes_ignored.contains(&co.cotype) {
                             cotypes_ignored.push(co.cotype);
                         }
+                        nr_features_ignored += 1;
                     }
                 }
             } else {
                 error!("Failed to parse {:?}", &feature_path);
             }
         }
-        (extent_qc, nr_features, cotypes_ignored)
+        (extent_qc, nr_features, cotypes_ignored, nr_features_ignored)
     }
 
     /// Return the file path if the 'DirEntry' is a .jsonl file (eg. .city.jsonl).
@@ -312,10 +320,20 @@ impl World {
         }
     }
 
-    // Export the grid of the World into the working directory.
-    pub fn export_grid(&self) -> std::io::Result<()> {
-        self.grid
-            .export(Some(&self.features), Some(&self.transform))
+    /// Export the grid of the World into the working directory.
+    pub fn export_grid(&self, export_features: bool) -> std::io::Result<()> {
+        if export_features {
+            self.grid
+                .export(Some(&self.features), Some(&self.transform))
+        } else {
+            self.grid.export(None, None)
+        }
+    }
+
+    pub fn export_bincode(&self, name: Option<&str>) -> bincode::Result<()> {
+        let file_name: &str = name.unwrap_or("world");
+        let file = File::create(format!("{file_name}.bincode"))?;
+        bincode::serialize_into(file, self)
     }
 }
 
@@ -328,7 +346,7 @@ pub struct CityJSONMetadata {
     pub metadata: Metadata,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Transform {
     pub scale: [f64; 3],
     pub translate: [f64; 3],
@@ -342,7 +360,7 @@ pub struct Metadata {
 
 /// Coordinate Reference System as defined by the
 /// [referenceSystem](https://www.cityjson.org/specs/1.1.3/#referencesystem-crs) CityJSON object.
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Crs(String);
 
 impl Crs {
@@ -610,7 +628,7 @@ impl CityJSONFeatureVertices {
 }
 
 /// Stores the information that is computed from a CityJSONFeature.
-#[derive(Debug, Default, Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Debug, Default, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Feature {
     pub(crate) centroid_qc: [i64; 2],
     pub(crate) nr_vertices: u16,
@@ -628,7 +646,9 @@ impl Feature {
     }
 }
 
-#[derive(Debug, Deserialize, clap::ValueEnum, Clone, Copy, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(
+    Debug, Serialize, Deserialize, clap::ValueEnum, Clone, Copy, Ord, PartialOrd, Eq, PartialEq,
+)]
 #[clap(rename_all = "PascalCase")]
 pub enum CityObjectType {
     Bridge,
