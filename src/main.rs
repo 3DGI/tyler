@@ -223,7 +223,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    if cli.grid_export || log_enabled!(Level::Debug) {
+    if cli.grid_export {
         info!("Exporting the grid to the working directory");
         world.export_grid(cli.grid_export_features)?;
     }
