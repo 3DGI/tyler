@@ -67,6 +67,68 @@ pub mod cesium3dtiles {
             bincode::serialize_into(file, self)
         }
 
+        /// Write the tile boundingVolume and content boundingVolume for each level of the tileset
+        /// to .tsv to the working directory.
+        pub fn export(&self) -> std::io::Result<()> {
+            let mut q = VecDeque::new();
+            q.push_back(&self.root);
+            let mut tileset_level: u16 = self.root.id.level;
+            let mut file_tileset = File::create(format!("tileset_level-{tileset_level}.tsv"))?;
+            file_tileset
+                .write_all("id\tlevel\thas_content\twkt\n".as_bytes())
+                .expect("cannot write tileset tile");
+            let mut file_tileset_content =
+                File::create(format!("tileset_content_level-{tileset_level}.tsv"))?;
+            file_tileset_content
+                .write_all("id\tlevel\twkt\n".as_bytes())
+                .expect("cannot write tileset content tile");
+
+            while let Some(tile) = q.pop_front() {
+                if tile.id.level != tileset_level {
+                    tileset_level = tile.id.level;
+                    file_tileset = File::create(format!("tileset_level-{tileset_level}.tsv"))?;
+                    file_tileset
+                        .write_all("id\tlevel\thas_content\twkt\n".as_bytes())
+                        .expect("cannot write tileset tile");
+                    file_tileset_content =
+                        File::create(format!("tileset_content_level-{tileset_level}.tsv"))?;
+                    file_tileset_content
+                        .write_all("id\tlevel\twkt\n".as_bytes())
+                        .expect("cannot write tileset content tile");
+                }
+                let wkt = tile.bounding_volume.to_wkt();
+                file_tileset
+                    .write_all(
+                        format!(
+                            "{}\t{}\t{}\t{}\n",
+                            tile.id,
+                            tile.id.level,
+                            tile.content.is_some(),
+                            wkt
+                        )
+                        .as_bytes(),
+                    )
+                    .expect("cannot write tileset tile");
+                if let Some(ref content) = tile.content {
+                    if let Some(ref bv) = content.bounding_volume {
+                        let wkt_content_bbox = bv.to_wkt();
+                        file_tileset_content
+                            .write_all(
+                                format!("{}\t{}\t{}\n", tile.id, tile.id.level, wkt_content_bbox)
+                                    .as_bytes(),
+                            )
+                            .expect("cannot write tileset tile content");
+                    }
+                }
+                if let Some(ref children) = tile.children {
+                    for child in children {
+                        q.push_back(child);
+                    }
+                }
+            }
+            Ok(())
+        }
+
         pub fn from_quadtree(
             quadtree: &QuadTree,
             world: &crate::parser::World,
@@ -1292,6 +1354,33 @@ pub mod cesium3dtiles {
                 maxh,
             ]))
         }
+
+        /// Cast to 2D WKT
+        fn to_wkt(&self) -> String {
+            let [minx, miny, _minz, maxx, maxy, _maxz] = match self {
+                BoundingVolume::Box(_) => {
+                    unimplemented!()
+                }
+                BoundingVolume::Region(bbox) => [
+                    bbox[0].to_degrees(),
+                    bbox[1].to_degrees(),
+                    bbox[4],
+                    bbox[2].to_degrees(),
+                    bbox[3].to_degrees(),
+                    bbox[5],
+                ],
+                BoundingVolume::Sphere(_) => {
+                    unimplemented!()
+                }
+            };
+            format!(
+                "POLYGON(({minx} {miny}, {maxx} {miny}, {maxx} {maxy}, {minx} {maxy}, {minx} {miny}))",
+                minx = minx,
+                miny = miny,
+                maxx = maxx,
+                maxy = maxy
+            )
+        }
     }
 
     /// [Tile.refine](https://github.com/CesiumGS/3d-tiles/tree/main/specification#tilerefine).
@@ -1476,7 +1565,7 @@ pub mod cesium3dtiles {
                 &world,
                 crate::spatial_structs::QuadTreeCapacity::Vertices(15000),
             );
-            quadtree.export(&world.grid).unwrap();
+            quadtree.export(&world).unwrap();
 
             let tileset = Tileset::from_quadtree(&quadtree, &world, 16_f64, 200, None, None);
 

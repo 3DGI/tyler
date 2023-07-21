@@ -800,5 +800,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         tileset.to_file(&tileset_path)?;
     }
 
+    if cli.grid_export {
+        info!("Exporting the tileset to .tsv files to the working directory");
+        tileset.export()?;
+    }
+
     Ok(())
 }
