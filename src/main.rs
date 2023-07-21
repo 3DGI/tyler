@@ -247,7 +247,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if cli.grid_export {
         info!("Exporting the quadtree to the working directory");
-        quadtree.export(&world.grid)?;
+        quadtree.export(&world)?;
     }
     if log_enabled!(Level::Debug) {
         debug!("Exporting the quadtree instance to the working directory");

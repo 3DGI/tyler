@@ -175,6 +175,37 @@ impl QuadTree {
         ]
     }
 
+    /// Compute the bounding box of all the features in the node
+    pub fn node_content_bbox(
+        &self,
+        world: &crate::parser::World,
+        arg_minz: Option<i32>,
+        arg_maxz: Option<i32>,
+    ) -> Bbox {
+        let mut tile_content_bbox_qc = BboxQc([0, 0, 0, 0, 0, 0]);
+        for cellid in self.cells() {
+            let cell = world.grid.cell(cellid);
+            if !cell.feature_ids.is_empty() {
+                tile_content_bbox_qc = world.features[cell.feature_ids[0]].bbox_qc.clone();
+                break;
+            }
+        }
+        for cellid in self.cells() {
+            let cell = world.grid.cell(cellid);
+            for fi in cell.feature_ids.iter() {
+                tile_content_bbox_qc.update_with(&world.features[*fi].bbox_qc);
+            }
+        }
+        // If the limit-minz/maxz arguments are set, also limit the z of the
+        // bounding volume. We could also just use the grid.bbox values to limit the z,
+        // however at this point we don't know if that was computed from the data or set by
+        // the argument. Setting the argument signals intent, so only then do we override
+        // the values.
+        let tile_content_bbox_rw =
+            tile_content_bbox_qc.to_bbox(&world.transform, arg_minz, arg_maxz);
+        tile_content_bbox_rw
+    }
+
     /// Breadth-first search for a node.
     pub fn node(&self, id: &QuadTreeNodeId) -> Option<&QuadTree> {
         let mut q = VecDeque::new();
@@ -223,19 +254,23 @@ impl QuadTree {
         )
     }
 
-    pub fn export(&self, grid: &SquareGrid) -> std::io::Result<()> {
+    pub fn export(&self, world: &crate::parser::World) -> std::io::Result<()> {
         let mut q = VecDeque::new();
         q.push_back(self);
         let mut quadtree_level: u16 = self.id.level;
-        let mut file_grid = File::create(format!("quadtree_level-{quadtree_level}.tsv"))?;
+        let mut file_quadtree = File::create(format!("quadtree_level-{quadtree_level}.tsv"))?;
+        let mut file_quadtree_content =
+            File::create(format!("quadtree_content_level-{quadtree_level}.tsv"))?;
 
         while let Some(node) = q.pop_front() {
             if node.id.level != quadtree_level {
                 quadtree_level = node.id.level;
-                file_grid = File::create(format!("quadtree_level-{quadtree_level}.tsv"))?;
+                file_quadtree = File::create(format!("quadtree_level-{quadtree_level}.tsv"))?;
+                file_quadtree_content =
+                    File::create(format!("quadtree_content_level-{quadtree_level}.tsv"))?;
             }
-            let wkt = node.to_wkt(grid);
-            file_grid
+            let wkt = node.to_wkt(&world.grid);
+            file_quadtree
                 .write_all(
                     format!(
                         "{}\t{}\t{}\t{}\n",
@@ -244,6 +279,22 @@ impl QuadTree {
                     .as_bytes(),
                 )
                 .expect("cannot write quadtree node");
+            let node_content_bbox = node.node_content_bbox(world, None, None);
+            let wkt_content_bbox = format!(
+                "POLYGON (({minx} {miny}, {maxx} {miny}, {maxx} {maxy}, {minx} {maxy}, {minx} {miny}))",
+                minx=node_content_bbox[0], miny=node_content_bbox[1], maxx=node_content_bbox[3],
+                maxy=node_content_bbox[4]
+            );
+            file_quadtree_content
+                .write_all(
+                    format!(
+                        "{}\t{}\t{}\t{}\n",
+                        node.id, node.id.level, node.nr_items, wkt_content_bbox
+                    )
+                    .as_bytes(),
+                )
+                .expect("cannot write quadtree node content");
+
             for child in &node.children {
                 q.push_back(child);
             }

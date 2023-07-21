@@ -32,9 +32,7 @@ pub mod cesium3dtiles {
     use serde_repr::{Deserialize_repr, Serialize_repr};
 
     use crate::proj::Proj;
-    use crate::spatial_structs::{
-        Bbox, CellId, QuadTree, QuadTreeNodeId, SquareGrid,
-    };
+    use crate::spatial_structs::{Bbox, CellId, QuadTree, QuadTreeNodeId, SquareGrid};
 
     /// [Tileset](https://github.com/CesiumGS/3d-tiles/tree/main/specification#tileset).
     ///
@@ -185,28 +183,7 @@ pub mod cesium3dtiles {
                     implicit_tiling: None,
                 }
             } else {
-                // Compute the tile content bounding box <-- the bbox of all the cells in a tile
-                let mut tile_content_bbox_qc = crate::spatial_structs::BboxQc([0, 0, 0, 0, 0, 0]);
-                for cellid in quadtree.cells() {
-                    let cell = world.grid.cell(cellid);
-                    if !cell.feature_ids.is_empty() {
-                        tile_content_bbox_qc = world.features[cell.feature_ids[0]].bbox_qc.clone();
-                        break;
-                    }
-                }
-                for cellid in quadtree.cells() {
-                    let cell = world.grid.cell(cellid);
-                    for fi in cell.feature_ids.iter() {
-                        tile_content_bbox_qc.update_with(&world.features[*fi].bbox_qc);
-                    }
-                }
-                // If the limit-minz/maxz arguments are set, also limit the z of the
-                // bounding volume. We could also just use the grid.bbox values to limit the z,
-                // however at this point we don't know if that was computed from the data or set by
-                // the argument. Setting the argument signals intent, so only then do we override
-                // the values.
-                let tile_content_bbox_rw =
-                    tile_content_bbox_qc.to_bbox(&world.transform, arg_minz, arg_maxz);
+                let tile_content_bbox_rw = quadtree.node_content_bbox(&world, arg_minz, arg_maxz);
 
                 // Tile bounding volume
                 let mut tile_bbox = quadtree.bbox(&world.grid);
@@ -1495,7 +1472,10 @@ pub mod cesium3dtiles {
 
             world.export_grid(false).unwrap();
 
-            let quadtree = QuadTree::from_world(&world, crate::spatial_structs::QuadTreeCapacity::Vertices(15000));
+            let quadtree = QuadTree::from_world(
+                &world,
+                crate::spatial_structs::QuadTreeCapacity::Vertices(15000),
+            );
             quadtree.export(&world.grid).unwrap();
 
             let tileset = Tileset::from_quadtree(&quadtree, &world, 16_f64, 200, None, None);
