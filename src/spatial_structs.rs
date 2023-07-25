@@ -717,6 +717,7 @@ impl Display for CellId {
 /// 3D bounding box.
 ///
 /// [min x, min y, min z, max x, max y, max z]
+/// TODO: this must become a struct and have a .to_wkt() method
 pub type Bbox = [f64; 6];
 
 /// 3D bounding box with quantized coordinates.

@@ -270,6 +270,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         cli.grid_maxz,
     );
 
+    if cli.grid_export {
+        info!("Exporting the explicit tileset to .tsv files to the working directory");
+        tileset.export()?;
+    }
+
     let (tiles, _subtrees) = match cli.cesium3dtiles_implicit {
         true => {
             let mut tileset_implicit = tileset.clone();
@@ -290,11 +295,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 subtrees_dir_option,
             );
 
-            if log_enabled!(Level::Debug) {
-                debug!("Writing unpruned 3D Tiles tileset");
+            if cli.cesium3dtiles_tileset_only || log_enabled!(Level::Debug) {
+                info!("Writing unpruned 3D Tiles tileset");
                 tileset_implicit.to_file(&tileset_path_unpruned)?;
 
-                debug!("Writing unpruned subtrees for implicit tiling");
+                info!("Writing unpruned subtrees for implicit tiling");
                 fs::create_dir_all(&subtrees_path_unpruned)?;
                 for (subtree_id, subtree_bytes) in &tiles_subtrees.1 {
                     fs::create_dir_all(
@@ -798,11 +803,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         info!("Writing 3D Tiles tileset");
         tileset.to_file(&tileset_path)?;
-    }
-
-    if cli.grid_export {
-        info!("Exporting the tileset to .tsv files to the working directory");
-        tileset.export()?;
     }
 
     Ok(())

@@ -197,6 +197,15 @@ pub mod cesium3dtiles {
                 // Set the bounding volume height from the content height
                 tile_bbox[2] = world.grid.bbox[2];
                 tile_bbox[5] = world.grid.bbox[5];
+
+                let tile_bbox_wkt = format!(
+                    "POLYGON(({minx} {miny}, {maxx} {miny}, {maxx} {maxy}, {minx} {maxy}, {minx} {miny}))",
+                    minx = tile_bbox[0],
+                    miny = tile_bbox[1],
+                    maxx = tile_bbox[3],
+                    maxy = tile_bbox[4]
+                );
+
                 let mut bounding_volume =
                     BoundingVolume::region_from_bbox(&tile_bbox, transformer).unwrap();
                 match bounding_volume {
@@ -233,6 +242,7 @@ pub mod cesium3dtiles {
                         arg_maxz,
                     ));
                 }
+                let tile_id_str = TileId::from(&quadtree.id).to_string().as_str(); // debug
                 Tile {
                     id: TileId::from(&quadtree.id),
                     bounding_volume,
@@ -245,80 +255,91 @@ pub mod cesium3dtiles {
                     implicit_tiling: None,
                 }
             } else {
-                let tile_content_bbox_rw = quadtree.node_content_bbox(&world, arg_minz, arg_maxz);
-
                 // Tile bounding volume
                 let mut tile_bbox = quadtree.bbox(&world.grid);
-                // Set the bounding volume height from the content height
-                tile_bbox[2] = tile_content_bbox_rw[2];
-                tile_bbox[5] = tile_content_bbox_rw[5];
                 let mut bounding_volume =
                     BoundingVolume::region_from_bbox(&tile_bbox, transformer).unwrap();
-                match bounding_volume {
-                    BoundingVolume::Box(_) => {}
-                    BoundingVolume::Region(ref mut region) => {
-                        if region[5] < region[4] {
-                            // This happens with the 3D Basisvoorziening data
-                            debug!(
+                let mut content: Option<Content> = None;
+
+                if quadtree.nr_items > 0 {
+                    // Set the bounding volume height from the content height
+                    let tile_content_bbox_rw =
+                        quadtree.node_content_bbox(&world, arg_minz, arg_maxz);
+                    tile_bbox[2] = tile_content_bbox_rw[2];
+                    tile_bbox[5] = tile_content_bbox_rw[5];
+
+                    match bounding_volume {
+                        BoundingVolume::Box(_) => {}
+                        BoundingVolume::Region(ref mut region) => {
+                            if region[5] < region[4] {
+                                // This happens with the 3D Basisvoorziening data
+                                debug!(
                                 "Child tile {:?} (in input CRS) bounding volume region maxz {} is less than minz {}. Replacing maxz with minz + minz * 0.01.",
                                 &tile_bbox, region[5], region[4]
                             );
-                            region[5] = region[4] + region[4] * 0.01;
-                        }
-                    }
-                    BoundingVolume::Sphere(_) => {}
-                }
-
-                // The geometric error of a tile is its 'size'.
-                // Since we have square tiles, we compute its size as the length of
-                // its side on the x-axis.
-                let d = tile_bbox[3] - tile_bbox[0];
-                if d < 0.0 {
-                    debug!("d is negative in child");
-                }
-                let content_bounding_voume =
-                    BoundingVolume::region_from_bbox(&tile_content_bbox_rw, transformer).unwrap();
-                match content_bounding_voume {
-                    BoundingVolume::Box(_) => {}
-                    BoundingVolume::Region(ref region) => {
-                        if region[5] < region[4] {
-                            debug!(
-                                "content bounding volume region maxz {} is less than minz {}",
-                                region[5], region[4]
-                            )
-                        }
-                    }
-                    BoundingVolume::Sphere(_) => {}
-                }
-
-                // FIXME: this is a hack to replace the tile bounding volume with the content bounding volume if the content is larger than the tile
-                match bounding_volume {
-                    BoundingVolume::Box(_) => {}
-                    BoundingVolume::Region(ref mut region) => match content_bounding_voume {
-                        BoundingVolume::Box(_) => {}
-                        BoundingVolume::Region(ref content_region) => {
-                            if content_region[0] < region[0] {
-                                region[0] = content_region[0];
-                            }
-                            if content_region[1] < region[1] {
-                                region[1] = content_region[1];
-                            }
-                            if content_region[4] < region[4] {
-                                region[4] = content_region[4];
-                            }
-                            if content_region[2] > region[2] {
-                                region[2] = content_region[2];
-                            }
-                            if content_region[3] > region[3] {
-                                region[3] = content_region[3];
-                            }
-                            if content_region[5] > region[5] {
-                                region[5] = content_region[5];
+                                region[5] = region[4] + region[4] * 0.01;
                             }
                         }
                         BoundingVolume::Sphere(_) => {}
-                    },
-                    BoundingVolume::Sphere(_) => {}
+                    }
+
+                    // The geometric error of a tile is its 'size'.
+                    // Since we have square tiles, we compute its size as the length of
+                    // its side on the x-axis.
+                    let d = tile_bbox[3] - tile_bbox[0];
+                    if d < 0.0 {
+                        debug!("d is negative in child");
+                    }
+                    let content_bounding_volume =
+                        BoundingVolume::region_from_bbox(&tile_content_bbox_rw, transformer)
+                            .unwrap();
+                    match content_bounding_volume {
+                        BoundingVolume::Box(_) => {}
+                        BoundingVolume::Region(ref region) => {
+                            if region[5] < region[4] {
+                                debug!(
+                                    "content bounding volume region maxz {} is less than minz {}",
+                                    region[5], region[4]
+                                )
+                            }
+                        }
+                        BoundingVolume::Sphere(_) => {}
+                    }
+
+                    // FIXME: this is a hack to replace the tile bounding volume with the content bounding volume if the content is larger than the tile
+                    match bounding_volume {
+                        BoundingVolume::Box(_) => {}
+                        BoundingVolume::Region(ref mut region) => match content_bounding_volume {
+                            BoundingVolume::Box(_) => {}
+                            BoundingVolume::Region(ref content_region) => {
+                                if content_region[0] < region[0] {
+                                    region[0] = content_region[0];
+                                }
+                                if content_region[1] < region[1] {
+                                    region[1] = content_region[1];
+                                }
+                                if content_region[4] < region[4] {
+                                    region[4] = content_region[4];
+                                }
+                                if content_region[2] > region[2] {
+                                    region[2] = content_region[2];
+                                }
+                                if content_region[3] > region[3] {
+                                    region[3] = content_region[3];
+                                }
+                                if content_region[5] > region[5] {
+                                    region[5] = content_region[5];
+                                }
+                            }
+                            BoundingVolume::Sphere(_) => {}
+                        },
+                        BoundingVolume::Sphere(_) => {}
+                    }
+
+                    content = Some(Content {
+                        bounding_volume: Some(content_bounding_volume),
+                        uri: format!("tiles/{}.glb", quadtree.id),
+                    });
                 }
 
                 Tile {
@@ -328,10 +349,7 @@ pub mod cesium3dtiles {
                     viewer_request_volume: None,
                     refine: Some(Refinement::Replace),
                     transform: None,
-                    content: Some(Content {
-                        bounding_volume: Some(content_bounding_voume),
-                        uri: format!("tiles/{}.glb", quadtree.id),
-                    }),
+                    content,
                     children: None,
                     implicit_tiling: None,
                 }
