@@ -55,6 +55,9 @@ pub struct Cli {
     /// Generate and write the Tileset only, without exporting the glTF tiles, when the output format is 3D Tiles (https://docs.ogc.org/cs/22-025r4/22-025r4.html#toc31).
     #[arg(long = "3dtiles-tileset-only")]
     pub cesium3dtiles_tileset_only: bool,
+    /// Use the tile boundingVolume as the content boundingVolume, instead of calculating the content boundingVolume from the data.
+    #[arg(long = "3dtiles-content-bv-from-tile")]
+    pub cesium3dtiles_content_bv_from_tile: bool,
     /// Set the geometric error (see 3D Tiles specification) on the parent nodes of leafs. This controls at what
     /// camera distance leaf nodes become visible. Higher values make content visible earlier when zooming in.
     #[arg(long, short = 'e', default_value = "12")]

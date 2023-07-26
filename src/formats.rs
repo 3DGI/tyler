@@ -136,6 +136,7 @@ pub mod cesium3dtiles {
             arg_cellsize: u32,
             arg_minz: Option<i32>,
             arg_maxz: Option<i32>,
+            content_bv_from_tile: bool,
         ) -> Self {
             let crs_from = format!("EPSG:{}", world.crs.to_epsg().unwrap());
             // Because we have a boundingVolume.box. For a boundingVolume.region we need 4979.
@@ -157,6 +158,7 @@ pub mod cesium3dtiles {
                 arg_cellsize,
                 arg_minz,
                 arg_maxz,
+                content_bv_from_tile,
             );
             // root.transform = Some(y_up_to_z_up);
 
@@ -187,6 +189,7 @@ pub mod cesium3dtiles {
             arg_cellsize: u32,
             arg_minz: Option<i32>,
             arg_maxz: Option<i32>,
+            content_bv_from_tile: bool,
         ) -> Tile {
             if !quadtree.children.is_empty() {
                 if quadtree.children.len() != 4 {
@@ -240,6 +243,7 @@ pub mod cesium3dtiles {
                         arg_cellsize,
                         arg_minz,
                         arg_maxz,
+                        content_bv_from_tile,
                     ));
                 }
                 let tile_id_str = TileId::from(&quadtree.id).to_string().as_str(); // debug
@@ -290,7 +294,8 @@ pub mod cesium3dtiles {
                     if d < 0.0 {
                         debug!("d is negative in child");
                     }
-                    let content_bounding_volume =
+
+                    let mut content_bounding_volume =
                         BoundingVolume::region_from_bbox(&tile_content_bbox_rw, transformer)
                             .unwrap();
                     match content_bounding_volume {
@@ -306,34 +311,39 @@ pub mod cesium3dtiles {
                         BoundingVolume::Sphere(_) => {}
                     }
 
-                    // FIXME: this is a hack to replace the tile bounding volume with the content bounding volume if the content is larger than the tile
-                    match bounding_volume {
-                        BoundingVolume::Box(_) => {}
-                        BoundingVolume::Region(ref mut region) => match content_bounding_volume {
+                    if content_bv_from_tile {
+                        content_bounding_volume = bounding_volume;
+                    } else {
+                        // FIXME: this is a hack to replace the tile bounding volume with the content bounding volume if the content is larger than the tile
+                        match bounding_volume {
                             BoundingVolume::Box(_) => {}
-                            BoundingVolume::Region(ref content_region) => {
-                                if content_region[0] < region[0] {
-                                    region[0] = content_region[0];
+                            BoundingVolume::Region(ref mut region) => match content_bounding_volume
+                            {
+                                BoundingVolume::Box(_) => {}
+                                BoundingVolume::Region(ref content_region) => {
+                                    if content_region[0] < region[0] {
+                                        region[0] = content_region[0];
+                                    }
+                                    if content_region[1] < region[1] {
+                                        region[1] = content_region[1];
+                                    }
+                                    if content_region[4] < region[4] {
+                                        region[4] = content_region[4];
+                                    }
+                                    if content_region[2] > region[2] {
+                                        region[2] = content_region[2];
+                                    }
+                                    if content_region[3] > region[3] {
+                                        region[3] = content_region[3];
+                                    }
+                                    if content_region[5] > region[5] {
+                                        region[5] = content_region[5];
+                                    }
                                 }
-                                if content_region[1] < region[1] {
-                                    region[1] = content_region[1];
-                                }
-                                if content_region[4] < region[4] {
-                                    region[4] = content_region[4];
-                                }
-                                if content_region[2] > region[2] {
-                                    region[2] = content_region[2];
-                                }
-                                if content_region[3] > region[3] {
-                                    region[3] = content_region[3];
-                                }
-                                if content_region[5] > region[5] {
-                                    region[5] = content_region[5];
-                                }
-                            }
+                                BoundingVolume::Sphere(_) => {}
+                            },
                             BoundingVolume::Sphere(_) => {}
-                        },
-                        BoundingVolume::Sphere(_) => {}
+                        }
                     }
 
                     content = Some(Content {
@@ -1585,7 +1595,7 @@ pub mod cesium3dtiles {
             );
             quadtree.export(&world).unwrap();
 
-            let tileset = Tileset::from_quadtree(&quadtree, &world, 16_f64, 200, None, None);
+            let tileset = Tileset::from_quadtree(&quadtree, &world, 16_f64, 200, None, None, true);
 
             // tileset.make_implicit(&world.grid, &quadtree, );
 

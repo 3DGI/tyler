@@ -268,6 +268,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         grid_cellsize,
         cli.grid_minz,
         cli.grid_maxz,
+        cli.cesium3dtiles_content_bv_from_tile,
     );
 
     if cli.grid_export {
