@@ -192,6 +192,11 @@ pub mod cesium3dtiles {
             content_bv_from_tile: bool,
         ) -> Tile {
             if !quadtree.children.is_empty() {
+                // // DEBUG
+                // let _lvl = quadtree.id.level;
+                // let _x = quadtree.id.x;
+                // let _y = quadtree.id.y;
+
                 if quadtree.children.len() != 4 {
                     warn!("Quadtree does not have 4 children {:?}", &quadtree);
                 }
@@ -229,9 +234,16 @@ pub mod cesium3dtiles {
                 // The geometric error of a tile is computed based on the specified error
                 // for the nodes have leafs as children (assuming all leaf nodes are at the same level)
                 let level_multiplier = (tile_bbox[3] - tile_bbox[0]) / (arg_cellsize as f64) - 2.0;
-                let d = geometric_error_above_leaf * level_multiplier;
+                let mut d = geometric_error_above_leaf * level_multiplier;
+                let d_string = format!("{d:.2}");
                 if d < 0.0 {
                     debug!("d is negative in parent");
+                } else if d_string == *"0.00" {
+                    // Because, for instance we have a —grid-cellsize 250, then a parent of the deepest level will have an edge length of 2 * 250.
+                    // So for the 'level_multiplier' formula we get:
+                    // 500 / 250 - 2.0 = 0
+                    // Which then results in a 'd' of 0.
+                    d = geometric_error_above_leaf;
                 }
                 let mut tile_children: Vec<Tile> = Vec::new();
                 for child in quadtree.children.iter() {
@@ -259,6 +271,10 @@ pub mod cesium3dtiles {
                     implicit_tiling: None,
                 }
             } else {
+                // // DEBUG
+                // let _lvl = quadtree.id.level;
+                // let _x = quadtree.id.x;
+                // let _y = quadtree.id.y;
                 // Tile bounding volume
                 let mut tile_bbox = quadtree.bbox(&world.grid);
                 let mut bounding_volume =
