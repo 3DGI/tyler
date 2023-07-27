@@ -58,7 +58,7 @@ impl ToString for Formats {
 struct DebugData {
     world: Option<PathBuf>,
     quadtree: Option<PathBuf>,
-    tiles_failed: Option<PathBuf>,
+    tiles_results: Option<PathBuf>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -180,11 +180,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let world_path = dir_path.join("world.bincode");
                 let quadtree_path = dir_path.join("quadtree.bincode");
                 let _tileset_path = dir_path.join("tileset.bincode");
-                let tiles_failed_path = dir_path.join("tiles_failed.bincode");
+                let tiles_results_path = dir_path.join("tiles_results.bincode");
                 DebugData {
                     world: world_path.exists().then_some(world_path),
                     quadtree: quadtree_path.exists().then_some(quadtree_path),
-                    tiles_failed: tiles_failed_path.exists().then_some(tiles_failed_path),
+                    tiles_results: tiles_results_path.exists().then_some(tiles_results_path),
                 }
             } else {
                 warn!(
@@ -745,28 +745,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 tile_failed
-            })
-            .filter_map(|failed_tile| failed_tile);
+            });
 
-        let tiles_failed: Vec<Tile> = match debug_data.tiles_failed {
-            None => {
-                info!("Exporting and optimizing {tiles_len} tiles");
-                tiles_failed_iter.collect()
+        let mut tiles_results: Vec<Option<Tile>> = Vec::with_capacity(tiles_len + 2);
+        if let Some(tiles_results_path) = debug_data.tiles_results {
+            info!("Loading tiles_results from {tiles_results_path:?}");
+            let tiles_results_file = File::open(tiles_results_path)?;
+            tiles_results = bincode::deserialize_from(tiles_results_file)?
+        } else {
+            info!("Exporting and optimizing {tiles_len} tiles");
+            tiles_failed_iter.collect_into_vec(&mut tiles_results);
+            if log_enabled!(Level::Debug) {
+                let tiles_results_file = File::create("tiles_results.bincode")?;
+                bincode::serialize_into(tiles_results_file, &tiles_results)?;
             }
-            Some(tiles_failed_path) => {
-                info!("Loading tiles_failed from {tiles_failed_path:?}");
-                let tiles_failed_file = File::open(tiles_failed_path)?;
-                bincode::deserialize_from(tiles_failed_file)?
-            }
-        };
+        }
+        let tiles_failed: Vec<Tile> = tiles_results.into_iter().flatten().collect();
         info!("Done");
 
         if !log_enabled!(Level::Debug) {
             fs::remove_dir_all(path_features_input_dir)?;
-        } else {
-            let tiles_failed_file = File::create("tiles_failed.bincode")?;
-            bincode::serialize_into(tiles_failed_file, &tiles_failed)?;
         }
+
         info!("Pruning tileset of {} failed tiles", tiles_failed.len());
         for (i, failed) in tiles_failed.iter().enumerate() {
             debug!("{}, removing failed from the tileset: {}", i, failed.id);
