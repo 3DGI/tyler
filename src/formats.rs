@@ -192,10 +192,7 @@ pub mod cesium3dtiles {
             content_bv_from_tile: bool,
         ) -> Tile {
             if !quadtree.children.is_empty() {
-                // // DEBUG
-                // let _lvl = quadtree.id.level;
-                // let _x = quadtree.id.x;
-                // let _y = quadtree.id.y;
+                let tile_id = TileId::from(&quadtree.id);
 
                 if quadtree.children.len() != 4 {
                     warn!("Quadtree does not have 4 children {:?}", &quadtree);
@@ -206,14 +203,6 @@ pub mod cesium3dtiles {
                 tile_bbox[2] = world.grid.bbox[2];
                 tile_bbox[5] = world.grid.bbox[5];
 
-                let tile_bbox_wkt = format!(
-                    "POLYGON(({minx} {miny}, {maxx} {miny}, {maxx} {maxy}, {minx} {maxy}, {minx} {miny}))",
-                    minx = tile_bbox[0],
-                    miny = tile_bbox[1],
-                    maxx = tile_bbox[3],
-                    maxy = tile_bbox[4]
-                );
-
                 let mut bounding_volume =
                     BoundingVolume::region_from_bbox(&tile_bbox, transformer).unwrap();
                 match bounding_volume {
@@ -222,7 +211,7 @@ pub mod cesium3dtiles {
                         if region[5] < region[4] {
                             // This happens with the 3D Basisvoorziening data
                             debug!(
-                                "Parent tile {:?} (in input CRS) bounding volume region maxz {} is less than minz {}. Replacing maxz with minz + minz * 0.01.",
+                                "Internal tile {tile_id} {:?} (in input CRS) bounding volume region maxz {} is less than minz {}. Replacing maxz with minz + minz * 0.01.",
                                 &tile_bbox, region[5], region[4]
                             );
                             region[5] = region[4] + region[4] * 0.01;
@@ -237,7 +226,7 @@ pub mod cesium3dtiles {
                 let mut d = geometric_error_above_leaf * level_multiplier;
                 let d_string = format!("{d:.2}");
                 if d < 0.0 {
-                    debug!("d is negative in parent");
+                    warn!("d is negative in internal tile {tile_id}");
                 } else if d_string == *"0.00" {
                     // Because, for instance we have a —grid-cellsize 250, then a parent of the deepest level will have an edge length of 2 * 250.
                     // So for the 'level_multiplier' formula we get:
@@ -258,9 +247,8 @@ pub mod cesium3dtiles {
                         content_bv_from_tile,
                     ));
                 }
-                let tile_id_str = TileId::from(&quadtree.id).to_string().as_str(); // debug
                 Tile {
-                    id: TileId::from(&quadtree.id),
+                    id: tile_id,
                     bounding_volume,
                     geometric_error: d,
                     viewer_request_volume: None,
@@ -271,10 +259,8 @@ pub mod cesium3dtiles {
                     implicit_tiling: None,
                 }
             } else {
-                // // DEBUG
-                // let _lvl = quadtree.id.level;
-                // let _x = quadtree.id.x;
-                // let _y = quadtree.id.y;
+                let tile_id = TileId::from(&quadtree.id);
+
                 // Tile bounding volume
                 let mut tile_bbox = quadtree.bbox(&world.grid);
                 let mut bounding_volume =
@@ -294,21 +280,13 @@ pub mod cesium3dtiles {
                             if region[5] < region[4] {
                                 // This happens with the 3D Basisvoorziening data
                                 debug!(
-                                "Child tile {:?} (in input CRS) bounding volume region maxz {} is less than minz {}. Replacing maxz with minz + minz * 0.01.",
-                                &tile_bbox, region[5], region[4]
-                            );
+                                    "Leaf tile {tile_id} {:?} (in input CRS) bounding volume region maxz {} is less than minz {}. Replacing maxz with minz + minz * 0.01.",
+                                    &tile_bbox, region[5], region[4]
+                                );
                                 region[5] = region[4] + region[4] * 0.01;
                             }
                         }
                         BoundingVolume::Sphere(_) => {}
-                    }
-
-                    // The geometric error of a tile is its 'size'.
-                    // Since we have square tiles, we compute its size as the length of
-                    // its side on the x-axis.
-                    let d = tile_bbox[3] - tile_bbox[0];
-                    if d < 0.0 {
-                        debug!("d is negative in child");
                     }
 
                     let mut content_bounding_volume =
@@ -316,12 +294,14 @@ pub mod cesium3dtiles {
                             .unwrap();
                     match content_bounding_volume {
                         BoundingVolume::Box(_) => {}
-                        BoundingVolume::Region(ref region) => {
+                        BoundingVolume::Region(ref mut region) => {
                             if region[5] < region[4] {
+                                // This happens with the 3D Basisvoorziening data
                                 debug!(
-                                    "content bounding volume region maxz {} is less than minz {}",
+                                    "Leaf tile {tile_id} content bounding volume region maxz {} is less than minz {}. Replacing maxz with minz + minz * 0.01.",
                                     region[5], region[4]
-                                )
+                                );
+                                region[5] = region[4] + region[4] * 0.01;
                             }
                         }
                         BoundingVolume::Sphere(_) => {}
@@ -330,7 +310,7 @@ pub mod cesium3dtiles {
                     if content_bv_from_tile {
                         content_bounding_volume = bounding_volume;
                     } else {
-                        // FIXME: this is a hack to replace the tile bounding volume with the content bounding volume if the content is larger than the tile
+                        // Replace the tile bounding volume with the content bounding volume if the content is larger than the tile
                         match bounding_volume {
                             BoundingVolume::Box(_) => {}
                             BoundingVolume::Region(ref mut region) => match content_bounding_volume
@@ -369,7 +349,7 @@ pub mod cesium3dtiles {
                 }
 
                 Tile {
-                    id: TileId::from(&quadtree.id),
+                    id: tile_id,
                     bounding_volume,
                     geometric_error: 0.0,
                     viewer_request_volume: None,
