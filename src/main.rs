@@ -197,7 +197,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     debug!("{:?}", debug_data);
     let debug_data_output_path = cli.output.join("debug");
-    if cli.grid_export || log_enabled!(Level::Debug) {
+    if (cli.grid_export || log_enabled!(Level::Debug)) && !debug_data_output_path.exists() {
         fs::create_dir(&debug_data_output_path)?;
     }
     // --- end of argument parsing
