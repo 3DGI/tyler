@@ -61,6 +61,46 @@ struct DebugData {
     tiles_results: Option<PathBuf>,
 }
 
+/// Write the list of feature paths for a tile into a text file, instead of passing
+/// super long paths-string to the subprocess, because with very long arguments we can
+/// get an 'Argument list too long' error.
+fn write_inputs(
+    world: &parser::World,
+    path_features_input_dir: &PathBuf,
+    qtree_node: &spatial_structs::QuadTree,
+    file_name: &str,
+) -> PathBuf {
+    let path_features_input_file = path_features_input_dir
+        .join(&file_name)
+        .with_extension("input");
+    fs::create_dir_all(path_features_input_file.parent().unwrap()).unwrap_or_else(|_| {
+        panic!(
+            "should be able to create the directory {:?}",
+            path_features_input_file.parent().unwrap()
+        )
+    });
+    let mut feature_input = File::create(&path_features_input_file).unwrap_or_else(|_| {
+        panic!(
+            "should be able to create a file {:?}",
+            &path_features_input_file
+        )
+    });
+    for cellid in qtree_node.cells() {
+        let cell = world.grid.cell(cellid);
+        for fid in cell.feature_ids.iter() {
+            let fp = world.features[*fid]
+                .path_jsonl
+                .clone()
+                .into_os_string()
+                .into_string()
+                .unwrap();
+            writeln!(feature_input, "{}", fp)
+                .expect("should be able to write feature path to the input file");
+        }
+    }
+    path_features_input_file
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
 
@@ -390,37 +430,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let output_file = path_output_tiles
                 .join(&file_name)
                 .with_extension(&subprocess_config.output_extension);
-            // We write the list of feature paths for a tile into a text file, instead of passing
-            // super long paths-string to the subprocess, because with very long arguments we can
-            // get an 'Argument list too long' error.
-            let path_features_input_file = path_features_input_dir
-                .join(&file_name)
-                .with_extension("input");
-            fs::create_dir_all(path_features_input_file.parent().unwrap()).unwrap_or_else(|_| {
-                panic!(
-                    "should be able to create the directory {:?}",
-                    path_features_input_file.parent().unwrap()
-                )
-            });
-            let mut feature_input = File::create(&path_features_input_file).unwrap_or_else(|_| {
-                panic!(
-                    "should be able to create a file {:?}",
-                    &path_features_input_file
-                )
-            });
-            for cellid in qtree_node.cells() {
-                let cell = world.grid.cell(cellid);
-                for fid in cell.feature_ids.iter() {
-                    let fp = world.features[*fid]
-                        .path_jsonl
-                        .clone()
-                        .into_os_string()
-                        .into_string()
-                        .unwrap();
-                    writeln!(feature_input, "{}", fp)
-                        .expect("should be able to write feature path to the input file");
-                }
-            }
+            let path_features_input_file = write_inputs(
+                &world,
+                &path_features_input_dir,
+                qtree_node,
+                file_name.as_str(),
+            );
 
             // We use the quadtree node bbox here instead of the Tileset.Tile bounding
             // volume, because the Tile is in EPSG:4979 and we need the input data CRS
