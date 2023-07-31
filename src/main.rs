@@ -377,392 +377,383 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("Created output directory {:#?}", &path_features_input_dir);
 
         let tiles_len = tiles.len();
-        let tiles_failed_iter = tiles
-            .into_par_iter()
-            .map(|(tile, tileid)| {
-                let mut tile_failed: Option<Tile> = None;
-                let tileid_grid = &tile.id;
-                let qtree_nodeid: spatial_structs::QuadTreeNodeId = tileid_grid.into();
-                let qtree_node = quadtree
-                    .node(&qtree_nodeid)
-                    .unwrap_or_else(|| panic!("did not find tile {} in quadtree", tileid_grid));
-                let tileid_string = tileid.to_string();
-                let file_name = tileid_string;
-                let output_file = path_output_tiles
-                    .join(&file_name)
-                    .with_extension(&subprocess_config.output_extension);
-                // We write the list of feature paths for a tile into a text file, instead of passing
-                // super long paths-string to the subprocess, because with very long arguments we can
-                // get an 'Argument list too long' error.
-                let path_features_input_file = path_features_input_dir
-                    .join(&file_name)
-                    .with_extension("input");
-                fs::create_dir_all(path_features_input_file.parent().unwrap()).unwrap_or_else(
-                    |_| {
-                        panic!(
-                            "should be able to create the directory {:?}",
-                            path_features_input_file.parent().unwrap()
-                        )
-                    },
-                );
-                let mut feature_input =
-                    File::create(&path_features_input_file).unwrap_or_else(|_| {
-                        panic!(
-                            "should be able to create a file {:?}",
-                            &path_features_input_file
-                        )
-                    });
-                for cellid in qtree_node.cells() {
-                    let cell = world.grid.cell(cellid);
-                    for fid in cell.feature_ids.iter() {
-                        let fp = world.features[*fid]
-                            .path_jsonl
-                            .clone()
-                            .into_os_string()
-                            .into_string()
-                            .unwrap();
-                        writeln!(feature_input, "{}", fp)
-                            .expect("should be able to write feature path to the input file");
-                    }
+        let tiles_failed_iter = tiles.into_par_iter().map(|(tile, tileid)| {
+            debug!("Converting tile {tileid}");
+            let mut tile_failed: Option<Tile> = None;
+            let tileid_grid = &tile.id;
+            let qtree_nodeid: spatial_structs::QuadTreeNodeId = tileid_grid.into();
+            let qtree_node = quadtree
+                .node(&qtree_nodeid)
+                .unwrap_or_else(|| panic!("did not find tile {} in quadtree", tileid_grid));
+            let tileid_string = tileid.to_string();
+            let file_name = tileid_string;
+            let output_file = path_output_tiles
+                .join(&file_name)
+                .with_extension(&subprocess_config.output_extension);
+            // We write the list of feature paths for a tile into a text file, instead of passing
+            // super long paths-string to the subprocess, because with very long arguments we can
+            // get an 'Argument list too long' error.
+            let path_features_input_file = path_features_input_dir
+                .join(&file_name)
+                .with_extension("input");
+            fs::create_dir_all(path_features_input_file.parent().unwrap()).unwrap_or_else(|_| {
+                panic!(
+                    "should be able to create the directory {:?}",
+                    path_features_input_file.parent().unwrap()
+                )
+            });
+            let mut feature_input = File::create(&path_features_input_file).unwrap_or_else(|_| {
+                panic!(
+                    "should be able to create a file {:?}",
+                    &path_features_input_file
+                )
+            });
+            for cellid in qtree_node.cells() {
+                let cell = world.grid.cell(cellid);
+                for fid in cell.feature_ids.iter() {
+                    let fp = world.features[*fid]
+                        .path_jsonl
+                        .clone()
+                        .into_os_string()
+                        .into_string()
+                        .unwrap();
+                    writeln!(feature_input, "{}", fp)
+                        .expect("should be able to write feature path to the input file");
+                }
+            }
+
+            // We use the quadtree node bbox here instead of the Tileset.Tile bounding
+            // volume, because the Tile is in EPSG:4979 and we need the input data CRS
+            let b = qtree_node.bbox(&world.grid);
+            // We need to string-format all the arguments with an = separator, because that's what
+            // geof can accept.
+            // TODO: maybe replace the subprocess carte with std::process to remove the dependency
+            let mut cmd = Exec::cmd(&subprocess_config.exe)
+                .arg(&subprocess_config.script)
+                .arg(format!(
+                    "--output_format={}",
+                    &format.to_string().to_lowercase()
+                ))
+                .arg(format!("--output_file={}", &output_file.to_str().unwrap()))
+                .arg(format!(
+                    "--path_metadata={}",
+                    &world.path_metadata.to_str().unwrap()
+                ))
+                .arg(format!(
+                    "--path_features_input_file={}",
+                    &path_features_input_file.to_str().unwrap()
+                ))
+                .arg(format!("--min_x={}", b[0]))
+                .arg(format!("--min_y={}", b[1]))
+                .arg(format!("--min_z={}", b[2]))
+                .arg(format!("--max_x={}", b[3]))
+                .arg(format!("--max_y={}", b[4]))
+                .arg(format!("--max_z={}", b[5]))
+                .arg(format!("--cotypes={}", &cotypes_arg))
+                .arg(format!("--metadata_class={}", &metadata_class))
+                .arg(format!("--attribute_spec={}", &attribute_spec))
+                .arg(format!("--geometric_error={}", &tile.geometric_error));
+
+            if format == Formats::_3DTiles {
+                // geof specific args
+                // verbose. we always run geof in --verbose, because otherwise it won't print
+                // the logs when we get an error from geof
+                cmd = cmd.arg("--verbose");
+                // colors
+                if cli.color_building.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--colorBuilding={}",
+                        cli.color_building.as_ref().unwrap()
+                    ));
+                }
+                if cli.color_building_part.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--colorBuildingPart={}",
+                        cli.color_building_part.as_ref().unwrap()
+                    ));
+                }
+                if cli.color_building_installation.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--colorBuildingInstallation={}",
+                        cli.color_building_installation.as_ref().unwrap()
+                    ));
+                }
+                if cli.color_tin_relief.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--colorTINRelief={}",
+                        cli.color_tin_relief.as_ref().unwrap()
+                    ));
+                }
+                if cli.color_road.is_some() {
+                    cmd = cmd.arg(format!("--colorRoad={}", cli.color_road.as_ref().unwrap()));
+                }
+                if cli.color_railway.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--colorRailway={}",
+                        cli.color_railway.as_ref().unwrap()
+                    ));
+                }
+                if cli.color_transport_square.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--colorTransportSquare={}",
+                        cli.color_transport_square.as_ref().unwrap()
+                    ));
+                }
+                if cli.color_water_body.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--colorWaterBody={}",
+                        cli.color_water_body.as_ref().unwrap()
+                    ));
+                }
+                if cli.color_plant_cover.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--colorPlantCover={}",
+                        cli.color_plant_cover.as_ref().unwrap()
+                    ));
+                }
+                if cli.color_solitary_vegetation_object.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--colorSolitaryVegetationObject={}",
+                        cli.color_solitary_vegetation_object.as_ref().unwrap()
+                    ));
+                }
+                if cli.color_land_use.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--colorLandUse={}",
+                        cli.color_land_use.as_ref().unwrap()
+                    ));
+                }
+                if cli.color_city_furniture.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--colorCityFurniture={}",
+                        cli.color_city_furniture.as_ref().unwrap()
+                    ));
+                }
+                if cli.color_bridge.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--colorBridge={}",
+                        cli.color_bridge.as_ref().unwrap()
+                    ));
+                }
+                if cli.color_bridge_part.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--colorBridgePart={}",
+                        cli.color_bridge_part.as_ref().unwrap()
+                    ));
+                }
+                if cli.color_bridge_installation.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--colorBridgeInstallation={}",
+                        cli.color_bridge_installation.as_ref().unwrap()
+                    ));
+                }
+                if cli.color_bridge_construction_element.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--colorBridgeConstructionElement={}",
+                        cli.color_bridge_construction_element.as_ref().unwrap()
+                    ));
+                }
+                if cli.color_tunnel.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--colorTunnel={}",
+                        cli.color_tunnel.as_ref().unwrap()
+                    ));
+                }
+                if cli.color_tunnel_part.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--colorTunnelPart={}",
+                        cli.color_tunnel_part.as_ref().unwrap()
+                    ));
+                }
+                if cli.color_tunnel_installation.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--colorTunnelInstallation={}",
+                        cli.color_tunnel_installation.as_ref().unwrap()
+                    ));
+                }
+                if cli.color_generic_city_object.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--colorGenericCityObject={}",
+                        cli.color_generic_city_object.as_ref().unwrap()
+                    ));
                 }
 
-                // We use the quadtree node bbox here instead of the Tileset.Tile bounding
-                // volume, because the Tile is in EPSG:4979 and we need the input data CRS
-                let b = qtree_node.bbox(&world.grid);
-                // We need to string-format all the arguments with an = separator, because that's what
-                // geof can accept.
-                // TODO: maybe replace the subprocess carte with std::process to remove the dependency
-                let mut cmd = Exec::cmd(&subprocess_config.exe)
-                    .arg(&subprocess_config.script)
-                    .arg(format!(
-                        "--output_format={}",
-                        &format.to_string().to_lowercase()
-                    ))
-                    .arg(format!("--output_file={}", &output_file.to_str().unwrap()))
-                    .arg(format!(
-                        "--path_metadata={}",
-                        &world.path_metadata.to_str().unwrap()
-                    ))
-                    .arg(format!(
-                        "--path_features_input_file={}",
-                        &path_features_input_file.to_str().unwrap()
-                    ))
-                    .arg(format!("--min_x={}", b[0]))
-                    .arg(format!("--min_y={}", b[1]))
-                    .arg(format!("--min_z={}", b[2]))
-                    .arg(format!("--max_x={}", b[3]))
-                    .arg(format!("--max_y={}", b[4]))
-                    .arg(format!("--max_z={}", b[5]))
-                    .arg(format!("--cotypes={}", &cotypes_arg))
-                    .arg(format!("--metadata_class={}", &metadata_class))
-                    .arg(format!("--attribute_spec={}", &attribute_spec))
-                    .arg(format!("--geometric_error={}", &tile.geometric_error));
-
-                if format == Formats::_3DTiles {
-                    // geof specific args
-                    // verbose. we always run geof in --verbose, because otherwise it won't print 
-                    // the logs when we get an error from geof
-                    cmd = cmd.arg("--verbose");
-                    // colors
-                    if cli.color_building.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--colorBuilding={}",
-                            cli.color_building.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.color_building_part.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--colorBuildingPart={}",
-                            cli.color_building_part.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.color_building_installation.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--colorBuildingInstallation={}",
-                            cli.color_building_installation.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.color_tin_relief.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--colorTINRelief={}",
-                            cli.color_tin_relief.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.color_road.is_some() {
-                        cmd = cmd.arg(format!("--colorRoad={}", cli.color_road.as_ref().unwrap()));
-                    }
-                    if cli.color_railway.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--colorRailway={}",
-                            cli.color_railway.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.color_transport_square.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--colorTransportSquare={}",
-                            cli.color_transport_square.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.color_water_body.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--colorWaterBody={}",
-                            cli.color_water_body.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.color_plant_cover.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--colorPlantCover={}",
-                            cli.color_plant_cover.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.color_solitary_vegetation_object.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--colorSolitaryVegetationObject={}",
-                            cli.color_solitary_vegetation_object.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.color_land_use.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--colorLandUse={}",
-                            cli.color_land_use.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.color_city_furniture.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--colorCityFurniture={}",
-                            cli.color_city_furniture.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.color_bridge.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--colorBridge={}",
-                            cli.color_bridge.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.color_bridge_part.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--colorBridgePart={}",
-                            cli.color_bridge_part.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.color_bridge_installation.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--colorBridgeInstallation={}",
-                            cli.color_bridge_installation.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.color_bridge_construction_element.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--colorBridgeConstructionElement={}",
-                            cli.color_bridge_construction_element.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.color_tunnel.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--colorTunnel={}",
-                            cli.color_tunnel.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.color_tunnel_part.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--colorTunnelPart={}",
-                            cli.color_tunnel_part.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.color_tunnel_installation.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--colorTunnelInstallation={}",
-                            cli.color_tunnel_installation.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.color_generic_city_object.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--colorGenericCityObject={}",
-                            cli.color_generic_city_object.as_ref().unwrap()
-                        ));
-                    }
-
-                    // lod filter
-                    if cli.lod_building.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--lodBuilding={}",
-                            cli.lod_building.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.lod_building_part.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--lodBuildingPart={}",
-                            cli.lod_building_part.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.lod_building_installation.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--lodBuildingInstallation={}",
-                            cli.lod_building_installation.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.lod_tin_relief.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--lodTINRelief={}",
-                            cli.lod_tin_relief.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.lod_road.is_some() {
-                        cmd = cmd.arg(format!("--lodRoad={}", cli.lod_road.as_ref().unwrap()));
-                    }
-                    if cli.lod_railway.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--lodRailway={}",
-                            cli.lod_railway.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.lod_transport_square.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--lodTransportSquare={}",
-                            cli.lod_transport_square.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.lod_water_body.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--lodWaterBody={}",
-                            cli.lod_water_body.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.lod_plant_cover.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--lodPlantCover={}",
-                            cli.lod_plant_cover.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.lod_solitary_vegetation_object.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--lodSolitaryVegetationObject={}",
-                            cli.lod_solitary_vegetation_object.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.lod_land_use.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--lodLandUse={}",
-                            cli.lod_land_use.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.lod_city_furniture.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--lodCityFurniture={}",
-                            cli.lod_city_furniture.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.lod_bridge.is_some() {
-                        cmd = cmd.arg(format!("--lodBridge={}", cli.lod_bridge.as_ref().unwrap()));
-                    }
-                    if cli.lod_bridge_part.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--lodBridgePart={}",
-                            cli.lod_bridge_part.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.lod_bridge_installation.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--lodBridgeInstallation={}",
-                            cli.lod_bridge_installation.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.lod_bridge_construction_element.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--lodBridgeConstructionElement={}",
-                            cli.lod_bridge_construction_element.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.lod_tunnel.is_some() {
-                        cmd = cmd.arg(format!("--lodTunnel={}", cli.lod_tunnel.as_ref().unwrap()));
-                    }
-                    if cli.lod_tunnel_part.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--lodTunnelPart={}",
-                            cli.lod_tunnel_part.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.lod_tunnel_installation.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--lodTunnelInstallation={}",
-                            cli.lod_tunnel_installation.as_ref().unwrap()
-                        ));
-                    }
-                    if cli.lod_generic_city_object.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--lodGenericCityObject={}",
-                            cli.lod_generic_city_object.as_ref().unwrap()
-                        ));
-                    }
-
-                    if let Some(ref cotypes) = world.cityobject_types {
-                        if cotypes.contains(&parser::CityObjectType::Building)
-                            || cotypes.contains(&parser::CityObjectType::BuildingPart)
-                        {
-                            cmd = cmd.arg("--simplify_ratio=1.0").arg("--skip_clip=true");
-                        } else if cli.reduce_vertices.is_some() {
-                            cmd = cmd.arg(format!(
-                                "--simplify_ratio={}",
-                                cli.reduce_vertices.as_ref().unwrap()
-                            ));
-                        }
-                    }
+                // lod filter
+                if cli.lod_building.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--lodBuilding={}",
+                        cli.lod_building.as_ref().unwrap()
+                    ));
+                }
+                if cli.lod_building_part.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--lodBuildingPart={}",
+                        cli.lod_building_part.as_ref().unwrap()
+                    ));
+                }
+                if cli.lod_building_installation.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--lodBuildingInstallation={}",
+                        cli.lod_building_installation.as_ref().unwrap()
+                    ));
+                }
+                if cli.lod_tin_relief.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--lodTINRelief={}",
+                        cli.lod_tin_relief.as_ref().unwrap()
+                    ));
+                }
+                if cli.lod_road.is_some() {
+                    cmd = cmd.arg(format!("--lodRoad={}", cli.lod_road.as_ref().unwrap()));
+                }
+                if cli.lod_railway.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--lodRailway={}",
+                        cli.lod_railway.as_ref().unwrap()
+                    ));
+                }
+                if cli.lod_transport_square.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--lodTransportSquare={}",
+                        cli.lod_transport_square.as_ref().unwrap()
+                    ));
+                }
+                if cli.lod_water_body.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--lodWaterBody={}",
+                        cli.lod_water_body.as_ref().unwrap()
+                    ));
+                }
+                if cli.lod_plant_cover.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--lodPlantCover={}",
+                        cli.lod_plant_cover.as_ref().unwrap()
+                    ));
+                }
+                if cli.lod_solitary_vegetation_object.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--lodSolitaryVegetationObject={}",
+                        cli.lod_solitary_vegetation_object.as_ref().unwrap()
+                    ));
+                }
+                if cli.lod_land_use.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--lodLandUse={}",
+                        cli.lod_land_use.as_ref().unwrap()
+                    ));
+                }
+                if cli.lod_city_furniture.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--lodCityFurniture={}",
+                        cli.lod_city_furniture.as_ref().unwrap()
+                    ));
+                }
+                if cli.lod_bridge.is_some() {
+                    cmd = cmd.arg(format!("--lodBridge={}", cli.lod_bridge.as_ref().unwrap()));
+                }
+                if cli.lod_bridge_part.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--lodBridgePart={}",
+                        cli.lod_bridge_part.as_ref().unwrap()
+                    ));
+                }
+                if cli.lod_bridge_installation.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--lodBridgeInstallation={}",
+                        cli.lod_bridge_installation.as_ref().unwrap()
+                    ));
+                }
+                if cli.lod_bridge_construction_element.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--lodBridgeConstructionElement={}",
+                        cli.lod_bridge_construction_element.as_ref().unwrap()
+                    ));
+                }
+                if cli.lod_tunnel.is_some() {
+                    cmd = cmd.arg(format!("--lodTunnel={}", cli.lod_tunnel.as_ref().unwrap()));
+                }
+                if cli.lod_tunnel_part.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--lodTunnelPart={}",
+                        cli.lod_tunnel_part.as_ref().unwrap()
+                    ));
+                }
+                if cli.lod_tunnel_installation.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--lodTunnelInstallation={}",
+                        cli.lod_tunnel_installation.as_ref().unwrap()
+                    ));
+                }
+                if cli.lod_generic_city_object.is_some() {
+                    cmd = cmd.arg(format!(
+                        "--lodGenericCityObject={}",
+                        cli.lod_generic_city_object.as_ref().unwrap()
+                    ));
                 }
 
-                if let Some(pd) = &proj_data {
-                    cmd = cmd.env("PROJ_DATA", pd);
+                if let Some(ref cotypes) = world.cityobject_types {
+                    if cotypes.contains(&parser::CityObjectType::Building)
+                        || cotypes.contains(&parser::CityObjectType::BuildingPart)
+                    {
+                        cmd = cmd.arg("--simplify_ratio=1.0").arg("--skip_clip=true");
+                    } else if cli.reduce_vertices.is_some() {
+                        cmd = cmd.arg(format!(
+                            "--simplify_ratio={}",
+                            cli.reduce_vertices.as_ref().unwrap()
+                        ));
+                    }
                 }
+            }
 
-                let cmd_string = cmd.to_cmdline_lossy();
-                let exec = cmd.stdout(Redirection::Pipe).stderr(Redirection::Merge);
-                let popen_res = exec.popen();
-                match popen_res {
-                    Ok(mut popen) => {
-                        let (mut stdout_opt, mut stderr_opt): (Option<String>, Option<String>) =
-                            (None, None);
-                        let mut exit_status = subprocess::ExitStatus::Undetermined;
-                        if let Some(timeout) = subprocess_config.timeout {
-                            let mut communicator = popen.communicate_start(None);
-                            if let Some(status) = popen.wait_timeout(timeout).unwrap() {
-                                if let Ok(s) = communicator.read_string() {
-                                    (stdout_opt, stderr_opt) = s;
-                                };
-                                // (stdout_opt, stderr_opt) = popen.communicate(None).unwrap();
-                                exit_status = status;
-                            } else {
-                                warn!(
-                                    "tile {} timed out, conversion subprocess command:\n{}",
-                                    &tile.id, cmd_string
-                                );
-                                popen.kill().unwrap();
-                                popen.wait().unwrap();
-                                exit_status = popen.exit_status().unwrap();
-                            }
+            if let Some(pd) = &proj_data {
+                cmd = cmd.env("PROJ_DATA", pd);
+            }
+
+            let cmd_string = cmd.to_cmdline_lossy();
+            let redirection_stdout = subprocess::NullFile; // Redirection::Pipe
+            let redirection_stderr = subprocess::NullFile; // Redirection::Merge
+            let exec = cmd.stdout(redirection_stdout).stderr(redirection_stderr);
+            let popen_res = exec.popen();
+            match popen_res {
+                Ok(mut popen) => {
+                    let (mut stdout_opt, mut stderr_opt): (Option<String>, Option<String>) =
+                        (None, None);
+                    let mut exit_status = subprocess::ExitStatus::Undetermined;
+                    if let Some(timeout) = subprocess_config.timeout {
+                        let mut communicator = popen.communicate_start(None);
+                        if let Some(status) = popen.wait_timeout(timeout).unwrap() {
+                            if let Ok(s) = communicator.read_string() {
+                                (stdout_opt, stderr_opt) = s;
+                            };
+                            exit_status = status;
                         } else {
-                            (stdout_opt, stderr_opt) = popen.communicate(None).unwrap();
-                            exit_status = popen.wait().unwrap();
-                        }
-
-                        let stdout = stdout_opt.unwrap_or_default();
-                        // The stderr is Redirection::Merge-d into the stdout
-                        if !exit_status.success() {
-                            warn!("{} conversion subprocess failed\ncommand: {}\nwith stdout and stderr:\n{}", &tileid, &cmd_string, &stdout);
-                        }
-                        if !output_file.exists() {
                             warn!(
-                                "{} output {:?} was not written by the subprocess, conversion subprocess command:\n{}",
-                                &tileid, &output_file, &cmd_string
+                                "tile {} timed out, conversion subprocess command:\n{}",
+                                &tile.id, cmd_string
                             );
-                            tile_failed = Some(tile);
+                            popen.kill().unwrap();
+                            popen.wait().unwrap();
+                            exit_status = popen.exit_status().unwrap();
                         }
+                    } else {
+                        (stdout_opt, stderr_opt) = popen.communicate(None).unwrap();
+                        exit_status = popen.wait().unwrap();
                     }
-                    Err(popen_error) => {
-                        warn!("{}", popen_error);
+
+                    let stdout = stdout_opt.unwrap_or_default();
+                    // The stderr is Redirection::Merge-d into the stdout
+                    if !output_file.exists() {
+                        warn!("Tile conversion failed for {tileid}");
                         tile_failed = Some(tile);
                     }
                 }
-                tile_failed
-            });
+                Err(popen_error) => {
+                    warn!("{}", popen_error);
+                    tile_failed = Some(tile);
+                }
+            }
+            tile_failed
+        });
 
         let mut tiles_results: Vec<Option<Tile>> = Vec::with_capacity(tiles_len + 2);
         if let Some(tiles_results_path) = debug_data.tiles_results {
