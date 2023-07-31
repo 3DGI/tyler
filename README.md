@@ -54,7 +54,10 @@ set PROJ_DATA=%~dp0\share\proj
 --object-type Road ^
 --object-type GenericCityObject ^
 --object-type Bridge ^
---object-attribute objectid:int,bronhouder:string,bgt_fysiekvoorkomen:string,bgt_type:string ^
+--object-attribute objectid:int ^
+--object-attribute bronhouder:string ^
+--object-attribute bgt_fysiekvoorkomen:string ^
+--object-attribute bgt_type:string ^
 --3dtiles-metadata-class terrain ^
 --grid-minz=-15 ^
 --grid-maxz=400 >> log.txt 2>&1
@@ -127,7 +130,8 @@ tyler \
     --object-type Road \
     --object-type GenericCityObject \
     --object-type Bridge \
-    --object-attribute objectid:int,bronhouder:string \
+    --object-attribute objectid:int \
+    --object-attribute bronhouder:string \
     --3dtiles-metadata-class terrain \
     --grid-minz=-5 \
     --grid-maxz=300
