@@ -18,6 +18,7 @@ use std::collections::VecDeque;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::prelude::*;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -254,13 +255,30 @@ impl QuadTree {
         )
     }
 
-    pub fn export(&self, world: &crate::parser::World) -> std::io::Result<()> {
+    pub fn export(
+        &self,
+        world: &crate::parser::World,
+        output_dir: Option<&Path>,
+    ) -> std::io::Result<()> {
         let mut q = VecDeque::new();
         q.push_back(self);
         let mut quadtree_level: u16 = self.id.level;
-        let mut file_quadtree = File::create(format!("quadtree_level-{quadtree_level}.tsv"))?;
-        let mut file_quadtree_content =
-            File::create(format!("quadtree_content_level-{quadtree_level}.tsv"))?;
+        let [mut file_quadtree, mut file_quadtree_content] = match output_dir {
+            None => [
+                File::create(format!("quadtree_level-{quadtree_level}.tsv"))?,
+                File::create(format!("quadtree_content_level-{quadtree_level}.tsv"))?,
+            ],
+            Some(outdir) => [
+                File::create(outdir.join(format!("quadtree_level-{quadtree_level}.tsv")))?,
+                File::create(outdir.join(format!("quadtree_content_level-{quadtree_level}.tsv")))?,
+            ],
+        };
+        file_quadtree
+            .write_all("node_id\tnode_level\tnr_items\twkt\n".as_bytes())
+            .expect("cannot write quadtree header");
+        file_quadtree_content
+            .write_all("node_id\tnode_level\tnr_items\twkt\n".as_bytes())
+            .expect("cannot write quadtree content header");
 
         while let Some(node) = q.pop_front() {
             if node.id.level != quadtree_level {
@@ -302,9 +320,16 @@ impl QuadTree {
         Ok(())
     }
 
-    pub fn export_bincode(&self, name: Option<&str>) -> bincode::Result<()> {
+    pub fn export_bincode(
+        &self,
+        name: Option<&str>,
+        output_dir: Option<&Path>,
+    ) -> bincode::Result<()> {
         let file_name: &str = name.unwrap_or("quadtree");
-        let file = File::create(format!("{file_name}.bincode"))?;
+        let file = match output_dir {
+            None => File::create(format!("{file_name}.bincode"))?,
+            Some(outdir) => File::create(outdir.join(format!("{file_name}.bincode")))?,
+        };
         bincode::serialize_into(file, self)
     }
 }
@@ -555,14 +580,20 @@ impl SquareGrid {
     /// If `feature_set` is provided, then the feature centroids are written to
     /// `features.tsv`.
     /// If `feature_set` is provided, `transform` must be provided too (and vica-versa).
+    /// If `output_dir` is provided, the files are written there. Else they are written to the
+    /// working directory.
     pub fn export(
         &self,
         feature_set: Option<&FeatureSet>,
         transform: Option<&crate::parser::Transform>,
+        output_dir: Option<&Path>,
     ) -> std::io::Result<()> {
-        let mut file_grid = File::create("grid.tsv")?;
-        let mut file_features = File::create("features.tsv")?;
-
+        let [file_grid_path, file_features_path] = match output_dir {
+            None => [PathBuf::from("grid.tsv"), PathBuf::from("features.tsv")],
+            Some(outdir) => [outdir.join("grid.tsv"), outdir.join("features.tsv")],
+        };
+        let mut file_grid = File::create(&file_grid_path)?;
+        let mut file_features = File::create(&file_features_path)?;
         let root_wkt = format!(
             "POLYGON(({minx} {miny}, {maxx} {miny}, {maxx} {maxy}, {minx} {maxy}, {minx} {miny}))",
             minx = self.bbox[0],
@@ -571,8 +602,14 @@ impl SquareGrid {
             maxy = self.bbox[4]
         );
         file_grid
+            .write_all("cell_id\tnr_items\twkt\n".as_bytes())
+            .expect("cannot write grid header");
+        file_grid
             .write_all(format!("x-x\t0\t{}\n", root_wkt).as_bytes())
             .expect("cannot write grid line");
+        file_features
+            .write_all("fid\tcell_id\twkt\n".as_bytes())
+            .expect("cannot write features header");
         for (cellid, cell) in self {
             let wkt = self.cell_to_wkt(&cellid);
             file_grid
@@ -597,7 +634,8 @@ impl SquareGrid {
             }
         }
         if feature_set.is_none() {
-            std::fs::remove_file("features.tsv").unwrap();
+            // Remove empty file
+            std::fs::remove_file(file_features_path)?;
         }
         Ok(())
     }
@@ -802,7 +840,7 @@ mod tests {
     fn test_intersect_bbox() {
         let extent = [195548.0, 538909.0, 0.0, 264268.0, 590410.0, 0.0];
         let grid = SquareGrid::new(&extent, 400, 7415, Some(0.0));
-        grid.export(None, None).unwrap();
+        grid.export(None, None, None).unwrap();
 
         // Polygon ((248923.44474360189633444 601084.25658657902386039, 249381.04931766359368339 601093.95845033996738493, 249369.73047660905285738 601954.19037048425525427, 248923.44474360189633444 601084.25658657902386039))
         let bbox: Bbox = [248923.4, 601084.2, 0.0, 249381.0, 601954.1, 0.0];

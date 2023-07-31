@@ -61,27 +61,40 @@ pub mod cesium3dtiles {
             Ok(())
         }
 
-        pub fn export_bincode(&self, name: Option<&str>) -> bincode::Result<()> {
+        pub fn export_bincode(
+            &self,
+            name: Option<&str>,
+            output_dir: Option<&Path>,
+        ) -> bincode::Result<()> {
             let file_name: &str = name.unwrap_or("tileset");
-            let file = File::create(format!("{file_name}.bincode"))?;
+            let file = match output_dir {
+                None => File::create(format!("{file_name}.bincode"))?,
+                Some(outdir) => File::create(outdir.join(format!("{file_name}.bincode")))?,
+            };
             bincode::serialize_into(file, self)
         }
 
         /// Write the tile boundingVolume and content boundingVolume for each level of the tileset
         /// to .tsv to the working directory.
-        pub fn export(&self) -> std::io::Result<()> {
+        pub fn export(&self, output_dir: Option<&Path>) -> std::io::Result<()> {
             let mut q = VecDeque::new();
             q.push_back(&self.root);
             let mut tileset_level: u16 = self.root.id.level;
-            let mut file_tileset = File::create(format!("tileset_level-{tileset_level}.tsv"))?;
+            let mut file_tileset = match output_dir {
+                None => File::create(format!("tileset_level-{tileset_level}.tsv"))?,
+                Some(outdir) => {
+                    File::create(outdir.join(format!("tileset_level-{tileset_level}.tsv")))?
+                }
+            };
+
             file_tileset
                 .write_all("id\tlevel\thas_content\twkt\n".as_bytes())
-                .expect("cannot write tileset tile");
+                .expect("cannot write tileset TSV header");
             let mut file_tileset_content =
                 File::create(format!("tileset_content_level-{tileset_level}.tsv"))?;
             file_tileset_content
                 .write_all("id\tlevel\twkt\n".as_bytes())
-                .expect("cannot write tileset content tile");
+                .expect("cannot write tileset content TSV header");
 
             while let Some(tile) = q.pop_front() {
                 if tile.id.level != tileset_level {
@@ -1583,13 +1596,13 @@ pub mod cesium3dtiles {
             .unwrap();
             world.index_with_grid();
 
-            world.export_grid(false).unwrap();
+            world.export_grid(false, None).unwrap();
 
             let quadtree = QuadTree::from_world(
                 &world,
                 crate::spatial_structs::QuadTreeCapacity::Vertices(15000),
             );
-            quadtree.export(&world).unwrap();
+            quadtree.export(&world, None).unwrap();
 
             let tileset = Tileset::from_quadtree(&quadtree, &world, 16_f64, 200, None, None, true);
 

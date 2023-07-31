@@ -321,18 +321,29 @@ impl World {
     }
 
     /// Export the grid of the World into the working directory.
-    pub fn export_grid(&self, export_features: bool) -> std::io::Result<()> {
+    pub fn export_grid(
+        &self,
+        export_features: bool,
+        output_dir: Option<&Path>,
+    ) -> std::io::Result<()> {
         if export_features {
             self.grid
-                .export(Some(&self.features), Some(&self.transform))
+                .export(Some(&self.features), Some(&self.transform), output_dir)
         } else {
-            self.grid.export(None, None)
+            self.grid.export(None, None, output_dir)
         }
     }
 
-    pub fn export_bincode(&self, name: Option<&str>) -> bincode::Result<()> {
+    pub fn export_bincode(
+        &self,
+        name: Option<&str>,
+        output_dir: Option<&Path>,
+    ) -> bincode::Result<()> {
         let file_name: &str = name.unwrap_or("world");
-        let file = File::create(format!("{file_name}.bincode"))?;
+        let file = match output_dir {
+            None => File::create(format!("{file_name}.bincode"))?,
+            Some(outdir) => File::create(outdir.join(format!("{file_name}.bincode")))?,
+        };
         bincode::serialize_into(file, self)
     }
 }

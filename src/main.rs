@@ -66,6 +66,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --- Begin argument parsing
     let cli = crate::cli::Cli::parse();
+    debug!("{:?}", &cli);
     info!("tyler version: {}", clap::crate_version!());
     if !cli.output.is_dir() {
         fs::create_dir_all(&cli.output)?;
@@ -116,7 +117,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .join("geof")
                     .join("createGLB.json"),
             };
-            let timeout = cli.timeout.map(|_t| Duration::new(5, 0));
+            let timeout = cli.timeout.map(|t| Duration::new(t, 0));
             SubprocessConfig {
                 output_extension: "glb".to_string(),
                 exe,
@@ -195,6 +196,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     debug!("{:?}", debug_data);
+    let debug_data_output_path = cli.output.join("debug");
+    if cli.grid_export || log_enabled!(Level::Debug) {
+        fs::create_dir(&debug_data_output_path)?;
+    }
     // --- end of argument parsing
 
     // Populate the World with features
@@ -217,19 +222,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             world
         }
         Some(world_path) => {
-            info!("Loading world from {world_path:?}");
+            info!("Loading world from bincode {world_path:?}");
             let world_file = File::open(world_path)?;
             bincode::deserialize_from(world_file)?
         }
     };
 
     if cli.grid_export {
-        info!("Exporting the grid to the working directory");
-        world.export_grid(cli.grid_export_features)?;
+        info!("Exporting the grid to TSV to {:?}", &debug_data_output_path);
+        world.export_grid(cli.grid_export_features, Some(&debug_data_output_path))?;
     }
     if log_enabled!(Level::Debug) {
-        debug!("Exporting the world instance to the working directory");
-        world.export_bincode(Some("world"))?;
+        debug!(
+            "Exporting the world instance to bincode to {:?}",
+            &debug_data_output_path
+        );
+        world.export_bincode(Some("world"), Some(&debug_data_output_path))?;
     }
 
     // Build quadtree
@@ -239,19 +247,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             spatial_structs::QuadTree::from_world(&world, quadtree_capacity)
         }
         Some(quadtree_path) => {
-            info!("Loading quadtree from {quadtree_path:?}");
+            info!("Loading quadtree from bincode {quadtree_path:?}");
             let quadtree_file = File::open(quadtree_path)?;
             bincode::deserialize_from(quadtree_file)?
         }
     };
 
     if cli.grid_export {
-        info!("Exporting the quadtree to the working directory");
-        quadtree.export(&world)?;
+        info!(
+            "Exporting the quadtree to TSV to {:?}",
+            &debug_data_output_path
+        );
+        quadtree.export(&world, Some(&debug_data_output_path))?;
     }
     if log_enabled!(Level::Debug) {
-        debug!("Exporting the quadtree instance to the working directory");
-        quadtree.export_bincode(Some("quadtree"))?;
+        debug!(
+            "Exporting the quadtree instance to bincode to {:?}",
+            &debug_data_output_path
+        );
+        quadtree.export_bincode(Some("quadtree"), Some(&debug_data_output_path))?;
     }
 
     // 3D Tiles
@@ -272,8 +286,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     if cli.grid_export {
-        info!("Exporting the explicit tileset to .tsv files to the working directory");
-        tileset.export()?;
+        info!(
+            "Exporting the explicit tileset to TSV files to {:?}",
+            &debug_data_output_path
+        );
+        tileset.export(Some(&debug_data_output_path))?;
     }
 
     let (tiles, _subtrees) = match cli.cesium3dtiles_implicit {
@@ -753,10 +770,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let tiles_results_file = File::open(tiles_results_path)?;
             tiles_results = bincode::deserialize_from(tiles_results_file)?
         } else {
-            info!("Exporting and optimizing {tiles_len} tiles");
+            info!("Converting and optimizing {tiles_len} tiles");
             tiles_failed_iter.collect_into_vec(&mut tiles_results);
             if log_enabled!(Level::Debug) {
-                let tiles_results_file = File::create("tiles_results.bincode")?;
+                debug!(
+                    "Exporting the tiles_results instance to bincode to {:?}",
+                    &debug_data_output_path
+                );
+                let outpath = debug_data_output_path.join("tiles_results.bincode");
+                let tiles_results_file = File::create(outpath)?;
                 bincode::serialize_into(tiles_results_file, &tiles_results)?;
             }
         }
