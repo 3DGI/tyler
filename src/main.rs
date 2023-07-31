@@ -116,7 +116,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .join("geof")
                     .join("createGLB.json"),
             };
-            let timeout = cli.timeout.map(|_t| Duration::new(5, 0));
+            let timeout = cli.timeout.map(|t| Duration::new(t, 0));
             SubprocessConfig {
                 output_extension: "glb".to_string(),
                 exe,
