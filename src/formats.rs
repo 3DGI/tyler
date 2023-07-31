@@ -393,7 +393,6 @@ pub mod cesium3dtiles {
             for (cellid, cell) in grid {
                 if cell.feature_ids.is_empty() {
                     // Empty cell, don't create tiles for it
-                    debug!("cell {} is empty", cellid);
                     continue;
                 }
 
@@ -620,8 +619,6 @@ pub mod cesium3dtiles {
                                 let cell = qtree.node(&qtree_nodeid).unwrap();
                                 if cell.nr_items > 0 {
                                     children_current_level.push(c)
-                                } else {
-                                    debug!("found empty tile {}", tileid);
                                 }
                             }
                         }
