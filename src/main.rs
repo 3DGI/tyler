@@ -108,6 +108,7 @@ fn run_subprocess(
     cmd: Exec,
 ) -> Option<Tile> {
     let cmd_string = cmd.to_cmdline_lossy();
+    debug!("{cmd_string}");
     let redirection_stdout = subprocess::NullFile; // Redirection::Pipe
     let redirection_stderr = subprocess::NullFile; // Redirection::Merge
     let exec = cmd.stdout(redirection_stdout).stderr(redirection_stderr);
@@ -125,7 +126,7 @@ fn run_subprocess(
                     _exit_status = status;
                 } else {
                     warn!(
-                        "tile {} timed out, conversion subprocess command:\n{}",
+                        "Tile {} timed out, conversion subprocess command:\n{}",
                         &tile.id, cmd_string
                     );
                     popen.kill().unwrap();
@@ -139,7 +140,10 @@ fn run_subprocess(
 
             // The stderr is Redirection::Merge-d into the stdout
             if !output_file.exists() {
-                warn!("Tile conversion failed for {}", tile.id);
+                warn!(
+                    "Tile {} conversion failed, conversion subprocess command:\n{}",
+                    tile.id, cmd_string
+                );
                 return Some(tile);
             }
         }
@@ -468,7 +472,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let tiles_len = tiles.len();
         let tiles_failed_iter = tiles.into_par_iter().map(|(tile, tileid)| {
-            debug!("Converting tile {tileid}");
             let mut tile_failed: Option<Tile> = None;
             let tileid_grid = &tile.id;
             let qtree_nodeid: spatial_structs::QuadTreeNodeId = tileid_grid.into();
