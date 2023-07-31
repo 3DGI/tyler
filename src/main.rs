@@ -21,7 +21,7 @@ use core::time::Duration;
 use std::env;
 use std::fs;
 use std::fs::File;
-use std::io::Write;
+use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 
 use crate::formats::cesium3dtiles::{Tile, TileId};
@@ -79,12 +79,13 @@ fn write_inputs(
             path_features_input_file.parent().unwrap()
         )
     });
-    let mut feature_input = File::create(&path_features_input_file).unwrap_or_else(|_| {
+    let _fi_file = File::create(&path_features_input_file).unwrap_or_else(|_| {
         panic!(
             "should be able to create a file {:?}",
             &path_features_input_file
         )
     });
+    let mut feature_input = BufWriter::new(_fi_file);
     for cellid in qtree_node.cells() {
         let cell = world.grid.cell(cellid);
         for fid in cell.feature_ids.iter() {
@@ -115,13 +116,13 @@ fn run_subprocess(
     let popen_res = exec.popen();
     match popen_res {
         Ok(mut popen) => {
-            let (mut stdout_opt, mut stderr_opt): (Option<String>, Option<String>) = (None, None);
+            let (mut _stdout_opt, mut _stderr_opt): (Option<String>, Option<String>) = (None, None);
             let mut _exit_status = subprocess::ExitStatus::Undetermined;
             if let Some(timeout) = subprocess_config.timeout {
                 let mut communicator = popen.communicate_start(None);
                 if let Some(status) = popen.wait_timeout(timeout).unwrap() {
                     if let Ok(s) = communicator.read_string() {
-                        (stdout_opt, stderr_opt) = s;
+                        (_stdout_opt, _stderr_opt) = s;
                     };
                     _exit_status = status;
                 } else {
@@ -134,7 +135,7 @@ fn run_subprocess(
                     _exit_status = popen.exit_status().unwrap();
                 }
             } else {
-                (stdout_opt, stderr_opt) = popen.communicate(None).unwrap();
+                (_stdout_opt, _stderr_opt) = popen.communicate(None).unwrap();
                 _exit_status = popen.wait().unwrap();
             }
 
