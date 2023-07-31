@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 
 use clap::Parser;
 
-#[derive(Parser)]
+#[derive(Parser, Debug)]
 #[command(author, version, about)]
 pub struct Cli {
     /// Main CityJSON file (.city.json), containing the coordinate reference system and

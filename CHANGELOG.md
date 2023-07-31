@@ -11,6 +11,7 @@
 ### Added
 - Set content bounding volume from tile bounding volume with the `--3dtiles-content-bv-from-tile` option. Required when the tile content is clipped to the tile's extent, for example for terrain.
 - Write quadtree content bounding box to .tsv with `--grid-export`.
+- Log all arguments in debug.
 
 ## tyler 0.3.6 (2023-07-17)
 
