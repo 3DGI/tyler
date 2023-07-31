@@ -259,8 +259,14 @@ impl QuadTree {
         q.push_back(self);
         let mut quadtree_level: u16 = self.id.level;
         let mut file_quadtree = File::create(format!("quadtree_level-{quadtree_level}.tsv"))?;
+        file_quadtree
+            .write_all("node_id\tnode_level\tnr_items\twkt\n".as_bytes())
+            .expect("cannot write quadtree header");
         let mut file_quadtree_content =
             File::create(format!("quadtree_content_level-{quadtree_level}.tsv"))?;
+        file_quadtree_content
+            .write_all("node_id\tnode_level\tnr_items\twkt\n".as_bytes())
+            .expect("cannot write quadtree content header");
 
         while let Some(node) = q.pop_front() {
             if node.id.level != quadtree_level {
@@ -571,8 +577,14 @@ impl SquareGrid {
             maxy = self.bbox[4]
         );
         file_grid
+            .write_all("cell_id\tnr_items\twkt\n".as_bytes())
+            .expect("cannot write grid header");
+        file_grid
             .write_all(format!("x-x\t0\t{}\n", root_wkt).as_bytes())
             .expect("cannot write grid line");
+        file_features
+            .write_all("fid\tcell_id\twkt\n".as_bytes())
+            .expect("cannot write features header");
         for (cellid, cell) in self {
             let wkt = self.cell_to_wkt(&cellid);
             file_grid

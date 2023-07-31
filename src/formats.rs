@@ -76,12 +76,12 @@ pub mod cesium3dtiles {
             let mut file_tileset = File::create(format!("tileset_level-{tileset_level}.tsv"))?;
             file_tileset
                 .write_all("id\tlevel\thas_content\twkt\n".as_bytes())
-                .expect("cannot write tileset tile");
+                .expect("cannot write tileset TSV header");
             let mut file_tileset_content =
                 File::create(format!("tileset_content_level-{tileset_level}.tsv"))?;
             file_tileset_content
                 .write_all("id\tlevel\twkt\n".as_bytes())
-                .expect("cannot write tileset content tile");
+                .expect("cannot write tileset content TSV header");
 
             while let Some(tile) = q.pop_front() {
                 if tile.id.level != tileset_level {
