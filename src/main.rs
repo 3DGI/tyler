@@ -218,18 +218,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             world
         }
         Some(world_path) => {
-            info!("Loading world from {world_path:?}");
+            info!("Loading world from bincode {world_path:?}");
             let world_file = File::open(world_path)?;
             bincode::deserialize_from(world_file)?
         }
     };
 
     if cli.grid_export {
-        info!("Exporting the grid to the working directory");
+        info!("Exporting the grid to TSV the working directory");
         world.export_grid(cli.grid_export_features)?;
     }
     if log_enabled!(Level::Debug) {
-        debug!("Exporting the world instance to the working directory");
+        debug!("Exporting the world instance to bincode the working directory");
         world.export_bincode(Some("world"))?;
     }
 
@@ -240,18 +240,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             spatial_structs::QuadTree::from_world(&world, quadtree_capacity)
         }
         Some(quadtree_path) => {
-            info!("Loading quadtree from {quadtree_path:?}");
+            info!("Loading quadtree from bincode {quadtree_path:?}");
             let quadtree_file = File::open(quadtree_path)?;
             bincode::deserialize_from(quadtree_file)?
         }
     };
 
     if cli.grid_export {
-        info!("Exporting the quadtree to the working directory");
+        info!("Exporting the quadtree to TSV the working directory");
         quadtree.export(&world)?;
     }
     if log_enabled!(Level::Debug) {
-        debug!("Exporting the quadtree instance to the working directory");
+        debug!("Exporting the quadtree instance to bincode to the working directory");
         quadtree.export_bincode(Some("quadtree"))?;
     }
 
@@ -273,7 +273,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     if cli.grid_export {
-        info!("Exporting the explicit tileset to .tsv files to the working directory");
+        info!("Exporting the explicit tileset to TSV files to the working directory");
         tileset.export()?;
     }
 
@@ -751,11 +751,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let tiles_failed: Vec<Tile> = match debug_data.tiles_failed {
             None => {
-                info!("Exporting and optimizing {tiles_len} tiles");
+                info!("Converting and optimizing {tiles_len} tiles");
                 tiles_failed_iter.collect()
             }
             Some(tiles_failed_path) => {
-                info!("Loading tiles_failed from {tiles_failed_path:?}");
+                info!("Loading tiles_failed from bincode {tiles_failed_path:?}");
                 let tiles_failed_file = File::open(tiles_failed_path)?;
                 bincode::deserialize_from(tiles_failed_file)?
             }
