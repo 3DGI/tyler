@@ -196,6 +196,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     debug!("{:?}", debug_data);
+    let debug_data_output_path = cli.output.join("debug");
+    if cli.grid_export || log_enabled!(Level::Debug) {
+        fs::create_dir(&debug_data_output_path)?;
+    }
     // --- end of argument parsing
 
     // Populate the World with features
@@ -225,12 +229,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     if cli.grid_export {
-        info!("Exporting the grid to TSV the working directory");
-        world.export_grid(cli.grid_export_features)?;
+        info!("Exporting the grid to TSV to {:?}", &debug_data_output_path);
+        world.export_grid(cli.grid_export_features, Some(&debug_data_output_path))?;
     }
     if log_enabled!(Level::Debug) {
-        debug!("Exporting the world instance to bincode the working directory");
-        world.export_bincode(Some("world"))?;
+        debug!(
+            "Exporting the world instance to bincode to {:?}",
+            &debug_data_output_path
+        );
+        world.export_bincode(Some("world"), Some(&debug_data_output_path))?;
     }
 
     // Build quadtree
@@ -247,12 +254,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     if cli.grid_export {
-        info!("Exporting the quadtree to TSV the working directory");
-        quadtree.export(&world)?;
+        info!(
+            "Exporting the quadtree to TSV to {:?}",
+            &debug_data_output_path
+        );
+        quadtree.export(&world, Some(&debug_data_output_path))?;
     }
     if log_enabled!(Level::Debug) {
-        debug!("Exporting the quadtree instance to bincode to the working directory");
-        quadtree.export_bincode(Some("quadtree"))?;
+        debug!(
+            "Exporting the quadtree instance to bincode to {:?}",
+            &debug_data_output_path
+        );
+        quadtree.export_bincode(Some("quadtree"), Some(&debug_data_output_path))?;
     }
 
     // 3D Tiles
@@ -273,8 +286,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     if cli.grid_export {
-        info!("Exporting the explicit tileset to TSV files to the working directory");
-        tileset.export()?;
+        info!(
+            "Exporting the explicit tileset to TSV files to {:?}",
+            &debug_data_output_path
+        );
+        tileset.export(Some(&debug_data_output_path))?;
     }
 
     let (tiles, _subtrees) = match cli.cesium3dtiles_implicit {
@@ -765,7 +781,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if !log_enabled!(Level::Debug) {
             fs::remove_dir_all(path_features_input_dir)?;
         } else {
-            let tiles_failed_file = File::create("tiles_failed.bincode")?;
+            debug!(
+                "Exporting the tiles_failed instance to bincode to {:?}",
+                &debug_data_output_path
+            );
+            let outpath = debug_data_output_path.join("tiles_failed.bincode");
+            let tiles_failed_file = File::create(outpath)?;
             bincode::serialize_into(tiles_failed_file, &tiles_failed)?;
         }
         info!("Pruning tileset of {} failed tiles", tiles_failed.len());

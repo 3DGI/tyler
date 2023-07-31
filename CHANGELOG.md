@@ -13,6 +13,9 @@
 - Write quadtree content bounding box to .tsv with `--grid-export`.
 - Log all arguments in debug.
 
+### Changed
+- Debug data, incl. `--grid-export`, is written to the `debug` directory within the `--output` directory.
+
 ## tyler 0.3.6 (2023-07-17)
 
 ### Changed
