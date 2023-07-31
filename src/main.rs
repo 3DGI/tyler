@@ -525,9 +525,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             if format == Formats::_3DTiles {
                 // geof specific args
-                // verbose. we always run geof in --verbose, because otherwise it won't print
-                // the logs when we get an error from geof
-                cmd = cmd.arg("--verbose");
                 // colors
                 if cli.color_building.is_some() {
                     cmd = cmd.arg(format!(

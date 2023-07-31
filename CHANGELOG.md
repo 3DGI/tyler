@@ -15,6 +15,8 @@
 
 ### Changed
 - Debug data, incl. `--grid-export`, is written to the `debug` directory within the `--output` directory.
+- Remove logging from geof. Speeds up the conversion and fixes the extreme memory consumption when geof emits a large amount of messages.
+- Use BufWriter for writing the input paths.
 
 ## tyler 0.3.6 (2023-07-17)
 
