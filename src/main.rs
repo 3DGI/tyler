@@ -101,6 +101,56 @@ fn write_inputs(
     path_features_input_file
 }
 
+fn run_subprocess(
+    subprocess_config: &SubprocessConfig,
+    tile: Tile,
+    output_file: PathBuf,
+    cmd: Exec,
+) -> Option<Tile> {
+    let cmd_string = cmd.to_cmdline_lossy();
+    let redirection_stdout = subprocess::NullFile; // Redirection::Pipe
+    let redirection_stderr = subprocess::NullFile; // Redirection::Merge
+    let exec = cmd.stdout(redirection_stdout).stderr(redirection_stderr);
+    let popen_res = exec.popen();
+    match popen_res {
+        Ok(mut popen) => {
+            let (mut stdout_opt, mut stderr_opt): (Option<String>, Option<String>) = (None, None);
+            let mut _exit_status = subprocess::ExitStatus::Undetermined;
+            if let Some(timeout) = subprocess_config.timeout {
+                let mut communicator = popen.communicate_start(None);
+                if let Some(status) = popen.wait_timeout(timeout).unwrap() {
+                    if let Ok(s) = communicator.read_string() {
+                        (stdout_opt, stderr_opt) = s;
+                    };
+                    _exit_status = status;
+                } else {
+                    warn!(
+                        "tile {} timed out, conversion subprocess command:\n{}",
+                        &tile.id, cmd_string
+                    );
+                    popen.kill().unwrap();
+                    popen.wait().unwrap();
+                    _exit_status = popen.exit_status().unwrap();
+                }
+            } else {
+                (stdout_opt, stderr_opt) = popen.communicate(None).unwrap();
+                _exit_status = popen.wait().unwrap();
+            }
+
+            // The stderr is Redirection::Merge-d into the stdout
+            if !output_file.exists() {
+                warn!("Tile conversion failed for {}", tile.id);
+                return Some(tile);
+            }
+        }
+        Err(popen_error) => {
+            warn!("{}", popen_error);
+            return Some(tile);
+        }
+    }
+    None
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
 
@@ -724,49 +774,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 cmd = cmd.env("PROJ_DATA", pd);
             }
 
-            let cmd_string = cmd.to_cmdline_lossy();
-            let redirection_stdout = subprocess::NullFile; // Redirection::Pipe
-            let redirection_stderr = subprocess::NullFile; // Redirection::Merge
-            let exec = cmd.stdout(redirection_stdout).stderr(redirection_stderr);
-            let popen_res = exec.popen();
-            match popen_res {
-                Ok(mut popen) => {
-                    let (mut stdout_opt, mut stderr_opt): (Option<String>, Option<String>) =
-                        (None, None);
-                    let mut exit_status = subprocess::ExitStatus::Undetermined;
-                    if let Some(timeout) = subprocess_config.timeout {
-                        let mut communicator = popen.communicate_start(None);
-                        if let Some(status) = popen.wait_timeout(timeout).unwrap() {
-                            if let Ok(s) = communicator.read_string() {
-                                (stdout_opt, stderr_opt) = s;
-                            };
-                            exit_status = status;
-                        } else {
-                            warn!(
-                                "tile {} timed out, conversion subprocess command:\n{}",
-                                &tile.id, cmd_string
-                            );
-                            popen.kill().unwrap();
-                            popen.wait().unwrap();
-                            exit_status = popen.exit_status().unwrap();
-                        }
-                    } else {
-                        (stdout_opt, stderr_opt) = popen.communicate(None).unwrap();
-                        exit_status = popen.wait().unwrap();
-                    }
-
-                    let stdout = stdout_opt.unwrap_or_default();
-                    // The stderr is Redirection::Merge-d into the stdout
-                    if !output_file.exists() {
-                        warn!("Tile conversion failed for {tileid}");
-                        tile_failed = Some(tile);
-                    }
-                }
-                Err(popen_error) => {
-                    warn!("{}", popen_error);
-                    tile_failed = Some(tile);
-                }
-            }
+            tile_failed = run_subprocess(&subprocess_config, tile, output_file, cmd);
             tile_failed
         });
 
