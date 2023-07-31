@@ -1,5 +1,16 @@
 # Changelog
 
+## tyler 0.3.7 (unreleased)
+
+### Fixed
+- Geometric error calculation for the parents of the deepest leaves, where the leaf has an edge length of the grid cellsize.
+- Replace maxz in leaf content if minz is greater than maxz.
+- Tile bounding volume when tile is empty.
+
+### Added
+- Set content bounding volume from tile bounding volume with the `--3dtiles-content-bv-from-tile` option. Required when the tile content is clipped to the tile's extent, for example for terrain.
+- Write quadtree content bounding box to .tsv with `--grid-export`.
+
 ## tyler 0.3.6 (2023-07-17)
 
 ### Changed
