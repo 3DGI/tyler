@@ -239,6 +239,10 @@ In the example below, the coordinates are in *RD New (EPSG: 7415)*.
 [2023-07-05T08:52:06Z DEBUG tyler::parser] Computed extent from features in real-world coordinates: [84995.28, 446316.814, -5.333, 85644.749, 446996.133, 52.882]
 ```
 
+The extent calculation will be done parallel for each subdirectory of `--features`, if there are any.
+The contents of each subdirectory are processed sequentially.
+Individual files directly under `--features` are processed sequentially, after the subdirectories.
+
 ## Debugging
 
 Run *tyler* in debug mode, by setting the logging level to `debug` in the `RUST_LOG` environment variable.
@@ -271,7 +275,7 @@ In debug mode, *tyler* will write the unpruned tileset too, together with the ti
 
 ## Roadmap
 
-- [ ] Parallel extent computation
+- [x] Parallel extent computation
 - [ ] Parallel grid indexing
 - [ ] Integrate the glTF converter to remove the geoflow dependency
 - [ ] Integrate cjlib (when it's ready)

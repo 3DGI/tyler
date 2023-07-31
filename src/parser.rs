@@ -20,6 +20,7 @@ use std::fs::{read_to_string, File};
 use std::path::{Path, PathBuf};
 
 use log::{debug, error, info};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::from_str;
 use walkdir::WalkDir;
@@ -49,6 +50,13 @@ pub struct World {
     pub transform: Transform,
 }
 
+struct ExtentQcResult {
+    extent_qc: BboxQc,
+    nr_features: usize,
+    cityobject_types_ignored: Vec<CityObjectType>,
+    nr_features_ignored: usize,
+}
+
 impl World {
     pub fn new<P: AsRef<Path>>(
         path_metadata: P,
@@ -67,9 +75,55 @@ impl World {
         // FIXME: if cityobject_types is None, then all cityobject are ignored, instead of included
         // Compute the extent of the features and the number of features.
         // We don't store the computed extent explicitly, because the grid contains that info.
-        for _path in WalkDir::new(&path_features_root).max_depth(0) {}
-        let (extent_qc, nr_features, cityobject_types_ignored, nr_features_ignored) =
-            Self::extent_qc(&path_features_root, cityobject_types.as_ref());
+        let mut path_features_root_dirs: Vec<PathBuf> = Vec::new();
+        let mut path_features_root_files: Vec<PathBuf> = Vec::new();
+        for entry_res in WalkDir::new(&path_features_root).min_depth(1).max_depth(1) {
+            if let Ok(entry) = entry_res {
+                if entry.file_type().is_dir() {
+                    path_features_root_dirs.push(entry.path().to_path_buf());
+                } else if entry.file_type().is_file() {
+                    if let Some(jsonl_path) = Self::direntry_to_jsonl(entry) {
+                        path_features_root_files.push(jsonl_path)
+                    }
+                }
+            } else {
+                error!(
+                    "Error in walking the directory {}, error: {}",
+                    &path_features_root.display(),
+                    entry_res.unwrap_err()
+                )
+            }
+        }
+        // Walk the subdirectories of the root
+        let extents: Vec<ExtentQcResult> = path_features_root_dirs
+            .into_par_iter()
+            .map(|dir| Self::extent_qc(dir, cityobject_types.as_ref()))
+            .collect();
+        let mut nr_features = 0;
+        let mut nr_features_ignored = 0;
+        let mut extent_qc: BboxQc = BboxQc::default();
+        let mut cityobject_types_ignored: Vec<CityObjectType> = Vec::new();
+        for extent in &extents {
+            nr_features += extent.nr_features;
+            nr_features_ignored += extent.nr_features_ignored;
+            extent_qc.update_with(&extent.extent_qc);
+            for cotype in &extent.cityobject_types_ignored {
+                if !cityobject_types_ignored.contains(cotype) {
+                    cityobject_types_ignored.push(*cotype);
+                }
+            }
+        }
+        // Walk the files at the root
+        for feature_path in &path_features_root_files {
+            Self::extent_qc_file(
+                cityobject_types.as_ref(),
+                &mut extent_qc,
+                &mut nr_features,
+                &mut nr_features_ignored,
+                &mut cityobject_types_ignored,
+                feature_path,
+            );
+        }
         info!(
             "Found {} features of type {:?}",
             nr_features, &cityobject_types
@@ -110,7 +164,7 @@ impl World {
     fn extent_qc<P: AsRef<Path> + std::fmt::Debug>(
         path_features: P,
         cityobject_types: Option<&Vec<CityObjectType>>,
-    ) -> (BboxQc, usize, Vec<CityObjectType>, usize) {
+    ) -> ExtentQcResult {
         info!(
             "Computing extent from the features of type {:?}",
             cityobject_types
@@ -125,7 +179,7 @@ impl World {
         let mut found_feature_type = false;
         let mut nr_features = 0;
         let mut nr_features_ignored = 0;
-        let mut cotypes_ignored: Vec<CityObjectType> = Vec::new();
+        let mut cityobject_types_ignored: Vec<CityObjectType> = Vec::new();
         debug!("Searching for the first feature of the requested type...");
         loop {
             if let Some(feature_path) = features_enum_iter.next() {
@@ -137,8 +191,8 @@ impl World {
                         break;
                     } else {
                         for (_, co) in cf.cityobjects.iter() {
-                            if !cotypes_ignored.contains(&co.cotype) {
-                                cotypes_ignored.push(co.cotype);
+                            if !cityobject_types_ignored.contains(&co.cotype) {
+                                cityobject_types_ignored.push(co.cotype);
                             }
                             nr_features_ignored += 1;
                         }
@@ -161,54 +215,82 @@ impl World {
         }
         debug!("First feature found. Iterating over all features to compute the extent.");
         for feature_path in features_enum_iter {
-            if let Ok(cf) = CityJSONFeatureVertices::from_file(&feature_path) {
-                if let Some(bbox_qc) = cf.bbox_of_types(cityobject_types) {
-                    let [x_min, y_min, z_min, x_max, y_max, z_max] = bbox_qc.0;
-                    if x_min < extent_qc.0[0] {
-                        extent_qc.0[0] = x_min
-                    } else if x_max > extent_qc.0[3] {
-                        extent_qc.0[3] = x_max
-                    }
-                    if y_min < extent_qc.0[1] {
-                        extent_qc.0[1] = y_min
-                    } else if y_max > extent_qc.0[4] {
-                        extent_qc.0[4] = y_max
-                    }
-                    if z_min < extent_qc.0[2] {
-                        extent_qc.0[2] = z_min
-                    } else if z_max > extent_qc.0[5] {
-                        extent_qc.0[5] = z_max
-                    }
-                    nr_features += 1;
-                } else {
-                    for (_, co) in cf.cityobjects.iter() {
-                        if !cotypes_ignored.contains(&co.cotype) {
-                            cotypes_ignored.push(co.cotype);
-                        }
-                        nr_features_ignored += 1;
-                    }
-                }
-            } else {
-                error!("Failed to parse {:?}", &feature_path);
-            }
+            Self::extent_qc_file(
+                cityobject_types,
+                &mut extent_qc,
+                &mut nr_features,
+                &mut nr_features_ignored,
+                &mut cityobject_types_ignored,
+                &feature_path,
+            );
         }
-        (extent_qc, nr_features, cotypes_ignored, nr_features_ignored)
+        ExtentQcResult {
+            extent_qc,
+            nr_features,
+            cityobject_types_ignored,
+            nr_features_ignored,
+        }
+    }
+
+    fn extent_qc_file(
+        cityobject_types: Option<&Vec<CityObjectType>>,
+        extent_qc: &mut BboxQc,
+        nr_features: &mut usize,
+        nr_features_ignored: &mut usize,
+        cityobject_types_ignored: &mut Vec<CityObjectType>,
+        feature_path: &PathBuf,
+    ) {
+        if let Ok(cf) = CityJSONFeatureVertices::from_file(&feature_path) {
+            if let Some(bbox_qc) = cf.bbox_of_types(cityobject_types) {
+                let [x_min, y_min, z_min, x_max, y_max, z_max] = bbox_qc.0;
+                if x_min < extent_qc.0[0] {
+                    extent_qc.0[0] = x_min
+                } else if x_max > extent_qc.0[3] {
+                    extent_qc.0[3] = x_max
+                }
+                if y_min < extent_qc.0[1] {
+                    extent_qc.0[1] = y_min
+                } else if y_max > extent_qc.0[4] {
+                    extent_qc.0[4] = y_max
+                }
+                if z_min < extent_qc.0[2] {
+                    extent_qc.0[2] = z_min
+                } else if z_max > extent_qc.0[5] {
+                    extent_qc.0[5] = z_max
+                }
+                *nr_features += 1;
+            } else {
+                for (_, co) in cf.cityobjects.iter() {
+                    if !cityobject_types_ignored.contains(&co.cotype) {
+                        cityobject_types_ignored.push(co.cotype);
+                    }
+                    *nr_features_ignored += 1;
+                }
+            }
+        } else {
+            error!("Failed to parse {:?}", &feature_path);
+        }
     }
 
     /// Return the file path if the 'DirEntry' is a .jsonl file (eg. .city.jsonl).
     pub fn jsonl_path(walkdir_res: Result<walkdir::DirEntry, walkdir::Error>) -> Option<PathBuf> {
         if let Ok(entry) = walkdir_res {
-            if let Some(ext) = entry.path().extension() {
-                if ext == "jsonl" {
-                    Some(entry.path().to_path_buf())
-                } else {
-                    None
-                }
+            Self::direntry_to_jsonl(entry)
+        } else {
+            // TODO: notify the user if some path cannot be accessed (eg. permission), https://docs.rs/walkdir/latest/walkdir/struct.Error.html
+            None
+        }
+    }
+
+    /// Convert a [walkdir::DirEntry] to [PathBuf] if the file is CityJSONFeature file.
+    fn direntry_to_jsonl(entry: walkdir::DirEntry) -> Option<PathBuf> {
+        if let Some(ext) = entry.path().extension() {
+            if ext == "jsonl" {
+                Some(entry.path().to_path_buf())
             } else {
                 None
             }
         } else {
-            // TODO: notify the user if some path cannot be accessed (eg. permission), https://docs.rs/walkdir/latest/walkdir/struct.Error.html
             None
         }
     }
