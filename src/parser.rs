@@ -19,7 +19,7 @@ use std::fmt;
 use std::fs::{read_to_string, File};
 use std::path::{Path, PathBuf};
 
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::from_str;
@@ -72,6 +72,10 @@ impl World {
         let crs = cm.metadata.reference_system;
         let transform = cm.transform;
 
+        info!(
+            "Computing extent from the features of type {:?}",
+            cityobject_types
+        );
         // FIXME: if cityobject_types is None, then all cityobject are ignored, instead of included
         // Compute the extent of the features and the number of features.
         // We don't store the computed extent explicitly, because the grid contains that info.
@@ -95,9 +99,14 @@ impl World {
             }
         }
         // Walk the subdirectories of the root
+        debug!(
+            "Found {} subdirectories and {} CityJSONFeature files at the root directory",
+            path_features_root_dirs.len(),
+            path_features_root_files.len()
+        );
         let extents: Vec<ExtentQcResult> = path_features_root_dirs
             .into_par_iter()
-            .map(|dir| Self::extent_qc(dir, cityobject_types.as_ref()))
+            .filter_map(|dir| Self::extent_qc(dir, cityobject_types.as_ref()))
             .collect();
         let mut nr_features = 0;
         let mut nr_features_ignored = 0;
@@ -113,7 +122,7 @@ impl World {
                 }
             }
         }
-        // Walk the files at the root
+        // Walk the files at the root and update the counters
         for feature_path in &path_features_root_files {
             Self::extent_qc_file(
                 cityobject_types.as_ref(),
@@ -122,6 +131,12 @@ impl World {
                 &mut nr_features_ignored,
                 &mut cityobject_types_ignored,
                 feature_path,
+            );
+        }
+        if nr_features == 0 {
+            panic!(
+                "Did not find any CityJSONFeatures of type {:?}",
+                cityobject_types
             );
         }
         info!(
@@ -164,11 +179,7 @@ impl World {
     fn extent_qc<P: AsRef<Path> + std::fmt::Debug>(
         path_features: P,
         cityobject_types: Option<&Vec<CityObjectType>>,
-    ) -> ExtentQcResult {
-        info!(
-            "Computing extent from the features of type {:?}",
-            cityobject_types
-        );
+    ) -> Option<ExtentQcResult> {
         // Do a first loop over the features to calculate their extent and their number.
         // Need a mutable iterator, because .next() consumes the next value and advances the iterator.
         let mut features_enum_iter = WalkDir::new(&path_features)
@@ -180,40 +191,28 @@ impl World {
         let mut nr_features = 0;
         let mut nr_features_ignored = 0;
         let mut cityobject_types_ignored: Vec<CityObjectType> = Vec::new();
-        debug!("Searching for the first feature of the requested type...");
-        loop {
-            if let Some(feature_path) = features_enum_iter.next() {
-                if let Ok(cf) = CityJSONFeatureVertices::from_file(&feature_path) {
-                    if let Some(eqc) = cf.bbox_of_types(cityobject_types) {
-                        extent_qc = eqc;
-                        found_feature_type = true;
-                        nr_features += 1;
-                        break;
-                    } else {
-                        for (_, co) in cf.cityobjects.iter() {
-                            if !cityobject_types_ignored.contains(&co.cotype) {
-                                cityobject_types_ignored.push(co.cotype);
-                            }
-                            nr_features_ignored += 1;
-                        }
-                    }
+        while let Some(feature_path) = features_enum_iter.next() {
+            if let Ok(cf) = CityJSONFeatureVertices::from_file(&feature_path) {
+                if let Some(eqc) = cf.bbox_of_types(cityobject_types) {
+                    extent_qc = eqc;
+                    found_feature_type = true;
+                    nr_features += 1;
+                    break;
                 } else {
-                    error!("Failed to parse {:?}", &feature_path)
+                    for (_, co) in cf.cityobjects.iter() {
+                        if !cityobject_types_ignored.contains(&co.cotype) {
+                            cityobject_types_ignored.push(co.cotype);
+                        }
+                        nr_features_ignored += 1;
+                    }
                 }
             } else {
-                panic!(
-                    "Did not find any CityJSONFeature file in {:?}",
-                    &path_features
-                );
+                warn!("Failed to parse {:?}", &feature_path)
             }
         }
         if !found_feature_type {
-            panic!(
-                "Did not find any CityJSONFeature of type {:?}",
-                &cityobject_types
-            );
+            return None;
         }
-        debug!("First feature found. Iterating over all features to compute the extent.");
         for feature_path in features_enum_iter {
             Self::extent_qc_file(
                 cityobject_types,
@@ -224,12 +223,12 @@ impl World {
                 &feature_path,
             );
         }
-        ExtentQcResult {
+        Some(ExtentQcResult {
             extent_qc,
             nr_features,
             cityobject_types_ignored,
             nr_features_ignored,
-        }
+        })
     }
 
     fn extent_qc_file(
