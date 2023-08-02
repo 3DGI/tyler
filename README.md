@@ -22,6 +22,8 @@ Details of the 3D Tiles output:
 
 Additional information about the internals of *tyler* you will find in the [design document](https://github.com/3DGI/tyler/blob/master/docs/design_document.md).
 
+*Note on performance: For large input, like multiple millions of features you need have an SSD. Running on a HDD is not feasible.*
+
 ## Installation
 
 For the time being, *tyler* depends on the [geoflow-bundle](https://github.com/geoflow3d/geoflow-bundle) for converting CityJSONFeatures to glTF.
@@ -242,6 +244,7 @@ In the example below, the coordinates are in *RD New (EPSG: 7415)*.
 The extent calculation will be done parallel for each subdirectory of `--features`, if there are any.
 The contents of each subdirectory are processed sequentially.
 Individual files directly under `--features` are processed sequentially, after the subdirectories.
+Therefore, in order to achieve optimal performance, you should organize your features into subdirectories.
 
 ## Debugging
 
