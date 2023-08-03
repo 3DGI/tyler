@@ -406,6 +406,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &quadtree,
                 cli.grid_export,
                 subtrees_dir_option,
+                Some(&debug_data_output_path),
             );
 
             if cli.cesium3dtiles_tileset_only || log_enabled!(Level::Debug) {
@@ -820,8 +821,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|comp| comp.as_os_str())
                 .collect();
             let subtrees_dir_option = components.last().cloned().unwrap().to_str();
-            let (_, subtrees) =
-                tileset.make_implicit(&world.grid, &quadtree, cli.grid_export, subtrees_dir_option);
+            let (_, subtrees) = tileset.make_implicit(
+                &world.grid,
+                &quadtree,
+                cli.grid_export,
+                subtrees_dir_option,
+                Some(&debug_data_output_path),
+            );
             info!("Writing subtrees for implicit tiling");
             fs::create_dir_all(&subtrees_path)?;
             for (subtree_id, subtree_bytes) in subtrees {

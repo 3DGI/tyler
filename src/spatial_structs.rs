@@ -263,16 +263,16 @@ impl QuadTree {
         let mut q = VecDeque::new();
         q.push_back(self);
         let mut quadtree_level: u16 = self.id.level;
-        let [mut file_quadtree, mut file_quadtree_content] = match output_dir {
-            None => [
-                File::create(format!("quadtree_level-{quadtree_level}.tsv"))?,
-                File::create(format!("quadtree_content_level-{quadtree_level}.tsv"))?,
-            ],
-            Some(outdir) => [
-                File::create(outdir.join(format!("quadtree_level-{quadtree_level}.tsv")))?,
-                File::create(outdir.join(format!("quadtree_content_level-{quadtree_level}.tsv")))?,
-            ],
+        let [mut outdir_quadtree, mut outdir_quadtree_content] = match output_dir {
+            None => [Path::new(""), Path::new("")],
+            Some(outdir) => [outdir, outdir],
         };
+        let mut file_quadtree =
+            File::create(outdir_quadtree.join(format!("quadtree_level-{quadtree_level}.tsv")))?;
+        let mut file_quadtree_content = File::create(
+            outdir_quadtree_content.join(format!("quadtree_content_level-{quadtree_level}.tsv")),
+        )?;
+
         file_quadtree
             .write_all("node_id\tnode_level\tnr_items\twkt\n".as_bytes())
             .expect("cannot write quadtree header");
@@ -283,9 +283,19 @@ impl QuadTree {
         while let Some(node) = q.pop_front() {
             if node.id.level != quadtree_level {
                 quadtree_level = node.id.level;
-                file_quadtree = File::create(format!("quadtree_level-{quadtree_level}.tsv"))?;
-                file_quadtree_content =
-                    File::create(format!("quadtree_content_level-{quadtree_level}.tsv"))?;
+                file_quadtree = File::create(
+                    outdir_quadtree.join(format!("quadtree_level-{quadtree_level}.tsv")),
+                )?;
+                file_quadtree_content = File::create(
+                    outdir_quadtree_content
+                        .join(format!("quadtree_content_level-{quadtree_level}.tsv")),
+                )?;
+                file_quadtree
+                    .write_all("node_id\tnode_level\tnr_items\twkt\n".as_bytes())
+                    .expect("cannot write quadtree header");
+                file_quadtree_content
+                    .write_all("node_id\tnode_level\tnr_items\twkt\n".as_bytes())
+                    .expect("cannot write quadtree content header");
             }
             let wkt = node.to_wkt(&world.grid);
             file_quadtree

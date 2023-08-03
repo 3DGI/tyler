@@ -80,18 +80,19 @@ pub mod cesium3dtiles {
             let mut q = VecDeque::new();
             q.push_back(&self.root);
             let mut tileset_level: u16 = self.root.id.level;
-            let mut file_tileset = match output_dir {
-                None => File::create(format!("tileset_level-{tileset_level}.tsv"))?,
-                Some(outdir) => {
-                    File::create(outdir.join(format!("tileset_level-{tileset_level}.tsv")))?
-                }
+            let [mut outdir_tileset, mut outdir_tileset_content] = match output_dir {
+                None => [Path::new(""), Path::new("")],
+                Some(outdir) => [outdir, outdir],
             };
+            let mut file_tileset =
+                File::create(outdir_tileset.join(format!("tileset_level-{tileset_level}.tsv")))?;
+            let mut file_tileset_content = File::create(
+                outdir_tileset_content.join(format!("tileset_content_level-{tileset_level}.tsv")),
+            )?;
 
             file_tileset
                 .write_all("id\tlevel\thas_content\twkt\n".as_bytes())
                 .expect("cannot write tileset TSV header");
-            let mut file_tileset_content =
-                File::create(format!("tileset_content_level-{tileset_level}.tsv"))?;
             file_tileset_content
                 .write_all("id\tlevel\twkt\n".as_bytes())
                 .expect("cannot write tileset content TSV header");
@@ -99,15 +100,19 @@ pub mod cesium3dtiles {
             while let Some(tile) = q.pop_front() {
                 if tile.id.level != tileset_level {
                     tileset_level = tile.id.level;
-                    file_tileset = File::create(format!("tileset_level-{tileset_level}.tsv"))?;
+                    file_tileset = File::create(
+                        outdir_tileset.join(format!("tileset_level-{tileset_level}.tsv")),
+                    )?;
+                    file_tileset_content = File::create(
+                        outdir_tileset_content
+                            .join(format!("tileset_content_level-{tileset_level}.tsv")),
+                    )?;
                     file_tileset
                         .write_all("id\tlevel\thas_content\twkt\n".as_bytes())
-                        .expect("cannot write tileset tile");
-                    file_tileset_content =
-                        File::create(format!("tileset_content_level-{tileset_level}.tsv"))?;
+                        .expect("cannot write tileset TSV header");
                     file_tileset_content
                         .write_all("id\tlevel\twkt\n".as_bytes())
-                        .expect("cannot write tileset content tile");
+                        .expect("cannot write tileset content TSV header");
                 }
                 let wkt = tile.bounding_volume.to_wkt();
                 file_tileset
@@ -536,6 +541,7 @@ pub mod cesium3dtiles {
             qtree: &QuadTree,
             grid_export: bool,
             subtrees_dir: Option<&str>,
+            output_dir_debug: Option<&Path>,
         ) -> (Vec<(Tile, TileId)>, Vec<(TileId, Vec<u8>)>) {
             let mut subtrees_vec: Vec<(TileId, Vec<u8>)> = Vec::new();
             let mut flat_tiles_with_content: Vec<(Tile, TileId)> = Vec::new();
@@ -601,6 +607,7 @@ pub mod cesium3dtiles {
                         &tile_bbox,
                         grid_epsg,
                         grid_export,
+                        output_dir_debug,
                     );
                     let grid_coordinate_map_global = Self::grid_coordinate_map(
                         level_quadtree,
@@ -608,6 +615,7 @@ pub mod cesium3dtiles {
                         &tile_bbox,
                         grid_epsg,
                         false,
+                        None,
                     );
 
                     let mut children_current_level: Vec<&Tile> = Vec::new();
@@ -730,6 +738,7 @@ pub mod cesium3dtiles {
                     &tile_bbox,
                     grid_epsg,
                     false,
+                    None,
                 );
 
                 let mut child_subtree_availability_bitstream: bv::BitVec<u8, bv::Lsb0> =
@@ -925,6 +934,7 @@ pub mod cesium3dtiles {
             bbox: &Bbox,
             epsg: u16,
             do_export: bool,
+            output_dir_debug: Option<&Path>,
         ) -> HashMap<String, (CellId, usize)> {
             let nr_tiles = 4_usize.pow(level_current);
 
@@ -959,21 +969,24 @@ pub mod cesium3dtiles {
             if do_export {
                 // DEBUG
                 let first_cell = grid_for_level.into_iter().next().unwrap();
-                let mut file_grid = File::create(format!(
+                let outdir = output_dir_debug.unwrap_or(Path::new(""));
+                let mut file_grid = File::create(outdir.join(format!(
                     "grid_for_level-{}-{}.tsv",
                     &grid_for_level.length, &first_cell.0
-                ))
+                )))
                 .unwrap();
+                writeln!(file_grid, "cell_id\twkt").unwrap();
                 for (cellid, _) in &grid_for_level {
                     let wkt = grid_for_level.cell_to_wkt(&cellid);
                     writeln!(file_grid, "{}\t{}", &cellid, wkt).unwrap();
                 }
 
-                let mut file_grid_morton = File::create(format!(
+                let mut file_grid_morton = File::create(outdir.join(format!(
                     "grid_for_level_morton-{}-{}.tsv",
                     &grid_for_level.length, &first_cell.0
-                ))
+                )))
                 .unwrap();
+                writeln!(file_grid, "idx\tcell_id\twkt").unwrap();
                 for (i, (_mc, cellid)) in mortoncodes.iter().enumerate() {
                     let [minx, miny, ..] = grid_for_level.cell_bbox(cellid);
                     writeln!(
