@@ -57,7 +57,9 @@ pub mod cesium3dtiles {
         /// Write the tileset to a `tileset.json` file
         pub fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<(), Box<dyn std::error::Error>> {
             let file_out = File::create(path.as_ref())?;
-            serde_json::to_writer(&file_out, self)?;
+            let mut ser =
+                serde_json::ser::Serializer::with_formatter(file_out, BoundingVolumeFormatter);
+            self.serialize(&mut ser)?;
             Ok(())
         }
 
@@ -1248,7 +1250,7 @@ pub mod cesium3dtiles {
     #[derive(Clone, Debug, Default, Eq, PartialEq)]
     pub struct TileId {
         pub(crate) x: usize,
-        y: usize,
+        pub(crate) y: usize,
         pub(crate) level: u16,
     }
 
@@ -1286,6 +1288,20 @@ pub mod cesium3dtiles {
                 column: val.x,
                 row: val.y,
             }
+        }
+    }
+
+    /// Format the BoundingVolume coordinates to 6 decimal places in the JSON output.
+    /// 6 decimal places, because that gives 0.11112m precision.
+    /// See https://wiki.openstreetmap.org/wiki/Precision_of_coordinates
+    struct BoundingVolumeFormatter;
+
+    impl serde_json::ser::Formatter for BoundingVolumeFormatter {
+        fn write_f64<W>(&mut self, writer: &mut W, value: f64) -> std::io::Result<()>
+        where
+            W: ?Sized + Write,
+        {
+            write!(writer, "{:.6}", value)
         }
     }
 
@@ -1652,6 +1668,28 @@ pub mod cesium3dtiles {
             let bbox: Bbox = [84995.279, 446316.813, -5.333, 85644.748, 446996.132, 52.881];
             let bounding_volume = BoundingVolume::from(&bbox);
             println!("{:?}", bounding_volume);
+        }
+
+        #[test]
+        fn test_boundingvolume_region_from_bbox() {
+            let crs_to = "EPSG:4979";
+            let transformer = Proj::new_known_crs("EPSG:7415", crs_to, None).unwrap();
+            let bbox: Bbox = [84995.279, 446316.813, -5.333, 85644.748, 446996.132, 52.881];
+            let bounding_volume = BoundingVolume::region_from_bbox(&bbox, &transformer);
+            println!("{:?}", bounding_volume);
+        }
+
+        #[test]
+        fn test_boundingvolume_json_precision() {
+            let bounding_volume = BoundingVolume::Region([
+                0.0762316935076296,
+                0.9075853268461559,
+                0.07639433996161832,
+                0.9076933035069118,
+                38.18193225618456,
+                96.3895906072444,
+            ]);
+            println!("{}", serde_json::to_string(&bounding_volume).unwrap());
         }
 
         /// Verify that we can serialize the 3DTILES_content_gltf as an empty object when it is just
