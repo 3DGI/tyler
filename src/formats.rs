@@ -676,43 +676,55 @@ pub mod cesium3dtiles {
                         }
                     }
 
-                    // if grid_export {
-                    //     let nr_tiles = 4_usize.pow(level_subtree);
-                    //     // Grid for the current level
-                    //     let tile_width = (extent_width / (nr_tiles as f64).sqrt()) as u16;
-                    //     let grid_for_level =
-                    //         SquareGrid::new(&tile_bbox, tile_width, grid_epsg, None);
-                    //     let filename = format!(
-                    //         "implicit-level-{}-{}-{}.tsv",
-                    //         &level_quadtree, &tile.id.x, &tile.id.y
-                    //     );
-                    //     debug!("Exporting {:?}", &filename);
-                    //     let mut file_implicit_tileset_at_level = File::create(&filename).unwrap();
-                    //     for (cellid_grid_level, i_z_curve) in grid_coordinate_map.values() {
-                    //         let wkt = grid_for_level.cell_to_wkt(cellid_grid_level);
-                    //         let va = tile_availability_for_level.get(*i_z_curve);
-                    //         let vc = content_availability_for_level.get(*i_z_curve);
-                    //         if va.is_none() {
-                    //             error!("tileAvailability bitstream is inconsistent, there is no value at index {i_z_curve}");
-                    //         };
-                    //         if vc.is_none() {
-                    //             error!("contentAvailability bitstream is inconsistent, there is no value at index {i_z_curve}");
-                    //         }
-                    //         let tile_available =
-                    //             tile_availability_for_level.get(*i_z_curve).unwrap();
-                    //         let content_available =
-                    //             content_availability_for_level.get(*i_z_curve).unwrap();
-                    //         writeln!(
-                    //             file_implicit_tileset_at_level,
-                    //             "{}\t{}\t{}\t{}",
-                    //             cellid_grid_level,
-                    //             tile_available.as_ref(),
-                    //             content_available.as_ref(),
-                    //             wkt
-                    //         )
-                    //         .unwrap();
-                    //     }
-                    // }
+                    if grid_export {
+                        let nr_tiles = 4_usize.pow(level_subtree);
+                        // Grid for the current level
+                        let tile_width = (extent_width / (nr_tiles as f64).sqrt()) as u32;
+                        let grid_for_level =
+                            SquareGrid::new(&tile_bbox, tile_width, grid_epsg, None);
+                        let outdir = output_dir_debug.unwrap_or(Path::new(""));
+                        let filename = outdir.join(format!(
+                            "implicit-level-{}-{}-{}.tsv",
+                            &level_quadtree, &tile.id.x, &tile.id.y
+                        ));
+                        debug!(
+                            "Exporting the subtree {}/{}/{} to TSV file to {}",
+                            &level_quadtree,
+                            &tile.id.x,
+                            &tile.id.y,
+                            filename.display()
+                        );
+                        let mut file_implicit_tileset_at_level = File::create(&filename).unwrap();
+                        writeln!(
+                            file_implicit_tileset_at_level,
+                            "cell_id\ttile_available\tcontent_available\twkt",
+                        )
+                        .unwrap();
+                        for (cellid_grid_level, i_z_curve) in grid_coordinate_map.values() {
+                            let wkt = grid_for_level.cell_to_wkt(cellid_grid_level);
+                            let va = tile_availability_for_level.get(*i_z_curve);
+                            let vc = content_availability_for_level.get(*i_z_curve);
+                            if va.is_none() {
+                                error!("tileAvailability bitstream is inconsistent, there is no value at index {i_z_curve}");
+                            };
+                            if vc.is_none() {
+                                error!("contentAvailability bitstream is inconsistent, there is no value at index {i_z_curve}");
+                            }
+                            let tile_available =
+                                tile_availability_for_level.get(*i_z_curve).unwrap();
+                            let content_available =
+                                content_availability_for_level.get(*i_z_curve).unwrap();
+                            writeln!(
+                                file_implicit_tileset_at_level,
+                                "{}\t{}\t{}\t{}",
+                                cellid_grid_level,
+                                tile_available.as_ref(),
+                                content_available.as_ref(),
+                                wkt
+                            )
+                            .unwrap();
+                        }
+                    }
 
                     tile_availability_for_level.set_uninitialized(false);
                     content_availability_for_level.set_uninitialized(false);
@@ -986,7 +998,7 @@ pub mod cesium3dtiles {
                     &grid_for_level.length, &first_cell.0
                 )))
                 .unwrap();
-                writeln!(file_grid, "idx\tcell_id\twkt").unwrap();
+                writeln!(file_grid_morton, "idx\tcell_id\twkt").unwrap();
                 for (i, (_mc, cellid)) in mortoncodes.iter().enumerate() {
                     let [minx, miny, ..] = grid_for_level.cell_bbox(cellid);
                     writeln!(
