@@ -18,6 +18,10 @@ categories = ["command-line-utilities", "science::geo"]
 name = "tyler"
 path = "src/main.rs"
 
+[[bin]]
+name = "play"
+path = "src/playground.rs"
+
 [dependencies]
 log = "0.4.17"
 env_logger = "0.10.0"

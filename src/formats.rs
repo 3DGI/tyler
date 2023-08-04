@@ -26,7 +26,7 @@ pub mod cesium3dtiles {
     use std::path::Path;
 
     use bitvec::prelude as bv;
-    use log::{debug, error, warn};
+    use log::{debug, error, info, warn};
     use morton_encoding::morton_encode;
     use serde::{Deserialize, Serialize};
     use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -222,9 +222,12 @@ pub mod cesium3dtiles {
                 // Set the bounding volume height from the content height
                 tile_bbox[2] = world.grid.bbox[2];
                 tile_bbox[5] = world.grid.bbox[5];
+                let _tile_bbox_wkt = quadtree.to_wkt(&world.grid);
+                info!("{} _tile_bbox_wkt {_tile_bbox_wkt}", tile_id.to_string());
 
                 let mut bounding_volume =
                     BoundingVolume::region_from_bbox(&tile_bbox, transformer).unwrap();
+                info!("bounding_volume {}", bounding_volume.to_wkt());
                 match bounding_volume {
                     BoundingVolume::Box(_) => {}
                     BoundingVolume::Region(ref mut region) => {
@@ -646,6 +649,10 @@ pub mod cesium3dtiles {
                     let mut content_availability_for_level_vec: Vec<bool> = Vec::new();
                     content_availability_for_level_vec.resize(nr_tiles_subtree, false);
 
+                    // FIXME DEBUG
+                    let mut tileids_contiguous_vec: Vec<String> = Vec::new();
+                    tileids_contiguous_vec.resize(nr_tiles_subtree, String::default());
+
                     while let Some(tile) = tiles_queue.pop_front() {
                         let tile_corner_coord = Self::tile_corner_coordinate(grid, qtree, tile);
                         // Set the tile and content available
@@ -665,6 +672,8 @@ pub mod cesium3dtiles {
                                         cellid_grid_global.row,
                                         level_quadtree as u16,
                                     );
+                                    tileids_contiguous_vec[*i_z_curve] =
+                                        tileid_continuous.to_string();
                                     flat_tiles_with_content.push((tile.clone(), tileid_continuous));
                                 }
                             } else {
@@ -699,27 +708,27 @@ pub mod cesium3dtiles {
                         let mut file_implicit_tileset_at_level = File::create(&filename).unwrap();
                         writeln!(
                             file_implicit_tileset_at_level,
-                            "cell_id\ttile_available\tcontent_available\twkt",
+                            "cell_id\ttile_id_subtree\ttile_available\tcontent_available\twkt",
                         )
                         .unwrap();
                         for (cellid_grid_level, i_z_curve) in grid_coordinate_map.values() {
                             let wkt = grid_for_level.cell_to_wkt(cellid_grid_level);
                             let va = tile_availability_for_level.get(*i_z_curve);
                             let vc = content_availability_for_level.get(*i_z_curve);
+                            let tile_id_subtree = &tileids_contiguous_vec[*i_z_curve];
                             if va.is_none() {
                                 error!("tileAvailability bitstream is inconsistent, there is no value at index {i_z_curve}");
                             };
                             if vc.is_none() {
                                 error!("contentAvailability bitstream is inconsistent, there is no value at index {i_z_curve}");
                             }
-                            let tile_available =
-                                tile_availability_for_level.get(*i_z_curve).unwrap();
-                            let content_available =
-                                content_availability_for_level.get(*i_z_curve).unwrap();
+                            let tile_available = va.unwrap();
+                            let content_available = vc.unwrap();
                             writeln!(
                                 file_implicit_tileset_at_level,
-                                "{}\t{}\t{}\t{}",
+                                "{}\t{}\t{}\t{}\t{}",
                                 cellid_grid_level,
+                                tile_id_subtree,
                                 tile_available.as_ref(),
                                 content_available.as_ref(),
                                 wkt
@@ -1420,6 +1429,15 @@ pub mod cesium3dtiles {
         ) -> Result<Self, Box<dyn std::error::Error>> {
             let (west, south, minh) = transformer.convert((bbox[0], bbox[1], bbox[2]))?;
             let (east, north, maxh) = transformer.convert((bbox[3], bbox[4], bbox[5]))?;
+
+            info!("region_from_bbox {}", format!(
+                "POLYGON(({minx} {miny}, {maxx} {miny}, {maxx} {maxy}, {minx} {maxy}, {minx} {miny}))",
+                minx = west,
+                miny = south,
+                maxx = east,
+                maxy = north
+            ));
+
             Ok(BoundingVolume::Region([
                 west.to_radians(),
                 south.to_radians(),
