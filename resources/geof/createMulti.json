@@ -10,36 +10,6 @@
       "str",
       "EPSG:7415"
     ],
-    "max_x": [
-      "",
-      "float",
-      76690.0
-    ],
-    "max_y": [
-      "",
-      "float",
-      454357.75
-    ],
-    "max_z": [
-      "",
-      "float",
-      310.0
-    ],
-    "min_x": [
-      "",
-      "float",
-      76190.0
-    ],
-    "min_y": [
-      "",
-      "float",
-      453857.75
-    ],
-    "min_z": [
-      "",
-      "float",
-      -15.0
-    ],
     "output_file": [
       "output (glb) file",
       "str",
@@ -72,12 +42,12 @@
       },
       "parameters": {
         "inCRS": "epsg:7415",
-        "max_x": "{{max_x}}",
-        "max_y": "{{max_y}}",
-        "max_z": "{{max_z}}",
-        "min_x": "{{min_x}}",
-        "min_y": "{{min_y}}",
-        "min_z": "{{min_z}}"
+        "max_x": 0.0,
+        "max_y": 0.0,
+        "max_z": 0.0,
+        "min_x": 0.0,
+        "min_y": 0.0,
+        "min_z": 0.0
       },
       "position": [
         223.0,
@@ -212,12 +182,12 @@
         "only_output_mapped_attrs": true,
         "output_attribute_names": {
           "processFeatures.dak_deel_id": "b3_dd_id",
-          "processFeatures.identificatie": "identificatie",
-          "processFeatures.pand_deel_id": "b3_pand_deel_id",
           "processFeatures.h_50p": "b3_h_50p",
           "processFeatures.h_70p": "b3_h_70p",
           "processFeatures.h_max": "b3_h_max",
-          "processFeatures.h_min": "b3_h_min"
+          "processFeatures.h_min": "b3_h_min",
+          "processFeatures.identificatie": "identificatie",
+          "processFeatures.pand_deel_id": "b3_pand_deel_id"
         },
         "overwrite_file": false,
         "overwrite_layer": true,
@@ -248,12 +218,12 @@
         "only_output_mapped_attrs": true,
         "output_attribute_names": {
           "processFeatures.dak_deel_id": "b3_dd_id",
-          "processFeatures.identificatie": "identificatie",
-          "processFeatures.pand_deel_id": "b3_pand_deel_id",
           "processFeatures.h_50p": "b3_h_50p",
           "processFeatures.h_70p": "b3_h_70p",
           "processFeatures.h_max": "b3_h_max",
-          "processFeatures.h_min": "b3_h_min"
+          "processFeatures.h_min": "b3_h_min",
+          "processFeatures.identificatie": "identificatie",
+          "processFeatures.pand_deel_id": "b3_pand_deel_id"
         },
         "overwrite_file": false,
         "overwrite_layer": true,
@@ -360,8 +330,8 @@
           "processFeatures.b3_nodata_radius_ahn4": "b3_nodata_radius_ahn4",
           "processFeatures.b3_puntdichtheid_ahn3": "b3_puntdichtheid_ahn3",
           "processFeatures.b3_puntdichtheid_ahn4": "b3_puntdichtheid_ahn4",
-          "processFeatures.b3_pw_datum": "b3_pw_datum",
           "processFeatures.b3_pw_bron": "b3_pw_bron",
+          "processFeatures.b3_pw_datum": "b3_pw_datum",
           "processFeatures.b3_pw_selectie_reden": "b3_pw_selectie_reden",
           "processFeatures.b3_reconstructie_onvolledig": "b3_reconstructie_onvolledig",
           "processFeatures.b3_rmse_lod12": "b3_rmse_lod12",
@@ -459,8 +429,8 @@
           "processFeatures.b3_nodata_radius_ahn4": "b3_nodata_radius_ahn4",
           "processFeatures.b3_puntdichtheid_ahn3": "b3_puntdichtheid_ahn3",
           "processFeatures.b3_puntdichtheid_ahn4": "b3_puntdichtheid_ahn4",
-          "processFeatures.b3_pw_datum": "b3_pw_datum",
           "processFeatures.b3_pw_bron": "b3_pw_bron",
+          "processFeatures.b3_pw_datum": "b3_pw_datum",
           "processFeatures.b3_pw_selectie_reden": "b3_pw_selectie_reden",
           "processFeatures.b3_reconstructie_onvolledig": "b3_reconstructie_onvolledig",
           "processFeatures.b3_rmse_lod12": "b3_rmse_lod12",
@@ -558,8 +528,8 @@
           "processFeatures.b3_nodata_radius_ahn4": "b3_nodata_radius_ahn4",
           "processFeatures.b3_puntdichtheid_ahn3": "b3_puntdichtheid_ahn3",
           "processFeatures.b3_puntdichtheid_ahn4": "b3_puntdichtheid_ahn4",
-          "processFeatures.b3_pw_datum": "b3_pw_datum",
           "processFeatures.b3_pw_bron": "b3_pw_bron",
+          "processFeatures.b3_pw_datum": "b3_pw_datum",
           "processFeatures.b3_pw_selectie_reden": "b3_pw_selectie_reden",
           "processFeatures.b3_reconstructie_onvolledig": "b3_reconstructie_onvolledig",
           "processFeatures.b3_rmse_lod12": "b3_rmse_lod12",
@@ -626,8 +596,8 @@
           "processFeatures.b3_nodata_radius_ahn4": "b3_nodata_radius_ahn4",
           "processFeatures.b3_puntdichtheid_ahn3": "b3_puntdichtheid_ahn3",
           "processFeatures.b3_puntdichtheid_ahn4": "b3_puntdichtheid_ahn4",
-          "processFeatures.b3_pw_datum": "b3_pw_datum",
           "processFeatures.b3_pw_bron": "b3_pw_bron",
+          "processFeatures.b3_pw_datum": "b3_pw_datum",
           "processFeatures.b3_pw_selectie_reden": "b3_pw_selectie_reden",
           "processFeatures.b3_reconstructie_onvolledig": "b3_reconstructie_onvolledig",
           "processFeatures.b3_rmse_lod12": "b3_rmse_lod12",

@@ -10,50 +10,10 @@
       "str",
       ""
     ],
-    "max_x": [
-      "",
-      "float",
-      194964.0
-    ],
-    "max_y": [
-      "",
-      "float",
-      466309.0
-    ],
-    "max_z": [
-      "",
-      "float",
-      30.0
-    ],
-    "min_x": [
-      "",
-      "float",
-      194447.0
-    ],
-    "min_y": [
-      "",
-      "float",
-      465847.0
-    ],
-    "min_z": [
-      "",
-      "float",
-      0.0
-    ],
     "path_metadata": [
       "CityJSON features metadata file",
       "str",
       "/mnt/Data/LocalData/Kadaster/db3dnl_features/metadata.city.json"
-    ],
-    "simplify_ratio": [
-      "",
-      "float",
-      0.10000000149011612
-    ],
-    "skip_clip": [
-      "",
-      "bool",
-      false
     ]
   },
   "nodes": {
