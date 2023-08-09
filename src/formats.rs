@@ -160,15 +160,13 @@ pub mod cesium3dtiles {
         ) -> Self {
             let crs_from = format!("EPSG:{}", world.crs.to_epsg().unwrap());
             // Because we have a boundingVolume.box. For a boundingVolume.region we need 4979.
-            let crs_to = "EPSG:4979";
+            let crs_to = "EPSG:4978";
             let transformer = Proj::new_known_crs(&crs_from, crs_to, None).unwrap();
             // y-up to z-up transform needed because we are using gltf assets, which is y-up
             // https://github.com/CesiumGS/3d-tiles/tree/main/specification#y-up-to-z-up
             // let y_up_to_z_up = Transform([
             //     1.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
             // ]);
-
-            let _root_bbox = quadtree.bbox(&world.grid);
 
             let root = Self::generate_tiles(
                 quadtree,
@@ -218,30 +216,20 @@ pub mod cesium3dtiles {
                     warn!("Quadtree does not have 4 children {:?}", &quadtree);
                 }
                 // Tile bounding volume
+                // Set the bounding volume height from the grid height, which can be set with
+                // an argument, or else calculated from the data (content).
                 let mut tile_bbox = quadtree.bbox(&world.grid);
-                // Set the bounding volume height from the content height
-                tile_bbox[2] = world.grid.bbox[2];
-                tile_bbox[5] = world.grid.bbox[5];
-                let _tile_bbox_wkt = quadtree.to_wkt(&world.grid);
-                info!("{} _tile_bbox_wkt {_tile_bbox_wkt}", tile_id.to_string());
-
-                let mut bounding_volume =
-                    BoundingVolume::region_from_bbox(&tile_bbox, transformer).unwrap();
-                info!("bounding_volume {}", bounding_volume.to_wkt());
-                match bounding_volume {
-                    BoundingVolume::Box(_) => {}
-                    BoundingVolume::Region(ref mut region) => {
-                        if region[5] < region[4] {
-                            // This happens with the 3D Basisvoorziening data
-                            debug!(
-                                "Internal tile {tile_id} {:?} (in input CRS) bounding volume region maxz {} is less than minz {}. Replacing maxz with minz + minz * 0.01.",
-                                &tile_bbox, region[5], region[4]
-                            );
-                            region[5] = region[4] + region[4] * 0.01;
-                        }
-                    }
-                    BoundingVolume::Sphere(_) => {}
+                // But it can happen with faulty data, eg. 3D Basisvoorziening,
+                // that maxz is less than minz.
+                if tile_bbox[5] < tile_bbox[2] {
+                    debug!("Internal tile {tile_id} {:?} (in input CRS) bbox maxz {} is less than minz {}. Replacing maxz with minz + minz * 0.01.", &tile_bbox, tile_bbox[5], tile_bbox[2]);
+                    tile_bbox[5] = tile_bbox[2] + tile_bbox[2] * 0.01;
                 }
+                let bounding_volume =
+                    BoundingVolume::box_from_bbox(&tile_bbox, transformer).unwrap();
+
+                let _s = serde_json::to_string(&bounding_volume).unwrap();
+                debug!("{}", _s);
 
                 // The geometric error of a tile is computed based on the specified error
                 // for the nodes have leafs as children (assuming all leaf nodes are at the same level)
@@ -286,84 +274,49 @@ pub mod cesium3dtiles {
 
                 // Tile bounding volume
                 let mut tile_bbox = quadtree.bbox(&world.grid);
+                if tile_bbox[5] < tile_bbox[2] {
+                    // See explanation above
+                    debug!("Leaf tile {tile_id} {:?} (in input CRS) bbox maxz {} is less than minz {}. Replacing maxz with minz + minz * 0.01.", &tile_bbox, tile_bbox[5], tile_bbox[2]);
+                    tile_bbox[5] = tile_bbox[2] + tile_bbox[2] * 0.01;
+                }
                 let mut bounding_volume =
-                    BoundingVolume::region_from_bbox(&tile_bbox, transformer).unwrap();
+                    BoundingVolume::box_from_bbox(&tile_bbox, transformer).unwrap();
                 let mut content: Option<Content> = None;
 
                 if quadtree.nr_items > 0 {
-                    // Set the bounding volume height from the content height
-                    let tile_content_bbox_rw =
+                    let mut tile_content_bbox_rw =
                         quadtree.node_content_bbox(&world, arg_minz, arg_maxz);
-                    tile_bbox[2] = tile_content_bbox_rw[2];
-                    tile_bbox[5] = tile_content_bbox_rw[5];
-
-                    match bounding_volume {
-                        BoundingVolume::Box(_) => {}
-                        BoundingVolume::Region(ref mut region) => {
-                            if region[5] < region[4] {
-                                // This happens with the 3D Basisvoorziening data
-                                debug!(
-                                    "Leaf tile {tile_id} {:?} (in input CRS) bounding volume region maxz {} is less than minz {}. Replacing maxz with minz + minz * 0.01.",
-                                    &tile_bbox, region[5], region[4]
-                                );
-                                region[5] = region[4] + region[4] * 0.01;
-                            }
-                        }
-                        BoundingVolume::Sphere(_) => {}
-                    }
-
-                    let mut content_bounding_volume =
-                        BoundingVolume::region_from_bbox(&tile_content_bbox_rw, transformer)
-                            .unwrap();
-                    match content_bounding_volume {
-                        BoundingVolume::Box(_) => {}
-                        BoundingVolume::Region(ref mut region) => {
-                            if region[5] < region[4] {
-                                // This happens with the 3D Basisvoorziening data
-                                debug!(
-                                    "Leaf tile {tile_id} content bounding volume region maxz {} is less than minz {}. Replacing maxz with minz + minz * 0.01.",
-                                    region[5], region[4]
-                                );
-                                region[5] = region[4] + region[4] * 0.01;
-                            }
-                        }
-                        BoundingVolume::Sphere(_) => {}
-                    }
-
                     if content_bv_from_tile {
-                        content_bounding_volume = bounding_volume;
+                        tile_content_bbox_rw = tile_bbox;
                     } else {
-                        // Replace the tile bounding volume with the content bounding volume if the content is larger than the tile
-                        match bounding_volume {
-                            BoundingVolume::Box(_) => {}
-                            BoundingVolume::Region(ref mut region) => match content_bounding_volume
-                            {
-                                BoundingVolume::Box(_) => {}
-                                BoundingVolume::Region(ref content_region) => {
-                                    if content_region[0] < region[0] {
-                                        region[0] = content_region[0];
-                                    }
-                                    if content_region[1] < region[1] {
-                                        region[1] = content_region[1];
-                                    }
-                                    if content_region[4] < region[4] {
-                                        region[4] = content_region[4];
-                                    }
-                                    if content_region[2] > region[2] {
-                                        region[2] = content_region[2];
-                                    }
-                                    if content_region[3] > region[3] {
-                                        region[3] = content_region[3];
-                                    }
-                                    if content_region[5] > region[5] {
-                                        region[5] = content_region[5];
-                                    }
+                        // Stretch the tile bbox so that it covers the content bbox
+                        tile_content_bbox_rw[0..3]
+                            .iter()
+                            .enumerate()
+                            .for_each(|(i, min_c)| {
+                                if min_c < &tile_bbox[i] {
+                                    tile_bbox[i] = min_c - min_c * 0.01;
                                 }
-                                BoundingVolume::Sphere(_) => {}
-                            },
-                            BoundingVolume::Sphere(_) => {}
-                        }
+                            });
+                        tile_content_bbox_rw[3..6]
+                            .iter()
+                            .enumerate()
+                            .for_each(|(i0, max_c)| {
+                                let i = 3 + i0;
+                                if max_c > &tile_bbox[i] {
+                                    tile_bbox[i] = max_c + max_c * 0.01;
+                                }
+                            });
                     }
+
+                    if tile_content_bbox_rw[5] < tile_content_bbox_rw[2] {
+                        // See explanation above
+                        debug!("Leaf tile content {tile_id} {:?} (in input CRS) bbox maxz {} is less than minz {}. Replacing maxz with minz + minz * 0.01.", &tile_content_bbox_rw, tile_content_bbox_rw[5], tile_content_bbox_rw[2]);
+                        tile_content_bbox_rw[5] =
+                            tile_content_bbox_rw[2] + tile_content_bbox_rw[2] * 0.01;
+                    }
+                    let content_bounding_volume =
+                        BoundingVolume::box_from_bbox(&tile_content_bbox_rw, transformer).unwrap();
 
                     content = Some(Content {
                         bounding_volume: Some(content_bounding_volume),
@@ -396,7 +349,7 @@ pub mod cesium3dtiles {
                 citymodel.metadata.reference_system.to_epsg().unwrap()
             );
             // Because we have a boundingVolume.box. For a boundingVolume.region we need 4979.
-            let crs_to = "EPSG:4979";
+            let crs_to = "EPSG:4978";
             let transformer = Proj::new_known_crs(&crs_from, crs_to, None).unwrap();
 
             let mut root_children: Vec<Tile> = Vec::with_capacity(grid.length * grid.length);
@@ -412,14 +365,14 @@ pub mod cesium3dtiles {
                 }
                 let content_bbox_rw = content_bbox_qc.to_bbox(&citymodel.transform, None, None);
                 let content_bounding_voume =
-                    BoundingVolume::region_from_bbox(&content_bbox_rw, &transformer).unwrap();
+                    BoundingVolume::box_from_bbox(&content_bbox_rw, &transformer).unwrap();
 
                 let mut cell_bbox = grid.cell_bbox(&cellid);
                 // Set the bounding volume height from the content height
                 cell_bbox[2] = content_bbox_rw[2];
                 cell_bbox[5] = content_bbox_rw[5];
                 let bounding_volume =
-                    BoundingVolume::region_from_bbox(&cell_bbox, &transformer).unwrap();
+                    BoundingVolume::box_from_bbox(&cell_bbox, &transformer).unwrap();
 
                 // We are adding a child for each LoD.
                 // TODO: but we are cheating here now, because we know that the input data has 3 LoDs...
@@ -480,7 +433,7 @@ pub mod cesium3dtiles {
                 });
             }
 
-            let root_volume = BoundingVolume::region_from_bbox(&grid.bbox, &transformer).unwrap();
+            let root_volume = BoundingVolume::box_from_bbox(&grid.bbox, &transformer).unwrap();
             debug!("root bbox: {:?}", &grid.bbox);
             debug!("root boundingVolume: {:?}", &root_volume);
             let root_geometric_error = grid.bbox[3] - grid.bbox[0];
@@ -1029,6 +982,10 @@ pub mod cesium3dtiles {
         pub fn prune(&mut self, tiles_to_remove: &Vec<Tile>, qtree: &QuadTree) {
             self.root.prune(tiles_to_remove, qtree);
         }
+
+        pub fn debug_bounding_volume_string(&self) -> String {
+            serde_json::to_string(&self.root.bounding_volume).unwrap()
+        }
     }
 
     /// [Asset](https://github.com/CesiumGS/3d-tiles/tree/main/specification#asset).
@@ -1314,7 +1271,7 @@ pub mod cesium3dtiles {
         }
     }
 
-    /// [boundingVolume](https://github.com/CesiumGS/3d-tiles/tree/main/specification#bounding-volume).
+    /// [boundingVolume](https://github.com/CesiumGS/3d-tiles/tree/main/specification#bounding-volumes).
     #[allow(dead_code)]
     #[derive(Serialize, Deserialize, Debug, Copy, Clone)]
     #[serde(rename_all = "lowercase")]
@@ -1345,26 +1302,7 @@ pub mod cesium3dtiles {
     /// half-length.
     impl From<&Bbox> for BoundingVolume {
         fn from(bbox: &Bbox) -> Self {
-            let dx = bbox[3] - bbox[0];
-            let dy = bbox[4] - bbox[1];
-            let dz = bbox[5] - bbox[2];
-            debug!("bounding volume box dx {} dy {} dz {}", dx, dy, dz);
-            let center: [f64; 3] = [bbox[0] + dx * 0.5, bbox[1] + dy * 0.5, bbox[2] + dz * 0.5];
-            // The x-direction and half-length
-            let x_axis_dir: [f64; 3] = [dx * 0.5, 0.0, 0.0];
-            // The y-direction and half-length
-            let y_axis_dir: [f64; 3] = [0.0, dy * 0.5, 0.0];
-            // The z-direction and half-length
-            let z_axis_dir: [f64; 3] = [0.0, 0.0, dz * 0.5];
-            // an array cannot be built directly from an iterator, so we need to
-            // "try_(to convert the vector)_into" an array
-            let bounding_volume_array: [f64; 12] = [center, x_axis_dir, y_axis_dir, z_axis_dir]
-                .into_iter()
-                .flatten()
-                .collect::<Vec<f64>>()
-                .try_into()
-                .unwrap();
-            Self::Box(bounding_volume_array)
+            unimplemented!()
         }
     }
 
@@ -1378,48 +1316,65 @@ pub mod cesium3dtiles {
         /// this function, because it is expected that this function is called in a loop, and thus
         /// it is more optimal to init the transformation outside of the loop.
         ///
-        /// ## Note on CRS transformation
-        /// We assume that the transformation is from a projected, Cartesian system to
-        /// [ECEF](https://en.wikipedia.org/wiki/Earth-centered,_Earth-fixed_coordinate_system).
-        /// The coordinates of a polygon on the northern-hemisphere in ECEF look like in the image
-        /// below. Note that the minimum point is the top-left corner of the polygon.
-        ///
-        /// ![ecef polygon](../docs/img/ecef.jpg)
-        ///
-        /// In a projected Cartesian CRS we have the minimum point of a polygon in the lower-left
-        /// corner (at least in the Netherlands...).
-        ///
-        /// ```shell
-        /// (0,10) (10,10)   (0,0)  (0,10)
-        ///      +--+           +------+
-        ///      |  |     --->  | ECEF |
-        ///      +--+           +------+
-        /// (0,0)  (10,0)    (10,0) (10,10)
-        /// ```
-        ///
-        /// Then the input bbox (in 3D) of `[0,0,0,10,10,10]` becomes `[10,0,0,0,10,10]` after the
-        /// coordinate transformation.
-        /// Therefore, we have to swap the values at the indices `0` and `3` in order to get a
-        /// correct `[minX, minY, minZ, maxX, maxY, maxZ]` bbox after the transformation.
-        ///
         #[allow(dead_code)]
         fn box_from_bbox(
             bbox: &Bbox,
             transformer: &Proj,
         ) -> Result<Self, Box<dyn std::error::Error>> {
-            let min_coord = transformer.convert((bbox[0], bbox[1], bbox[2]))?;
-            let max_coord = transformer.convert((bbox[3], bbox[4], bbox[5]))?;
-            debug!(
-                "bounding volume reprojected box dz {}",
-                max_coord.2 - min_coord.2
+            // An empirical value from playing around in Cesium. Without this shift, the
+            // Box center is placed way too high with implicit tiling.
+            let magic_z_shift = 0.0;
+            // Input CRS
+            let dx = bbox[3] - bbox[0];
+            let dy = bbox[4] - bbox[1];
+            let dz = bbox[5] - bbox[2];
+            let center: [f64; 3] = [
+                bbox[0] + dx * 0.5,
+                bbox[1] + dy * 0.5,
+                (bbox[2] + dz * 0.5) + magic_z_shift,
+            ];
+            // ????
+            // The center points on the max. surface of the bbox
+            let x_max_pt: [f64; 3] = [bbox[3], center[1], center[2]];
+            let y_max_pt: [f64; 3] = [center[0], bbox[4], center[2]];
+            let z_max_pt: [f64; 3] = [center[0], center[1], bbox[5] + magic_z_shift];
+
+            // Target CRS (ECEF)
+            let center_ecef = transformer.convert((center[0], center[1], center[2]))?;
+            let x_pt_ecef = transformer.convert((x_max_pt[0], x_max_pt[1], x_max_pt[2]))?;
+            let y_pt_ecef = transformer.convert((y_max_pt[0], y_max_pt[1], y_max_pt[2]))?;
+            let z_pt_ecef = transformer.convert((z_max_pt[0], z_max_pt[1], z_max_pt[2]))?;
+
+            // Vectors that define the size and orientation of the OBB
+            let vx = (
+                x_pt_ecef.0 - center_ecef.0,
+                x_pt_ecef.1 - center_ecef.1,
+                x_pt_ecef.2 - center_ecef.2,
             );
-            Ok(BoundingVolume::from(&[
-                max_coord.0,
-                min_coord.1,
-                min_coord.2,
-                min_coord.0,
-                max_coord.1,
-                max_coord.2,
+            let vy = (
+                y_pt_ecef.0 - center_ecef.0,
+                y_pt_ecef.1 - center_ecef.1,
+                y_pt_ecef.2 - center_ecef.2,
+            );
+            let vz = (
+                z_pt_ecef.0 - center_ecef.0,
+                z_pt_ecef.1 - center_ecef.1,
+                z_pt_ecef.2 - center_ecef.2,
+            );
+
+            Ok(Self::Box([
+                center_ecef.0,
+                center_ecef.1,
+                center_ecef.2,
+                vx.0,
+                vx.1,
+                vx.2,
+                vy.0,
+                vy.1,
+                vy.2,
+                vz.0,
+                vz.1,
+                vz.2,
             ]))
         }
 
@@ -1429,15 +1384,6 @@ pub mod cesium3dtiles {
         ) -> Result<Self, Box<dyn std::error::Error>> {
             let (west, south, minh) = transformer.convert((bbox[0], bbox[1], bbox[2]))?;
             let (east, north, maxh) = transformer.convert((bbox[3], bbox[4], bbox[5]))?;
-
-            info!("region_from_bbox {}", format!(
-                "POLYGON(({minx} {miny}, {maxx} {miny}, {maxx} {maxy}, {minx} {maxy}, {minx} {miny}))",
-                minx = west,
-                miny = south,
-                maxx = east,
-                maxy = north
-            ));
-
             Ok(BoundingVolume::Region([
                 west.to_radians(),
                 south.to_radians(),
@@ -1451,8 +1397,44 @@ pub mod cesium3dtiles {
         /// Cast to 2D WKT
         fn to_wkt(&self) -> String {
             let [minx, miny, _minz, maxx, maxy, _maxz] = match self {
-                BoundingVolume::Box(_) => {
-                    unimplemented!()
+                BoundingVolume::Box(bbox) => {
+                    let center = &bbox[0..3];
+                    let vx = &bbox[3..6];
+                    let vy = &bbox[6..9];
+                    // 3┌───────▲───────┐2
+                    //  │    -X │       │
+                    //  │       │       │
+                    //  │       │     Y │
+                    //  ◄───────┼───────►
+                    //  │ -Y    │       │
+                    //  │       │       │
+                    //  │       │  X    │
+                    // 4└───────▼───────┘1
+                    // Corner vectors
+                    let corner_1_v = [vx[0] + vy[0], vx[1] + vy[1], vx[2] + vy[2]];
+                    let corner_2_v = [vy[0] + -vx[0], vy[1] + -vx[1], vy[2] + -vx[2]];
+                    let corner_3_v = [-corner_1_v[0], -corner_1_v[1], -corner_1_v[2]];
+                    let corner_4_v = [-corner_2_v[0], -corner_2_v[1], -corner_2_v[2]];
+                    // Lot of unnecessary iterations and array allocations here, but we only use
+                    // WKT for debugging and rather have things here explicit here, for clarity.
+                    let corner_points: Vec<[f64; 3]> =
+                        [corner_1_v, corner_2_v, corner_3_v, corner_4_v]
+                            .iter()
+                            .map(|corner| {
+                                [
+                                    center[0] + corner[0],
+                                    center[1] + corner[1],
+                                    center[2] + corner[2],
+                                ]
+                            })
+                            .collect();
+                    let minx = corner_points.iter().map(|a| a[0]).reduce(f64::min).unwrap();
+                    let miny = corner_points.iter().map(|a| a[1]).reduce(f64::min).unwrap();
+                    let minz = corner_points.iter().map(|a| a[2]).reduce(f64::min).unwrap();
+                    let maxx = corner_points.iter().map(|a| a[0]).reduce(f64::max).unwrap();
+                    let maxy = corner_points.iter().map(|a| a[1]).reduce(f64::max).unwrap();
+                    let maxz = corner_points.iter().map(|a| a[2]).reduce(f64::max).unwrap();
+                    [minx, miny, minz, maxx, maxy, maxz]
                 }
                 BoundingVolume::Region(bbox) => [
                     bbox[0].to_degrees(),
@@ -1683,9 +1665,19 @@ pub mod cesium3dtiles {
 
         #[test]
         fn test_boundingvolume_from_bbox() {
-            let bbox: Bbox = [84995.279, 446316.813, -5.333, 85644.748, 446996.132, 52.881];
-            let bounding_volume = BoundingVolume::from(&bbox);
-            println!("{:?}", bounding_volume);
+            let crs_to = "EPSG:4978";
+            let transformer = Proj::new_known_crs("EPSG:7415", crs_to, None).unwrap();
+            let bbox: Bbox = [171790.0, 472690.0, -15.0, 274190.0, 575090.0, 400.0];
+            let bbox: Bbox = [
+                84362.90299999999,
+                446306.814,
+                -20.66,
+                212362.903,
+                574306.814,
+                62.882,
+            ];
+            let bounding_volume = BoundingVolume::box_from_bbox(&bbox, &transformer).unwrap();
+            println!("{:?}", serde_json::to_string(&bounding_volume));
         }
 
         #[test]

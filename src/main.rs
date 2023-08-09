@@ -417,10 +417,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 fs::create_dir_all(&subtrees_path_unpruned)?;
                 for (subtree_id, subtree_bytes) in &tiles_subtrees.1 {
                     fs::create_dir_all(
-                        subtrees_path.join(format!("{}/{}", subtree_id.level, subtree_id.x)),
+                        subtrees_path_unpruned
+                            .join(format!("{}/{}", subtree_id.level, subtree_id.x)),
                     )
                     .unwrap();
-                    let out_path = subtrees_path
+                    let out_path = subtrees_path_unpruned
                         .join(&subtree_id.to_string())
                         .with_extension("subtree");
                     let mut subtree_file = File::create(&out_path)
@@ -473,11 +474,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("Created output directory {:#?}", &path_features_input_dir);
 
         let tiles_len = tiles.len();
-        let tiles_ids: Vec<String> = tiles.iter().map(|(_t, tid)| tid.to_string()).collect();
         let tiles_failed_iter = tiles.into_par_iter().map(|(tile, tileid)| {
-            let _lvl = tileid.level;
-            let _x = tileid.x;
-            let _y = tileid.y;
             let mut tile_failed: Option<Tile> = None;
             let tileid_grid = &tile.id;
             let qtree_nodeid: spatial_structs::QuadTreeNodeId = tileid_grid.into();
@@ -783,9 +780,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             tile_failed = run_subprocess(&subprocess_config, tile, output_file, cmd);
             tile_failed
         });
-
-        info!("Converting and optimizing {tiles_len} tiles"); // FIXME DEBUG
-        info!("subtree tile ids with content: {:?}", tiles_ids); // FIXME DEBUG
 
         let mut tiles_results: Vec<Option<Tile>> = Vec::with_capacity(tiles_len + 2);
         if let Some(tiles_results_path) = debug_data.tiles_results {
