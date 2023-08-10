@@ -1375,12 +1375,14 @@ pub mod cesium3dtiles {
                 (bbox[3], bbox[1], bbox[2]),
                 (bbox[3], bbox[4], bbox[2]),
                 (bbox[0], bbox[4], bbox[2]),
+                (center[0], center[1], bbox[2]),
             ];
             let max_corners: Vec<(f64, f64, f64)> = vec![
                 (bbox[0], bbox[1], bbox[5]),
                 (bbox[3], bbox[1], bbox[5]),
                 (bbox[3], bbox[4], bbox[5]),
                 (bbox[0], bbox[4], bbox[5]),
+                (center[0], center[1], bbox[5]),
             ];
             // Compute all 8 corners of the ECEF OBB.
             // // The 4 corners of the OBB at the plane that cuts the box in half, through the center
@@ -1426,7 +1428,7 @@ pub mod cesium3dtiles {
             // The new 'top' of the OBB is set from the topmost corner along the z axis
             let d_z_min_new = corners_on_vz_unit.iter().copied().reduce(f64::min).unwrap();
             let d_z_max_new = corners_on_vz_unit.iter().copied().reduce(f64::max).unwrap();
-            let d_center_new = d_z_min_new + (d_z_max_new - d_z_min_new) / 2.0;
+            let d_center_new = (d_z_max_new + d_z_min_new) / 2.0;
             let center_new = (
                 center_ecef.0 + d_center_new * vz_unit.0,
                 center_ecef.1 + d_center_new * vz_unit.1,
