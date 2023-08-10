@@ -1369,31 +1369,58 @@ pub mod cesium3dtiles {
             let dvz = (vz.0.powi(2) + vz.1.powi(2) + vz.2.powi(2)).sqrt();
             let vz_unit = (vz.0 / dvz, vz.1 / dvz, vz.2 / dvz);
 
-            // Compute all 8 corners of the ECEF OBB.
-            // The 4 corners of the OBB at the plane that cuts the box in half, through the center
-            // point. From these and the z-vector, we'll compute the 8 corners.
-            let center_corner_1 = (vx.0 + vy.0, vx.1 + vy.1, vx.2 + vy.2);
-            let center_corner_2 = (vy.0 + -vx.0, vy.1 + -vx.1, vy.2 + -vx.2);
-            let center_corner_3 = (-center_corner_1.0, -center_corner_1.1, -center_corner_1.2);
-            let center_corner_4 = (-center_corner_2.0, -center_corner_2.1, -center_corner_2.2);
-            let center_corners = [
-                &center_corner_1,
-                &center_corner_2,
-                &center_corner_3,
-                &center_corner_4,
+            // Compute all 8 corners of the OBB in the input CRS.
+            let min_corners: Vec<(f64, f64, f64)> = vec![
+                (bbox[0], bbox[1], bbox[2]),
+                (bbox[3], bbox[1], bbox[2]),
+                (bbox[3], bbox[4], bbox[2]),
+                (bbox[0], bbox[4], bbox[2]),
             ];
-            let max_corners: Vec<(f64, f64, f64)> = center_corners
-                .iter()
-                .map(|corner| (vz.0 + corner.0, vz.1 + corner.1, vz.2 + corner.2))
+            let max_corners: Vec<(f64, f64, f64)> = vec![
+                (bbox[0], bbox[1], bbox[5]),
+                (bbox[3], bbox[1], bbox[5]),
+                (bbox[3], bbox[4], bbox[5]),
+                (bbox[0], bbox[4], bbox[5]),
+            ];
+            // Compute all 8 corners of the ECEF OBB.
+            // // The 4 corners of the OBB at the plane that cuts the box in half, through the center
+            // // point. From these and the z-vector, we'll compute the 8 corners.
+            // let center_corner_1 = (vx.0 + vy.0, vx.1 + vy.1, vx.2 + vy.2);
+            // let center_corner_2 = (vy.0 + -vx.0, vy.1 + -vx.1, vy.2 + -vx.2);
+            // let center_corner_3 = (-center_corner_1.0, -center_corner_1.1, -center_corner_1.2);
+            // let center_corner_4 = (-center_corner_2.0, -center_corner_2.1, -center_corner_2.2);
+            // let center_corners = [
+            //     &center_corner_1,
+            //     &center_corner_2,
+            //     &center_corner_3,
+            //     &center_corner_4,
+            // ];
+            let v_max_corners_ecef: Vec<(f64, f64, f64)> = max_corners
+                .into_iter()
+                .filter_map(|corner_input_crs| transformer.convert(corner_input_crs).ok())
+                .map(|corner_ecef| {
+                    (
+                        corner_ecef.0 - center_ecef.0,
+                        corner_ecef.1 - center_ecef.1,
+                        corner_ecef.2 - center_ecef.2,
+                    )
+                })
                 .collect();
-            let min_corners: Vec<(f64, f64, f64)> = center_corners
-                .iter()
-                .map(|corner| (-vz.0 + corner.0, -vz.1 + corner.1, -vz.2 + corner.2))
+            let v_min_corners_ecef: Vec<(f64, f64, f64)> = min_corners
+                .into_iter()
+                .filter_map(|corner_input_crs| transformer.convert(corner_input_crs).ok())
+                .map(|corner_ecef| {
+                    (
+                        corner_ecef.0 - center_ecef.0,
+                        corner_ecef.1 - center_ecef.1,
+                        corner_ecef.2 - center_ecef.2,
+                    )
+                })
                 .collect();
             // Project the 8 corners onto the z unit vector
-            let corners_on_vz_unit: Vec<f64> = min_corners
+            let corners_on_vz_unit: Vec<f64> = v_min_corners_ecef
                 .iter()
-                .chain(max_corners.iter())
+                .chain(v_max_corners_ecef.iter())
                 .map(|corner| corner.0 * vz_unit.0 + corner.1 * vz_unit.1 + corner.2 * vz_unit.2)
                 .collect();
             // The new 'top' of the OBB is set from the topmost corner along the z axis
