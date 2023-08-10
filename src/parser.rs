@@ -191,6 +191,8 @@ impl World {
         let mut nr_features = 0;
         let mut nr_features_ignored = 0;
         let mut cityobject_types_ignored: Vec<CityObjectType> = Vec::new();
+        // Iterate only until the first feature is found
+        #[allow(clippy::while_let_on_iterator)]
         while let Some(feature_path) = features_enum_iter.next() {
             if let Ok(cf) = CityJSONFeatureVertices::from_file(&feature_path) {
                 if let Some(eqc) = cf.bbox_of_types(cityobject_types) {
@@ -239,7 +241,7 @@ impl World {
         cityobject_types_ignored: &mut Vec<CityObjectType>,
         feature_path: &PathBuf,
     ) {
-        if let Ok(cf) = CityJSONFeatureVertices::from_file(&feature_path) {
+        if let Ok(cf) = CityJSONFeatureVertices::from_file(feature_path) {
             if let Some(bbox_qc) = cf.bbox_of_types(cityobject_types) {
                 let [x_min, y_min, z_min, x_max, y_max, z_max] = bbox_qc.0;
                 if x_min < extent_qc.0[0] {

@@ -22,7 +22,7 @@ use std::env;
 use std::fs;
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::formats::cesium3dtiles::{Tile, TileId};
 use clap::Parser;
@@ -66,12 +66,12 @@ struct DebugData {
 /// get an 'Argument list too long' error.
 fn write_inputs(
     world: &parser::World,
-    path_features_input_dir: &PathBuf,
+    path_features_input_dir: &Path,
     qtree_node: &spatial_structs::QuadTree,
     file_name: &str,
 ) -> PathBuf {
     let path_features_input_file = path_features_input_dir
-        .join(&file_name)
+        .join(file_name)
         .with_extension("input");
     fs::create_dir_all(path_features_input_file.parent().unwrap()).unwrap_or_else(|_| {
         panic!(
@@ -173,6 +173,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let format = Formats::_3DTiles; // override --format
     let subprocess_config = match format {
         Formats::_3DTiles => {
+            #[allow(unused)]
             let mut exe = PathBuf::new();
             if let Some(exe_g) = cli.exe_geof {
                 assert!(exe_g.exists() && exe_g.is_file(), "geoflow executable must be an existing file for generating 3D Tiles, exe_geof: {:?}", &exe_g);
@@ -475,6 +476,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let tiles_len = tiles.len();
         let tiles_failed_iter = tiles.into_par_iter().map(|(tile, tileid)| {
+            #[allow(unused)]
             let mut tile_failed: Option<Tile> = None;
             let tileid_grid = &tile.id;
             let qtree_nodeid: spatial_structs::QuadTreeNodeId = tileid_grid.into();

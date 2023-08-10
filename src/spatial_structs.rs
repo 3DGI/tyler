@@ -147,6 +147,7 @@ impl QuadTree {
         }
     }
 
+    #[allow(dead_code)]
     fn collect_leaves_recurse<'collect>(&'collect self, leaves: &mut Vec<&'collect QuadTree>) {
         if !self.children.is_empty() {
             for child in self.children.iter() {
@@ -157,6 +158,7 @@ impl QuadTree {
         }
     }
 
+    #[allow(dead_code)]
     pub fn collect_leaves(&self) -> Vec<&Self> {
         let mut leaves: Vec<&QuadTree> = Vec::new();
         self.collect_leaves_recurse(&mut leaves);
@@ -202,9 +204,7 @@ impl QuadTree {
         // however at this point we don't know if that was computed from the data or set by
         // the argument. Setting the argument signals intent, so only then do we override
         // the values.
-        let tile_content_bbox_rw =
-            tile_content_bbox_qc.to_bbox(&world.transform, arg_minz, arg_maxz);
-        tile_content_bbox_rw
+        tile_content_bbox_qc.to_bbox(&world.transform, arg_minz, arg_maxz)
     }
 
     /// Breadth-first search for a node.
@@ -263,7 +263,7 @@ impl QuadTree {
         let mut q = VecDeque::new();
         q.push_back(self);
         let mut quadtree_level: u16 = self.id.level;
-        let [mut outdir_quadtree, mut outdir_quadtree_content] = match output_dir {
+        let [outdir_quadtree, outdir_quadtree_content] = match output_dir {
             None => [Path::new(""), Path::new("")],
             Some(outdir) => [outdir, outdir],
         };
@@ -383,6 +383,7 @@ pub enum QuadTreeCriteria {
 }
 
 /// 64-bit mask
+#[allow(dead_code)]
 fn part1by1_64(number: &u64) -> u64 {
     let mut n = *number;
     n &= 0x00000000ffffffff; // binary: 11111111111111111111111111111111,                                len: 32
@@ -397,10 +398,12 @@ fn part1by1_64(number: &u64) -> u64 {
 /// Computing Morton-code from 64bit integers.
 ///
 /// Reference: https://github.com/trevorprater/pymorton
+#[allow(dead_code)]
 pub fn interleave(x: &u64, y: &u64) -> u64 {
     part1by1_64(x) | (part1by1_64(y) << 1)
 }
 
+#[allow(dead_code)]
 fn unpart1by1_64(mortoncode: &u64) -> u64 {
     let mut n = *mortoncode;
     n &= 0x5555555555555555; // binary: 101010101010101010101010101010101010101010101010101010101010101, len: 63
@@ -415,6 +418,7 @@ fn unpart1by1_64(mortoncode: &u64) -> u64 {
 /// Computing `[x, y]` from a Morton-code.
 ///
 /// Reference: https://github.com/trevorprater/pymorton
+#[allow(dead_code)]
 pub fn deinterleave(mortoncode: &u64) -> [u64; 2] {
     [
         unpart1by1_64(mortoncode),
@@ -984,7 +988,7 @@ mod tests {
             [2, 3],
             [3, 3],
         ];
-        let res_coords_morton = [
+        let _res_coords_morton = [
             [84362.9, 446306.814],
             [84762.9, 446306.814],
             [84362.9, 446706.814],
@@ -1014,7 +1018,7 @@ mod tests {
             );
         }
 
-        for (i, (mc, cellid)) in morton.iter().enumerate() {
+        for (i, (_mc, cellid)) in morton.iter().enumerate() {
             let res_cellid = CellId {
                 column: res_col_row_morton[i][0],
                 row: res_col_row_morton[i][1],
@@ -1125,9 +1129,9 @@ mod tests {
             }
         }
         let qtree = QuadTree::from_grid(&grid, QuadTreeCapacity::Objects(20));
-        let leaves: Vec<&QuadTree> = QuadTree::collect_leaves(&qtree);
+        let _leaves: Vec<&QuadTree> = QuadTree::collect_leaves(&qtree);
         let n = qtree.node(&QuadTreeNodeId::new(0, 0, 2));
-        if let Some(_) = n {
+        if n.is_some() {
             println!("{:?}", &n);
         } else {
             println!("did not find node");

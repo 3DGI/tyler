@@ -26,7 +26,7 @@ pub mod cesium3dtiles {
     use std::path::Path;
 
     use bitvec::prelude as bv;
-    use log::{debug, error, info, warn};
+    use log::{debug, error, warn};
     use morton_encoding::morton_encode;
     use serde::{Deserialize, Serialize};
     use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -63,6 +63,7 @@ pub mod cesium3dtiles {
             Ok(())
         }
 
+        #[allow(dead_code)]
         pub fn export_bincode(
             &self,
             name: Option<&str>,
@@ -82,7 +83,7 @@ pub mod cesium3dtiles {
             let mut q = VecDeque::new();
             q.push_back(&self.root);
             let mut tileset_level: u16 = self.root.id.level;
-            let [mut outdir_tileset, mut outdir_tileset_content] = match output_dir {
+            let [outdir_tileset, outdir_tileset_content] = match output_dir {
                 None => [Path::new(""), Path::new("")],
                 Some(outdir) => [outdir, outdir],
             };
@@ -116,7 +117,7 @@ pub mod cesium3dtiles {
                         .write_all("id\tlevel\twkt\n".as_bytes())
                         .expect("cannot write tileset content TSV header");
                 }
-                let wkt = tile.bounding_volume.to_wkt();
+                let wkt = tile.bounding_volume.as_wkt();
                 file_tileset
                     .write_all(
                         format!(
@@ -131,7 +132,7 @@ pub mod cesium3dtiles {
                     .expect("cannot write tileset tile");
                 if let Some(ref content) = tile.content {
                     if let Some(ref bv) = content.bounding_volume {
-                        let wkt_content_bbox = bv.to_wkt();
+                        let wkt_content_bbox = bv.as_wkt();
                         file_tileset_content
                             .write_all(
                                 format!("{}\t{}\t{}\n", tile.id, tile.id.level, wkt_content_bbox)
@@ -279,13 +280,13 @@ pub mod cesium3dtiles {
                     debug!("Leaf tile {tile_id} {:?} (in input CRS) bbox maxz {} is less than minz {}. Replacing maxz with minz + minz * 0.01.", &tile_bbox, tile_bbox[5], tile_bbox[2]);
                     tile_bbox[5] = tile_bbox[2] + tile_bbox[2] * 0.01;
                 }
-                let mut bounding_volume =
+                let bounding_volume =
                     BoundingVolume::box_from_bbox(&tile_bbox, transformer).unwrap();
                 let mut content: Option<Content> = None;
 
                 if quadtree.nr_items > 0 {
                     let mut tile_content_bbox_rw =
-                        quadtree.node_content_bbox(&world, arg_minz, arg_maxz);
+                        quadtree.node_content_bbox(world, arg_minz, arg_maxz);
                     if content_bv_from_tile {
                         tile_content_bbox_rw = tile_bbox;
                     } else {
@@ -473,6 +474,7 @@ pub mod cesium3dtiles {
         /// If 'levels_up' is provided, the tiles will be flattened only
         /// 'n levels upwards from the leaves', outputting only the flattened tiles
         /// (instead of the whole tree).
+        #[allow(dead_code)]
         pub fn flatten(&self, levels_up: Option<u16>) -> Vec<&Tile> {
             self.root.flatten(levels_up)
         }
@@ -481,6 +483,7 @@ pub mod cesium3dtiles {
             self.root.collect_leaves()
         }
 
+        #[allow(dead_code)]
         pub fn add_content(&mut self, levels_up: Option<u16>) {
             self.root.add_content_from_level(levels_up);
         }
@@ -982,10 +985,6 @@ pub mod cesium3dtiles {
         pub fn prune(&mut self, tiles_to_remove: &Vec<Tile>, qtree: &QuadTree) {
             self.root.prune(tiles_to_remove, qtree);
         }
-
-        pub fn debug_bounding_volume_string(&self) -> String {
-            serde_json::to_string(&self.root.bounding_volume).unwrap()
-        }
     }
 
     /// [Asset](https://github.com/CesiumGS/3d-tiles/tree/main/specification#asset).
@@ -1088,6 +1087,7 @@ pub mod cesium3dtiles {
     impl Eq for Tile {}
 
     impl Tile {
+        #[allow(dead_code)]
         fn flatten_recurse<'collect>(
             &'collect self,
             nodes: &mut Vec<&'collect Tile>,
@@ -1115,6 +1115,7 @@ pub mod cesium3dtiles {
         /// If 'levels_up' is provided, the tiles will be flattened only
         /// 'n levels upwards from the leaves', outputting only the flattened tiles
         /// (instead of the whole tree).
+        #[allow(dead_code)]
         pub fn flatten(&self, levels_up: Option<u16>) -> Vec<&Tile> {
             let max_level = self.max_level();
             let mut limit_upwards: u16 = 0;
@@ -1144,6 +1145,7 @@ pub mod cesium3dtiles {
             leaves
         }
 
+        #[allow(dead_code)]
         fn add_content_from_level(&mut self, levels_up: Option<u16>) {
             let max_level = self.max_level();
             let mut lower_limit: u16 = 0;
@@ -1184,6 +1186,7 @@ pub mod cesium3dtiles {
 
         // Adds `Content` to the Tile, by generating a content bounding volume from the
         // tile's bounding volume and a filepath from the tile.id.
+        #[allow(dead_code)]
         pub fn add_content(&mut self) {
             self.content = Some(Content {
                 bounding_volume: Some(self.bounding_volume),
@@ -1287,25 +1290,6 @@ pub mod cesium3dtiles {
         }
     }
 
-    /// Compute the boundingVolume.box from a 'regular' bounding box.
-    ///
-    /// This function does not reproject the bounding box coordinates.
-    ///
-    /// The output is an array of 12 numbers that define an oriented bounding box in a
-    /// right-handed 3-axis (x, y, z) Cartesian coordinate system where the z-axis is up.
-    /// The first three elements define the x, y, and z values for the center of the box.
-    /// The next three elements (with indices 3, 4, and 5) define the x-axis direction
-    /// and half-length.
-    /// The next three elements (indices 6, 7, and 8) define the y-axis direction and
-    /// half-length.
-    /// The last three elements (indices 9, 10, and 11) define the z-axis direction and
-    /// half-length.
-    impl From<&Bbox> for BoundingVolume {
-        fn from(bbox: &Bbox) -> Self {
-            unimplemented!()
-        }
-    }
-
     impl BoundingVolume {
         /// Compute the boundingVolume.box from a 'regular' bounding box.
         ///
@@ -1316,6 +1300,15 @@ pub mod cesium3dtiles {
         /// this function, because it is expected that this function is called in a loop, and thus
         /// it is more optimal to init the transformation outside of the loop.
         ///
+        /// The output is an array of 12 numbers that define an oriented bounding box in a
+        /// right-handed 3-axis (x, y, z) Cartesian coordinate system where the z-axis is up.
+        /// The first three elements define the x, y, and z values for the center of the box.
+        /// The next three elements (with indices 3, 4, and 5) define the x-axis direction
+        /// and half-length.
+        /// The next three elements (indices 6, 7, and 8) define the y-axis direction and
+        /// half-length.
+        /// The last three elements (indices 9, 10, and 11) define the z-axis direction and
+        /// half-length.
         #[allow(dead_code)]
         fn box_from_bbox(
             bbox: &Bbox,
@@ -1346,26 +1339,12 @@ pub mod cesium3dtiles {
             let z_pt_ecef = transformer.convert((z_max_pt[0], z_max_pt[1], z_max_pt[2]))?;
 
             // Vectors that define the size and orientation of the OBB
-            let vx = (
-                x_pt_ecef.0 - center_ecef.0,
-                x_pt_ecef.1 - center_ecef.1,
-                x_pt_ecef.2 - center_ecef.2,
-            );
-            let vy = (
-                y_pt_ecef.0 - center_ecef.0,
-                y_pt_ecef.1 - center_ecef.1,
-                y_pt_ecef.2 - center_ecef.2,
-            );
             let vz = (
                 z_pt_ecef.0 - center_ecef.0,
                 z_pt_ecef.1 - center_ecef.1,
                 z_pt_ecef.2 - center_ecef.2,
             );
             // unit vector
-            let dvx = (vx.0.powi(2) + vx.1.powi(2) + vx.2.powi(2)).sqrt();
-            let vx_unit = (vx.0 / dvx, vx.1 / dvx, vx.2 / dvx);
-            let dvy = (vy.0.powi(2) + vy.1.powi(2) + vy.2.powi(2)).sqrt();
-            let vy_unit = (vy.0 / dvy, vz.1 / dvy, vz.2 / dvy);
             let dvz = (vz.0.powi(2) + vz.1.powi(2) + vz.2.powi(2)).sqrt();
             let vz_unit = (vz.0 / dvz, vz.1 / dvz, vz.2 / dvz);
 
@@ -1415,7 +1394,6 @@ pub mod cesium3dtiles {
             // The new 'top' of the OBB is set from the topmost corner along the z axis
             let d_z_min_new = corners_on_vz_unit.iter().copied().reduce(f64::min).unwrap();
             let d_z_max_new = corners_on_vz_unit.iter().copied().reduce(f64::max).unwrap();
-            let d_center_new = (d_z_max_new + d_z_min_new) / 2.0;
             let center_new = (
                 center_ecef.0 + d_z_min_new * vz_unit.0,
                 center_ecef.1 + d_z_min_new * vz_unit.1,
@@ -1454,6 +1432,7 @@ pub mod cesium3dtiles {
             ]))
         }
 
+        #[allow(dead_code)]
         fn region_from_bbox(
             bbox: &Bbox,
             transformer: &Proj,
@@ -1471,7 +1450,7 @@ pub mod cesium3dtiles {
         }
 
         /// Cast to 2D WKT
-        fn to_wkt(&self) -> String {
+        fn as_wkt(&self) -> String {
             let [minx, miny, _minz, maxx, maxy, _maxz] = match self {
                 BoundingVolume::Box(bbox) => {
                     let center = &bbox[0..3];
@@ -1718,7 +1697,7 @@ pub mod cesium3dtiles {
             );
             quadtree.export(&world, None).unwrap();
 
-            let tileset = Tileset::from_quadtree(&quadtree, &world, 16_f64, 200, None, None, true);
+            let _tileset = Tileset::from_quadtree(&quadtree, &world, 16_f64, 200, None, None, true);
 
             // tileset.make_implicit(&world.grid, &quadtree, );
 
@@ -1743,7 +1722,7 @@ pub mod cesium3dtiles {
         fn test_boundingvolume_from_bbox() {
             let crs_to = "EPSG:4978";
             let transformer = Proj::new_known_crs("EPSG:7415", crs_to, None).unwrap();
-            let bbox: Bbox = [171790.0, 472690.0, -15.0, 274190.0, 575090.0, 400.0];
+            let _bbox: Bbox = [171790.0, 472690.0, -15.0, 274190.0, 575090.0, 400.0];
             let bbox: Bbox = [
                 84362.90299999999,
                 446306.814,
