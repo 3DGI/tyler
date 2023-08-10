@@ -1361,20 +1361,80 @@ pub mod cesium3dtiles {
                 z_pt_ecef.1 - center_ecef.1,
                 z_pt_ecef.2 - center_ecef.2,
             );
+            // unit vector
+            let dvx = (vx.0.powi(2) + vx.1.powi(2) + vx.2.powi(2)).sqrt();
+            let vx_unit = (vx.0 / dvx, vx.1 / dvx, vx.2 / dvx);
+            let dvy = (vy.0.powi(2) + vy.1.powi(2) + vy.2.powi(2)).sqrt();
+            let vy_unit = (vy.0 / dvy, vz.1 / dvy, vz.2 / dvy);
+            let dvz = (vz.0.powi(2) + vz.1.powi(2) + vz.2.powi(2)).sqrt();
+            let vz_unit = (vz.0 / dvz, vz.1 / dvz, vz.2 / dvz);
+
+            // Compute all 8 corners of the ECEF OBB.
+            // The 4 corners of the OBB at the plane that cuts the box in half, through the center
+            // point. From these and the z-vector, we'll compute the 8 corners.
+            let center_corner_1 = (vx.0 + vy.0, vx.1 + vy.1, vx.2 + vy.2);
+            let center_corner_2 = (vy.0 + -vx.0, vy.1 + -vx.1, vy.2 + -vx.2);
+            let center_corner_3 = (-center_corner_1.0, -center_corner_1.1, -center_corner_1.2);
+            let center_corner_4 = (-center_corner_2.0, -center_corner_2.1, -center_corner_2.2);
+            let center_corners = [
+                &center_corner_1,
+                &center_corner_2,
+                &center_corner_3,
+                &center_corner_4,
+            ];
+            let max_corners: Vec<(f64, f64, f64)> = center_corners
+                .iter()
+                .map(|corner| (vz.0 + corner.0, vz.1 + corner.1, vz.2 + corner.2))
+                .collect();
+            let min_corners: Vec<(f64, f64, f64)> = center_corners
+                .iter()
+                .map(|corner| (-vz.0 + corner.0, -vz.1 + corner.1, -vz.2 + corner.2))
+                .collect();
+            // Project the 8 corners onto the z unit vector
+            let corners_on_vz_unit: Vec<f64> = min_corners
+                .iter()
+                .chain(max_corners.iter())
+                .map(|corner| corner.0 * vz_unit.0 + corner.1 * vz_unit.1 + corner.2 * vz_unit.2)
+                .collect();
+            // The new 'top' of the OBB is set from the topmost corner along the z axis
+            let d_z_min_new = corners_on_vz_unit.iter().copied().reduce(f64::min).unwrap();
+            let d_z_max_new = corners_on_vz_unit.iter().copied().reduce(f64::max).unwrap();
+            let d_center_new = d_z_min_new + (d_z_max_new - d_z_min_new) / 2.0;
+            let center_new = (
+                center_ecef.0 + d_center_new,
+                center_ecef.1 + d_center_new,
+                center_ecef.2 + d_center_new,
+            );
+            let vz_new = (
+                (center_ecef.0 + d_z_max_new * vz_unit.0) - center_new.0,
+                (center_ecef.1 + d_z_max_new * vz_unit.1) - center_new.1,
+                (center_ecef.2 + d_z_max_new * vz_unit.2) - center_new.2,
+            );
+            // Move the x and y OBB half-axes to the new center
+            let vx_new = (
+                (x_pt_ecef.0 + d_center_new * vz_unit.0) - center_new.0,
+                (x_pt_ecef.1 + d_center_new * vz_unit.1) - center_new.1,
+                (x_pt_ecef.2 + d_center_new * vz_unit.2) - center_new.2,
+            );
+            let vy_new = (
+                (y_pt_ecef.0 + d_center_new * vz_unit.0) - center_new.0,
+                (y_pt_ecef.1 + d_center_new * vz_unit.1) - center_new.1,
+                (y_pt_ecef.2 + d_center_new * vz_unit.2) - center_new.2,
+            );
 
             Ok(Self::Box([
-                center_ecef.0,
-                center_ecef.1,
-                center_ecef.2,
-                vx.0,
-                vx.1,
-                vx.2,
-                vy.0,
-                vy.1,
-                vy.2,
-                vz.0,
-                vz.1,
-                vz.2,
+                center_new.0,
+                center_new.1,
+                center_new.2,
+                vx_new.0,
+                vx_new.1,
+                vx_new.2,
+                vy_new.0,
+                vy_new.1,
+                vy_new.2,
+                vz_new.0,
+                vz_new.1,
+                vz_new.2,
             ]))
         }
 
