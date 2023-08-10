@@ -1401,9 +1401,9 @@ pub mod cesium3dtiles {
             let d_z_max_new = corners_on_vz_unit.iter().copied().reduce(f64::max).unwrap();
             let d_center_new = d_z_min_new + (d_z_max_new - d_z_min_new) / 2.0;
             let center_new = (
-                center_ecef.0 + d_center_new,
-                center_ecef.1 + d_center_new,
-                center_ecef.2 + d_center_new,
+                center_ecef.0 + d_center_new * vz_unit.0,
+                center_ecef.1 + d_center_new * vz_unit.1,
+                center_ecef.2 + d_center_new * vz_unit.2,
             );
             let vz_new = (
                 (center_ecef.0 + d_z_max_new * vz_unit.0) - center_new.0,
