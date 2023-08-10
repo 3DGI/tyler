@@ -1384,19 +1384,6 @@ pub mod cesium3dtiles {
                 (bbox[0], bbox[4], bbox[5]),
                 (center[0], center[1], bbox[5]),
             ];
-            // Compute all 8 corners of the ECEF OBB.
-            // // The 4 corners of the OBB at the plane that cuts the box in half, through the center
-            // // point. From these and the z-vector, we'll compute the 8 corners.
-            // let center_corner_1 = (vx.0 + vy.0, vx.1 + vy.1, vx.2 + vy.2);
-            // let center_corner_2 = (vy.0 + -vx.0, vy.1 + -vx.1, vy.2 + -vx.2);
-            // let center_corner_3 = (-center_corner_1.0, -center_corner_1.1, -center_corner_1.2);
-            // let center_corner_4 = (-center_corner_2.0, -center_corner_2.1, -center_corner_2.2);
-            // let center_corners = [
-            //     &center_corner_1,
-            //     &center_corner_2,
-            //     &center_corner_3,
-            //     &center_corner_4,
-            // ];
             let v_max_corners_ecef: Vec<(f64, f64, f64)> = max_corners
                 .into_iter()
                 .filter_map(|corner_input_crs| transformer.convert(corner_input_crs).ok())
@@ -1430,9 +1417,9 @@ pub mod cesium3dtiles {
             let d_z_max_new = corners_on_vz_unit.iter().copied().reduce(f64::max).unwrap();
             let d_center_new = (d_z_max_new + d_z_min_new) / 2.0;
             let center_new = (
-                center_ecef.0 + d_center_new * vz_unit.0,
-                center_ecef.1 + d_center_new * vz_unit.1,
-                center_ecef.2 + d_center_new * vz_unit.2,
+                center_ecef.0 + d_z_min_new * vz_unit.0,
+                center_ecef.1 + d_z_min_new * vz_unit.1,
+                center_ecef.2 + d_z_min_new * vz_unit.2,
             );
             let vz_new = (
                 (center_ecef.0 + d_z_max_new * vz_unit.0) - center_new.0,
@@ -1441,14 +1428,14 @@ pub mod cesium3dtiles {
             );
             // Move the x and y OBB half-axes to the new center
             let vx_new = (
-                (x_pt_ecef.0 + d_center_new * vz_unit.0) - center_new.0,
-                (x_pt_ecef.1 + d_center_new * vz_unit.1) - center_new.1,
-                (x_pt_ecef.2 + d_center_new * vz_unit.2) - center_new.2,
+                (x_pt_ecef.0 + d_z_min_new * vz_unit.0) - center_new.0,
+                (x_pt_ecef.1 + d_z_min_new * vz_unit.1) - center_new.1,
+                (x_pt_ecef.2 + d_z_min_new * vz_unit.2) - center_new.2,
             );
             let vy_new = (
-                (y_pt_ecef.0 + d_center_new * vz_unit.0) - center_new.0,
-                (y_pt_ecef.1 + d_center_new * vz_unit.1) - center_new.1,
-                (y_pt_ecef.2 + d_center_new * vz_unit.2) - center_new.2,
+                (y_pt_ecef.0 + d_z_min_new * vz_unit.0) - center_new.0,
+                (y_pt_ecef.1 + d_z_min_new * vz_unit.1) - center_new.1,
+                (y_pt_ecef.2 + d_z_min_new * vz_unit.2) - center_new.2,
             );
 
             Ok(Self::Box([
