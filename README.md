@@ -279,7 +279,7 @@ In debug mode, *tyler* will write the unpruned tileset too, together with the ti
 ## Roadmap
 
 - [x] Parallel extent computation
-- [ ] Parallel grid indexing
+- [x] Parallel grid indexing
 - [ ] Integrate the glTF converter to remove the geoflow dependency
 - [ ] Integrate cjlib (when it's ready)
 - [ ] Read regular CityJSON files, not only CityJSONFeatures

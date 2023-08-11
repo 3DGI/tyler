@@ -229,9 +229,6 @@ pub mod cesium3dtiles {
                 let bounding_volume =
                     BoundingVolume::box_from_bbox(&tile_bbox, transformer).unwrap();
 
-                let _s = serde_json::to_string(&bounding_volume).unwrap();
-                debug!("{}", _s);
-
                 // The geometric error of a tile is computed based on the specified error
                 // for the nodes have leafs as children (assuming all leaf nodes are at the same level)
                 let level_multiplier = (tile_bbox[3] - tile_bbox[0]) / (arg_cellsize as f64) - 2.0;
