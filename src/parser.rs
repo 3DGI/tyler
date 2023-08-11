@@ -57,6 +57,11 @@ struct ExtentQcResult {
     nr_features_ignored: usize,
 }
 
+struct FeatureDirsFiles {
+    feature_dirs: Vec<PathBuf>,
+    feature_files: Vec<PathBuf>,
+}
+
 impl World {
     pub fn new<P: AsRef<Path>>(
         path_metadata: P,
@@ -79,32 +84,15 @@ impl World {
         // FIXME: if cityobject_types is None, then all cityobject are ignored, instead of included
         // Compute the extent of the features and the number of features.
         // We don't store the computed extent explicitly, because the grid contains that info.
-        let mut path_features_root_dirs: Vec<PathBuf> = Vec::new();
-        let mut path_features_root_files: Vec<PathBuf> = Vec::new();
-        for entry_res in WalkDir::new(&path_features_root).min_depth(1).max_depth(1) {
-            if let Ok(entry) = entry_res {
-                if entry.file_type().is_dir() {
-                    path_features_root_dirs.push(entry.path().to_path_buf());
-                } else if entry.file_type().is_file() {
-                    if let Some(jsonl_path) = Self::direntry_to_jsonl(entry) {
-                        path_features_root_files.push(jsonl_path)
-                    }
-                }
-            } else {
-                error!(
-                    "Error in walking the directory {}, error: {}",
-                    &path_features_root.display(),
-                    entry_res.unwrap_err()
-                )
-            }
-        }
+        let feature_dirs_files = Self::find_feature_dirs_and_files(&path_features_root);
         // Walk the subdirectories of the root
         debug!(
             "Found {} subdirectories and {} CityJSONFeature files at the root directory",
-            path_features_root_dirs.len(),
-            path_features_root_files.len()
+            feature_dirs_files.feature_dirs.len(),
+            feature_dirs_files.feature_files.len()
         );
-        let extents: Vec<ExtentQcResult> = path_features_root_dirs
+        let extents: Vec<ExtentQcResult> = feature_dirs_files
+            .feature_dirs
             .into_par_iter()
             .filter_map(|dir| Self::extent_qc(dir, cityobject_types.as_ref()))
             .collect();
@@ -127,7 +115,7 @@ impl World {
             }
         }
         // Walk the files at the root and update the counters
-        for feature_path in &path_features_root_files {
+        for feature_path in &feature_dirs_files.feature_files {
             Self::extent_qc_file(
                 cityobject_types.as_ref(),
                 &mut extent_qc,
@@ -176,6 +164,35 @@ impl World {
             path_features_root,
             path_metadata,
         })
+    }
+
+    /// Find the direct subdirectories and CityJSONFeature files in the directory.
+    /// Returns a Vec of the subdirectory paths and a Vec of CityJSONFeature paths.
+    /// Note that it is not guaranteed that the returned directories contain any CityJSONFeatures.
+    fn find_feature_dirs_and_files(path_features_root: &PathBuf) -> FeatureDirsFiles {
+        let mut path_features_root_dirs: Vec<PathBuf> = Vec::new();
+        let mut path_features_root_files: Vec<PathBuf> = Vec::new();
+        for entry_res in WalkDir::new(&path_features_root).min_depth(1).max_depth(1) {
+            if let Ok(entry) = entry_res {
+                if entry.file_type().is_dir() {
+                    path_features_root_dirs.push(entry.path().to_path_buf());
+                } else if entry.file_type().is_file() {
+                    if let Some(jsonl_path) = Self::direntry_to_jsonl(entry) {
+                        path_features_root_files.push(jsonl_path)
+                    }
+                }
+            } else {
+                error!(
+                    "Error in walking the directory {}, error: {}",
+                    &path_features_root.display(),
+                    entry_res.unwrap_err()
+                )
+            }
+        }
+        FeatureDirsFiles {
+            feature_dirs: path_features_root_dirs,
+            feature_files: path_features_root_files,
+        }
     }
 
     /// Compute the extent (in quantized coordinates), the number of features and the
