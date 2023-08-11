@@ -245,14 +245,7 @@ impl QuadTree {
 
     /// The WKT of the 2D boundary of the current node.
     pub fn to_wkt(&self, grid: &SquareGrid) -> String {
-        let [minx, miny, _minz, maxx, maxy, _maxz] = self.bbox(grid);
-        format!(
-            "POLYGON(({minx} {miny}, {maxx} {miny}, {maxx} {maxy}, {minx} {maxy}, {minx} {miny}))",
-            minx = minx,
-            miny = miny,
-            maxx = maxx,
-            maxy = maxy
-        )
+        bbox_to_wkt(&self.bbox(grid))
     }
 
     pub fn export(
@@ -308,11 +301,7 @@ impl QuadTree {
                 )
                 .expect("cannot write quadtree node");
             let node_content_bbox = node.node_content_bbox(world, None, None);
-            let wkt_content_bbox = format!(
-                "POLYGON (({minx} {miny}, {maxx} {miny}, {maxx} {maxy}, {minx} {maxy}, {minx} {miny}))",
-                minx=node_content_bbox[0], miny=node_content_bbox[1], maxx=node_content_bbox[3],
-                maxy=node_content_bbox[4]
-            );
+            let wkt_content_bbox = bbox_to_wkt(&node_content_bbox);
             file_quadtree_content
                 .write_all(
                     format!(
@@ -657,13 +646,14 @@ impl SquareGrid {
     pub fn cell_to_wkt(&self, cellid: &CellId) -> String {
         let minx = self.origin[0] + (cellid.column * self.cellsize as usize) as f64;
         let miny = self.origin[1] + (cellid.row * self.cellsize as usize) as f64;
-        format!(
-            "POLYGON(({minx} {miny}, {maxx} {miny}, {maxx} {maxy}, {minx} {maxy}, {minx} {miny}))",
-            minx = minx,
-            miny = miny,
-            maxx = minx + self.cellsize as f64,
-            maxy = miny + self.cellsize as f64
-        )
+        bbox_to_wkt(&[
+            minx,
+            miny,
+            self.bbox[2],
+            minx + self.cellsize as f64,
+            miny + self.cellsize as f64,
+            self.bbox[5],
+        ])
     }
 
     pub fn cell_bbox(&self, cellid: &CellId) -> Bbox {
@@ -771,6 +761,17 @@ impl Display for CellId {
 /// [min x, min y, min z, max x, max y, max z]
 /// TODO: this must become a struct and have a .to_wkt() method
 pub type Bbox = [f64; 6];
+
+/// Serialize a 3D bounding box as 2D WKT Polygon.
+pub fn bbox_to_wkt(bbox: &Bbox) -> String {
+    format!(
+        "POLYGON(({minx} {miny}, {maxx} {miny}, {maxx} {maxy}, {minx} {maxy}, {minx} {miny}))",
+        minx = bbox[0],
+        miny = bbox[1],
+        maxx = bbox[3],
+        maxy = bbox[4]
+    )
+}
 
 /// 3D bounding box with quantized coordinates.
 ///
@@ -892,9 +893,10 @@ mod tests {
 
     #[test]
     fn test_create_grid() {
-        let extent = [84995.279, 446316.813, -5.333, 85644.748, 446996.132, 52.881];
+        let extent = [84372.91, 446316.814, -10.66, 171800.0, 472700.0, 52.882];
+        println!("extent: {}", bbox_to_wkt(&extent));
         let grid = SquareGrid::new(&extent, 500, 7415, Some(0.0));
-        println!("grid: {:?}", grid);
+        println!("grid: {}", bbox_to_wkt(&grid.bbox));
     }
 
     #[test]

@@ -112,10 +112,14 @@ impl World {
         let mut nr_features_ignored = 0;
         let mut extent_qc: BboxQc = BboxQc::default();
         let mut cityobject_types_ignored: Vec<CityObjectType> = Vec::new();
-        for extent in &extents {
+        for (i, extent) in extents.iter().enumerate() {
             nr_features += extent.nr_features;
             nr_features_ignored += extent.nr_features_ignored;
-            extent_qc.update_with(&extent.extent_qc);
+            if i == 0 {
+                extent_qc = extent.extent_qc.clone();
+            } else {
+                extent_qc.update_with(&extent.extent_qc);
+            }
             for cotype in &extent.cityobject_types_ignored {
                 if !cityobject_types_ignored.contains(cotype) {
                     cityobject_types_ignored.push(*cotype);
@@ -150,8 +154,8 @@ impl World {
         debug!("extent_qc: {:?}", &extent_qc);
         let extent_rw = extent_qc.to_bbox(&transform, arg_minz, arg_maxz);
         info!(
-            "Computed extent from features in real-world coordinates: {:?}",
-            &extent_rw
+            "Computed extent from features: {}",
+            crate::spatial_structs::bbox_to_wkt(&extent_rw)
         );
 
         // Allocate the grid, but at this point it is still empty
