@@ -482,42 +482,39 @@ impl Display for SquareGrid {
 impl SquareGrid {
     /// Creates a grid with cells of `cellsize`, that covers the `extent`.
     /// The grid and the cells are square.
-    /// The grid origin is the `extent` origin.
+    /// The grid center is the `extent` center.
     /// The grid is returned as an origin coordinate and the number of cells.
     pub fn new(extent: &Bbox, cellsize: u32, epsg: u16, buffer: Option<f64>) -> Self {
-        // Add some buffer to the extent, to make sure all points will be within the grid.
-        let buffer: f64 = buffer.unwrap_or(0.0);
-        // Add the buffer to the computed extent
-        let extent_with_buffer = [
-            extent[0] - buffer,
-            extent[1] - buffer,
-            extent[2] - buffer,
-            extent[3] + buffer,
-            extent[4] + buffer,
-            extent[5] + buffer,
+        // We only compute 2D. Z is constant for the grid.
+        let extent_center = [
+            extent[0] + (extent[3] - extent[0]) / 2.0,
+            extent[1] + (extent[4] - extent[1]) / 2.0,
         ];
-        let dx = extent_with_buffer[3] - extent_with_buffer[0];
-        let dy = extent_with_buffer[4] - extent_with_buffer[1];
-        // The grid dimension is the longest edge of the rectangle, so we get a square
+        let dx = extent[3] - extent[0];
+        let dy = extent[4] - extent[1];
+        // The grid starting dimension is the longest edge of the rectangle
         let mut d = if dx > dy { dx } else { dy };
+        // The grid is constructed as a square, from the center of the extent.
+        // We don't need to add any buffer to the extent, because we already round up when we
+        // compute the number of cells.
         // We need a grid that is has 2^n cells in one dimension, so that we can build
         // a 4^n cells quadtree.
         let d_cells = 2_usize.pow((d / cellsize as f64).log2().ceil() as u32);
         debug!("Computed grid cells dimension: {}", &d_cells);
-        let origin = [
-            extent_with_buffer[0],
-            extent_with_buffer[1],
-            extent_with_buffer[2],
-        ];
         // Compute new dimension from the calculated length
         d = d_cells as f64 * cellsize as f64;
+        let origin = [
+            extent_center[0] - d / 2.0,
+            extent_center[1] - d / 2.0,
+            extent[2],
+        ];
         let bbox = [
             origin[0],
             origin[1],
             origin[2],
             origin[0] + d,
             origin[1] + d,
-            extent_with_buffer[5],
+            extent[5],
         ];
         // A row-vector (x-axis) to store the column-vectors (y-axis).
         let mut row: Vec<Vec<Cell>> = Vec::with_capacity(d_cells);
@@ -894,6 +891,7 @@ mod tests {
     #[test]
     fn test_create_grid() {
         let extent = [84372.91, 446316.814, -10.66, 171800.0, 472700.0, 52.882];
+        let extent = [13603.33, 314127.708, -15.0, 268943.608, 612658.036, 400.0];
         println!("extent: {}", bbox_to_wkt(&extent));
         let grid = SquareGrid::new(&extent, 500, 7415, Some(0.0));
         println!("grid: {}", bbox_to_wkt(&grid.bbox));

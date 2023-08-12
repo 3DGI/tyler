@@ -20,6 +20,7 @@
 - Implement parallel computation for the extent, where the direct subdirectories of `--features` are visited in parallel (but their contents are processed sequentially).
 - Floats in the 3D Tiles tileset.json are written with 6 decimals
 - Implement parallel indexing of the features, where the direct subdirectories of `--features` are visited in parallel (but their contents are processed sequentially).
+- The grid is centered at the computed extent, instead of matching their origin.
 
 ## tyler 0.3.6 (2023-07-17)
 
