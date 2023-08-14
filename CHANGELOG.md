@@ -22,6 +22,7 @@
 - Implement parallel indexing of the features, where the direct subdirectories of `--features` are visited in parallel (but their contents are processed sequentially).
 - The grid is centered at the computed extent, instead of matching their origin.
 - Rename `tiles` directory to `t` to save space in the tileset.json
+- The tile content bounding volume, `content.boundingVolume`, is not added to the tile content anymore. You need to enable this option if you want to include the content bounding volumes. Enable it with `--3dtiles-content-add-bv`.
 
 ## tyler 0.3.6 (2023-07-17)
 

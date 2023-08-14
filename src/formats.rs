@@ -158,6 +158,7 @@ pub mod cesium3dtiles {
             arg_minz: Option<i32>,
             arg_maxz: Option<i32>,
             content_bv_from_tile: bool,
+            content_add_bv: bool,
         ) -> Self {
             let crs_from = format!("EPSG:{}", world.crs.to_epsg().unwrap());
             // Because we have a boundingVolume.box. For a boundingVolume.region we need 4979.
@@ -178,6 +179,7 @@ pub mod cesium3dtiles {
                 arg_minz,
                 arg_maxz,
                 content_bv_from_tile,
+                content_add_bv,
             );
             // root.transform = Some(y_up_to_z_up);
 
@@ -209,6 +211,7 @@ pub mod cesium3dtiles {
             arg_minz: Option<i32>,
             arg_maxz: Option<i32>,
             content_bv_from_tile: bool,
+            content_add_bv: bool,
         ) -> Tile {
             if !quadtree.children.is_empty() {
                 let tile_id = TileId::from(&quadtree.id);
@@ -254,6 +257,7 @@ pub mod cesium3dtiles {
                         arg_minz,
                         arg_maxz,
                         content_bv_from_tile,
+                        content_add_bv,
                     ));
                 }
                 Tile {
@@ -317,7 +321,11 @@ pub mod cesium3dtiles {
                         BoundingVolume::box_from_bbox(&tile_content_bbox_rw, transformer).unwrap();
 
                     content = Some(Content {
-                        bounding_volume: Some(content_bounding_volume),
+                        bounding_volume: if content_add_bv {
+                            Some(content_bounding_volume)
+                        } else {
+                            None
+                        },
                         uri: format!("t/{}.glb", quadtree.id),
                     });
                 }
@@ -1680,7 +1688,8 @@ pub mod cesium3dtiles {
             );
             quadtree.export(&world, None).unwrap();
 
-            let _tileset = Tileset::from_quadtree(&quadtree, &world, 16_f64, 200, None, None, true);
+            let _tileset =
+                Tileset::from_quadtree(&quadtree, &world, 16_f64, 200, None, None, true, true);
 
             // tileset.make_implicit(&world.grid, &quadtree, );
 

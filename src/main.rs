@@ -160,7 +160,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
 
     // --- Begin argument parsing
-    let cli = crate::cli::Cli::parse();
+    let mut cli = crate::cli::Cli::parse();
     debug!("{:?}", &cli);
     info!("tyler version: {}", clap::crate_version!());
     if !cli.output.is_dir() {
@@ -260,6 +260,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Formats::CityJSON => "".to_string(),
     };
+    if cli.cesium3dtiles_content_bv_from_tile && !cli.cesium3dtiles_content_add_bv {
+        debug!("cesium3dtiles_content_bv_from_tile is true, but cesium3dtiles_content_add_bv is false, setting cesium3dtiles_content_add_bv to true");
+        cli.cesium3dtiles_content_add_bv = true;
+    }
     let proj_data = match env::var("PROJ_DATA") {
         Ok(val) => {
             debug!("PROJ_DATA: {}", &val);
@@ -379,6 +383,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         cli.grid_minz,
         cli.grid_maxz,
         cli.cesium3dtiles_content_bv_from_tile,
+        cli.cesium3dtiles_content_add_bv,
     );
 
     if cli.grid_export {
