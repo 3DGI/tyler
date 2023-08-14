@@ -484,7 +484,7 @@ impl SquareGrid {
     /// The grid and the cells are square.
     /// The grid center is the `extent` center.
     /// The grid is returned as an origin coordinate and the number of cells.
-    pub fn new(extent: &Bbox, cellsize: u32, epsg: u16, buffer: Option<f64>) -> Self {
+    pub fn new(extent: &Bbox, cellsize: u32, epsg: u16) -> Self {
         // We only compute 2D. Z is constant for the grid.
         let extent_center = [
             extent[0] + (extent[3] - extent[0]) / 2.0,
@@ -851,7 +851,7 @@ mod tests {
     #[test]
     fn test_intersect_bbox() {
         let extent = [195548.0, 538909.0, 0.0, 264268.0, 590410.0, 0.0];
-        let grid = SquareGrid::new(&extent, 400, 7415, Some(0.0));
+        let grid = SquareGrid::new(&extent, 400, 7415);
         grid.export(None, None, None).unwrap();
 
         // Polygon ((248923.44474360189633444 601084.25658657902386039, 249381.04931766359368339 601093.95845033996738493, 249369.73047660905285738 601954.19037048425525427, 248923.44474360189633444 601084.25658657902386039))
@@ -893,13 +893,13 @@ mod tests {
         let extent = [84372.91, 446316.814, -10.66, 171800.0, 472700.0, 52.882];
         let extent = [13603.33, 314127.708, -15.0, 268943.608, 612658.036, 400.0];
         println!("extent: {}", bbox_to_wkt(&extent));
-        let grid = SquareGrid::new(&extent, 500, 7415, Some(0.0));
+        let grid = SquareGrid::new(&extent, 500, 7415);
         println!("grid: {}", bbox_to_wkt(&grid.bbox));
     }
 
     #[test]
     fn test_locate_point() {
-        let grid = SquareGrid::new(&[0.0, 0.0, 0.0, 4.0, 4.0, 4.0], 1, 0, Some(0.0));
+        let grid = SquareGrid::new(&[0.0, 0.0, 0.0, 4.0, 4.0, 4.0], 1, 0);
         let cellid = grid.locate_point(&[2.5, 1.5]);
         println!("{}", cellid);
         assert_eq!(
@@ -1067,7 +1067,7 @@ mod tests {
     #[test]
     fn test_quadtree_construction() {
         let mut feature_set: FeatureSet = Vec::new();
-        let mut grid = SquareGrid::new(&[0.0, 0.0, 0.0, 4.0, 4.0, 1.0], 1, 0, None);
+        let mut grid = SquareGrid::new(&[0.0, 0.0, 0.0, 4.0, 4.0, 1.0], 1, 0);
         for x in 0..4_u64 {
             for y in 0..4u64 {
                 for f in 0..5 {
@@ -1088,7 +1088,7 @@ mod tests {
     #[test]
     fn test_quadtree_leaves() {
         let mut feature_set: FeatureSet = Vec::new();
-        let mut grid = SquareGrid::new(&[0.0, 0.0, 0.0, 4.0, 4.0, 1.0], 1, 0, None);
+        let mut grid = SquareGrid::new(&[0.0, 0.0, 0.0, 4.0, 4.0, 1.0], 1, 0);
         for x in 0..4_u64 {
             for y in 0..4u64 {
                 for f in 0..5 {
@@ -1113,7 +1113,7 @@ mod tests {
     #[test]
     fn test_quadtree_node() {
         let mut feature_set: FeatureSet = Vec::new();
-        let mut grid = SquareGrid::new(&[0.0, 0.0, 0.0, 16.0, 16.0, 1.0], 1, 0, None);
+        let mut grid = SquareGrid::new(&[0.0, 0.0, 0.0, 16.0, 16.0, 1.0], 1, 0);
         for x in 0..16_u64 {
             for y in 0..16u64 {
                 for f in 0..5 {

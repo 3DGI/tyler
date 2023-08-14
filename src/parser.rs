@@ -154,7 +154,7 @@ impl World {
 
         // Allocate the grid, but at this point it is still empty
         let epsg = crs.to_epsg()?;
-        let grid = crate::spatial_structs::SquareGrid::new(&extent_rw, cellsize, epsg, Some(10.0));
+        let grid = crate::spatial_structs::SquareGrid::new(&extent_rw, cellsize, epsg);
         debug!("{}", grid);
 
         // Allocate the features container, but at this point it is still empty
@@ -178,7 +178,7 @@ impl World {
     fn find_feature_dirs_and_files(path_features_root: &PathBuf) -> FeatureDirsFiles {
         let mut path_features_root_dirs: Vec<PathBuf> = Vec::new();
         let mut path_features_root_files: Vec<PathBuf> = Vec::new();
-        for entry_res in WalkDir::new(&path_features_root).min_depth(1).max_depth(1) {
+        for entry_res in WalkDir::new(path_features_root).min_depth(1).max_depth(1) {
             if let Ok(entry) = entry_res {
                 if entry.file_type().is_dir() {
                     path_features_root_dirs.push(entry.path().to_path_buf());
@@ -367,12 +367,12 @@ impl World {
 
     /// Indexes a CityJSONFeature file.
     fn index_feature_path(&self, feature_path: &PathBuf) -> Option<FeatureInGridCells> {
-        let cf = CityJSONFeatureVertices::from_file(&feature_path);
+        let cf = CityJSONFeatureVertices::from_file(feature_path);
         if let Ok(featurevertices) = cf {
             let cell_vtx_cnt = self.count_vertices(&featurevertices);
             if !cell_vtx_cnt.is_empty() {
                 // We found at least one CityObject of the required type
-                self.feature_to_cells(&feature_path, &featurevertices, cell_vtx_cnt)
+                self.feature_to_cells(feature_path, &featurevertices, cell_vtx_cnt)
             } else {
                 None
             }
@@ -392,7 +392,7 @@ impl World {
     ) -> Option<FeatureInGridCells> {
         // TODO: what other cityobject types need to have 1-1 cell assignment?
         if let Some(ref cotypes) = self.cityobject_types {
-            let feature = featurevertices.to_feature(&feature_path);
+            let feature = featurevertices.to_feature(feature_path);
             let mut cells: Vec<(CellId, Cell)> = Vec::with_capacity(cell_vtx_cnt.len());
             if cotypes.contains(&CityObjectType::Building)
                 || cotypes.contains(&CityObjectType::BuildingPart)

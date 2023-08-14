@@ -652,8 +652,7 @@ pub mod cesium3dtiles {
                         let nr_tiles = 4_usize.pow(level_subtree);
                         // Grid for the current level
                         let tile_width = (extent_width / (nr_tiles as f64).sqrt()) as u32;
-                        let grid_for_level =
-                            SquareGrid::new(&tile_bbox, tile_width, grid_epsg, None);
+                        let grid_for_level = SquareGrid::new(&tile_bbox, tile_width, grid_epsg);
                         let outdir = output_dir_debug.unwrap_or(Path::new(""));
                         let filename = outdir.join(format!(
                             "implicit-level-{}-{}-{}.tsv",
@@ -924,7 +923,7 @@ pub mod cesium3dtiles {
 
             // Grid for the current level
             let tile_width = (extent_width / (nr_tiles as f64).sqrt()) as u32;
-            let grid_for_level = SquareGrid::new(bbox, tile_width, epsg, None);
+            let grid_for_level = SquareGrid::new(bbox, tile_width, epsg);
 
             // Map of:
             //  - x,y coordinate of the min coordinate of the lower-left cell
@@ -1381,13 +1380,6 @@ pub mod cesium3dtiles {
                 center_ecef.0 / dvz,
                 center_ecef.1 / dvz,
                 center_ecef.2 / dvz,
-            );
-
-            // Z half length vector (before curvature correction)
-            let vz = (
-                vz_unit.0 * (dz / 2.0),
-                vz_unit.1 * (dz / 2.0),
-                vz_unit.2 * (dz / 2.0),
             );
 
             // Calculate the height difference between the lower corners and the curved earth surface
