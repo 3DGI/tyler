@@ -12,6 +12,7 @@
 - Set content bounding volume from tile bounding volume with the `--3dtiles-content-bv-from-tile` option. Required when the tile content is clipped to the tile's extent, for example for terrain.
 - Write quadtree content bounding box to .tsv with `--grid-export`.
 - Log all arguments in debug.
+- Write the explicit tileset too, when creating implicit tiles.
 
 ### Changed
 - Debug data, incl. `--grid-export`, is written to the `debug` directory within the `--output` directory.
