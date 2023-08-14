@@ -1257,8 +1257,9 @@ pub mod cesium3dtiles {
         }
     }
 
-    /// Format the BoundingVolume coordinates to 6 decimal places in the JSON output.
-    /// 6 decimal places, because that gives 0.11112m precision.
+    /// Format the BoundingVolume coordinates to 2 decimal places in the JSON output.
+    /// 2 decimal places, because we have Cartesian ECEF coordinates.
+    /// If we had lat/long, we would need 6 decimal places, because that gives 0.11112m precision.
     /// See https://wiki.openstreetmap.org/wiki/Precision_of_coordinates
     struct BoundingVolumeFormatter;
 
@@ -1267,7 +1268,7 @@ pub mod cesium3dtiles {
         where
             W: ?Sized + Write,
         {
-            write!(writer, "{:.6}", value)
+            write!(writer, "{:.2}", value)
         }
     }
 
@@ -1315,67 +1316,72 @@ pub mod cesium3dtiles {
             let dx = bbox[3] - bbox[0];
             let dy = bbox[4] - bbox[1];
             let dz = bbox[5] - bbox[2];
-            let center: [f64; 3] = [
-                bbox[0] + dx * 0.5,
-                bbox[1] + dy * 0.5,
-                (bbox[2] + dz * 0.5),
-            ];
+            let center: [f64; 3] = [bbox[0] + dx * 0.5, bbox[1] + dy * 0.5, (bbox[2] + dz * 0.5)];
 
             // The center points on the side faces in the X and Y directions
             let x_max_pt: [f64; 3] = [bbox[3], center[1], center[2]];
             let y_max_pt: [f64; 3] = [center[0], bbox[4], center[2]];
             // let z_max_pt: [f64; 3] = [center[0], center[1], bbox[5] + magic_z_shift];
 
-            // Determine X/Y axis orientation in target CRS (ECEF). We transform both endpoints 
-            // of a short vector in the X/Y direction in the input CRS. The lenght of this vector 
-            // should be short to minimize distortions caused by the CRS conversion. The distortion 
+            // Determine X/Y axis orientation in target CRS (ECEF). We transform both endpoints
+            // of a short vector in the X/Y direction in the input CRS. The lenght of this vector
+            // should be short to minimize distortions caused by the CRS conversion. The distortion
             // can cause a tilt in the ECEF box. Assuming we have a input CRS unit of metres,
-            // 1 meter is a good choice for the input vector length. 
+            // 1 meter is a good choice for the input vector length.
             // NB: be careful if input CRS is not in metres.
             let center_ecef = transformer.convert((center[0], center[1], center[2]))?;
-            let pnx = transformer.convert((center[0]+1.0, center[1], center[2]))?;
-            let pny = transformer.convert((center[0], center[1]+1.0, center[2]))?;
-            
+            let pnx = transformer.convert((center[0] + 1.0, center[1], center[2]))?;
+            let pny = transformer.convert((center[0], center[1] + 1.0, center[2]))?;
+
             // Compute the correct half lengths for X and Y vectors of the box
             let x_max_pt_ecef = transformer.convert((x_max_pt[0], x_max_pt[1], x_max_pt[2]))?;
             let y_max_pt_ecef = transformer.convert((y_max_pt[0], y_max_pt[1], y_max_pt[2]))?;
 
-            let dx_ = (
-                (x_max_pt_ecef.0 - center_ecef.0).powi(2) + 
-                (x_max_pt_ecef.1 - center_ecef.1).powi(2) + 
-                (x_max_pt_ecef.2 - center_ecef.2).powi(2)
-            ).sqrt();
-            let dy_ = (
-                (y_max_pt_ecef.0 - center_ecef.0).powi(2) + 
-                (y_max_pt_ecef.1 - center_ecef.1).powi(2) + 
-                (y_max_pt_ecef.2 - center_ecef.2).powi(2)
-            ).sqrt();
-            
+            let dx_ = ((x_max_pt_ecef.0 - center_ecef.0).powi(2)
+                + (x_max_pt_ecef.1 - center_ecef.1).powi(2)
+                + (x_max_pt_ecef.2 - center_ecef.2).powi(2))
+            .sqrt();
+            let dy_ = ((y_max_pt_ecef.0 - center_ecef.0).powi(2)
+                + (y_max_pt_ecef.1 - center_ecef.1).powi(2)
+                + (y_max_pt_ecef.2 - center_ecef.2).powi(2))
+            .sqrt();
+
             // Compute half length X Y vectors of the ECEF box
-            let s_to_unit_vx = ((pnx.0 - center_ecef.0).powi(2) + (pnx.1 - center_ecef.1).powi(2) +(pnx.2 - center_ecef.2).powi(2)).sqrt();
+            let s_to_unit_vx = ((pnx.0 - center_ecef.0).powi(2)
+                + (pnx.1 - center_ecef.1).powi(2)
+                + (pnx.2 - center_ecef.2).powi(2))
+            .sqrt();
             let vx = (
-                (pnx.0 - center_ecef.0)/s_to_unit_vx * dx_,
-                (pnx.1 - center_ecef.1)/s_to_unit_vx * dx_,
-                (pnx.2 - center_ecef.2)/s_to_unit_vx * dx_,
+                (pnx.0 - center_ecef.0) / s_to_unit_vx * dx_,
+                (pnx.1 - center_ecef.1) / s_to_unit_vx * dx_,
+                (pnx.2 - center_ecef.2) / s_to_unit_vx * dx_,
             );
-            let s_to_unit_vy = ((pny.0 - center_ecef.0).powi(2) + (pny.1 - center_ecef.1).powi(2) +(pny.2 - center_ecef.2).powi(2)).sqrt();
+            let s_to_unit_vy = ((pny.0 - center_ecef.0).powi(2)
+                + (pny.1 - center_ecef.1).powi(2)
+                + (pny.2 - center_ecef.2).powi(2))
+            .sqrt();
             let vy = (
-                (pny.0 - center_ecef.0)/s_to_unit_vy * dy_,
-                (pny.1 - center_ecef.1)/s_to_unit_vy * dy_,
-                (pny.2 - center_ecef.2)/s_to_unit_vy * dy_,
+                (pny.0 - center_ecef.0) / s_to_unit_vy * dy_,
+                (pny.1 - center_ecef.1) / s_to_unit_vy * dy_,
+                (pny.2 - center_ecef.2) / s_to_unit_vy * dy_,
             );
-            
+
             // Z unit vector in the ECEF box (before curvature correction)
-            let dvz = (center_ecef.0.powi(2) + center_ecef.1.powi(2) + center_ecef.2.powi(2)).sqrt();
-            let vz_unit = (center_ecef.0 / dvz, center_ecef.1 / dvz, center_ecef.2 / dvz);
+            let dvz =
+                (center_ecef.0.powi(2) + center_ecef.1.powi(2) + center_ecef.2.powi(2)).sqrt();
+            let vz_unit = (
+                center_ecef.0 / dvz,
+                center_ecef.1 / dvz,
+                center_ecef.2 / dvz,
+            );
 
             // Z half length vector (before curvature correction)
             let vz = (
-                vz_unit.0 * (dz/2.0),
-                vz_unit.1 * (dz/2.0),
-                vz_unit.2 * (dz/2.0),
+                vz_unit.0 * (dz / 2.0),
+                vz_unit.1 * (dz / 2.0),
+                vz_unit.2 * (dz / 2.0),
             );
-            
+
             // Calculate the height difference between the lower corners and the curved earth surface
             let r_earth: f64 = 6371000.0;
             let magical_dxy_correction: f64 = 2.0; // this is a correction applied because atm the QT does not tightly fit the content and is approx. 2x too big.
@@ -1383,13 +1389,13 @@ pub mod cesium3dtiles {
             let curvature_drop = (dxy_.powi(2) + r_earth.powi(2)).sqrt() - r_earth; // this is the h difference between the lower corners and the earth surface
 
             // Calculate the total correction that needs to be applied to the center point of the ECEF box
-            let center_z_correction = (dz+curvature_drop)/2.0 - 0.5*dz;
-            
+            let center_z_correction = (dz + curvature_drop) / 2.0 - 0.5 * dz;
+
             // Drop center_ecef
             let center_ecef_dropped = (
-                center_ecef.0 - center_z_correction*vz_unit.0,
-                center_ecef.1 - center_z_correction*vz_unit.1,
-                center_ecef.2 - center_z_correction*vz_unit.2,
+                center_ecef.0 - center_z_correction * vz_unit.0,
+                center_ecef.1 - center_z_correction * vz_unit.1,
+                center_ecef.2 - center_z_correction * vz_unit.2,
             );
 
             // Final box matrix, NB the Z half length vector are now also corrected for earth curvature
@@ -1403,9 +1409,9 @@ pub mod cesium3dtiles {
                 vy.0,
                 vy.1,
                 vy.2,
-                vz_unit.0 * (curvature_drop + dz)/2.0,
-                vz_unit.1 * (curvature_drop + dz)/2.0,
-                vz_unit.2 * (curvature_drop + dz)/2.0,
+                vz_unit.0 * (curvature_drop + dz) / 2.0,
+                vz_unit.1 * (curvature_drop + dz) / 2.0,
+                vz_unit.2 * (curvature_drop + dz) / 2.0,
             ]))
         }
 
