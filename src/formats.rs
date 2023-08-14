@@ -1384,8 +1384,7 @@ pub mod cesium3dtiles {
 
             // Calculate the height difference between the lower corners and the curved earth surface
             let r_earth: f64 = 6371000.0;
-            let magical_dxy_correction: f64 = 2.0; // this is a correction applied because atm the QT does not tightly fit the content and is approx. 2x too big.
-            let dxy_ = (dx_.powi(2) + dy.powi(2)).sqrt() / magical_dxy_correction;
+            let dxy_ = (dx_.powi(2) + dy.powi(2)).sqrt();
             let curvature_drop = (dxy_.powi(2) + r_earth.powi(2)).sqrt() - r_earth; // this is the h difference between the lower corners and the earth surface
 
             // Calculate the total correction that needs to be applied to the center point of the ECEF box
