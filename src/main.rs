@@ -464,7 +464,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(attributes) => attributes.join(","),
     };
 
-    let path_output_tiles = cli.output.join("tiles");
+    let path_output_tiles = cli.output.join("t");
     let path_features_input_dir = cli.output.join("inputs");
     // TODO: need to refactor this parallel loop somehow that it does not only read the
     //  3d tiles tiles, but also works with cityjson output

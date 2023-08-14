@@ -318,7 +318,7 @@ pub mod cesium3dtiles {
 
                     content = Some(Content {
                         bounding_volume: Some(content_bounding_volume),
-                        uri: format!("tiles/{}.glb", quadtree.id),
+                        uri: format!("t/{}.glb", quadtree.id),
                     });
                 }
 
@@ -391,7 +391,7 @@ pub mod cesium3dtiles {
                     transform: None,
                     content: Some(Content {
                         bounding_volume: Some(content_bounding_voume),
-                        uri: format!("tiles/{}-0-0.glb", cellid),
+                        uri: format!("t/{}-0-0.glb", cellid),
                     }),
                     children: None,
                     implicit_tiling: None,
@@ -407,7 +407,7 @@ pub mod cesium3dtiles {
                     transform: None,
                     content: Some(Content {
                         bounding_volume: Some(content_bounding_voume),
-                        uri: format!("tiles/{}-0.glb", cellid),
+                        uri: format!("t/{}-0.glb", cellid),
                     }),
                     children: Some(vec![tile_lod22]),
                     implicit_tiling: None,
@@ -424,7 +424,7 @@ pub mod cesium3dtiles {
                     transform: None,
                     content: Some(Content {
                         bounding_volume: Some(content_bounding_voume),
-                        uri: format!("tiles/{}.glb", cellid),
+                        uri: format!("t/{}.glb", cellid),
                     }),
                     children: Some(vec![tile_lod13]),
                     implicit_tiling: None,
@@ -839,7 +839,7 @@ pub mod cesium3dtiles {
 
             self.root.content = Some(Content {
                 bounding_volume: None,
-                uri: "tiles/{level}/{x}/{y}.glb".to_string(),
+                uri: "t/{level}/{x}/{y}.glb".to_string(),
             });
             self.root.children = None;
             (flat_tiles_with_content, subtrees_vec)
@@ -1187,7 +1187,7 @@ pub mod cesium3dtiles {
         pub fn add_content(&mut self) {
             self.content = Some(Content {
                 bounding_volume: Some(self.bounding_volume),
-                uri: format!("tiles/{}.glb", self.id),
+                uri: format!("t/{}.glb", self.id),
             })
         }
 
