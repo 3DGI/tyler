@@ -18,7 +18,7 @@
 - Remove logging from geof. Speeds up the conversion and fixes the extreme memory consumption when geof emits a large amount of messages.
 - Use BufWriter for writing the input paths.
 - Implement parallel computation for the extent, where the direct subdirectories of `--features` are visited in parallel (but their contents are processed sequentially).
-- Floats in the 3D Tiles tileset.json are written with 6 decimals
+- Floats in the 3D Tiles tileset.json are written with 2 decimals
 - Implement parallel indexing of the features, where the direct subdirectories of `--features` are visited in parallel (but their contents are processed sequentially).
 - The grid is centered at the computed extent, instead of matching their origin.
 - Rename `tiles` directory to `t` to save space in the tileset.json
