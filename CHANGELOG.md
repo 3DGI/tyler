@@ -24,6 +24,7 @@
 - The grid is centered at the computed extent, instead of matching their origin.
 - Rename `tiles` directory to `t` to save space in the tileset.json
 - The tile content bounding volume, `content.boundingVolume`, is not added to the tile content anymore. You need to enable this option if you want to include the content bounding volumes. Enable it with `--3dtiles-content-add-bv`.
+- The grid's cell size is adjusted so that it is possible to construct a tightly fit square of 4^n cells. The final cell size will be larger than what is set with `--grid-cellsize`.
 
 ## tyler 0.3.6 (2023-07-17)
 

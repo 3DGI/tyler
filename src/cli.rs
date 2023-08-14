@@ -65,7 +65,10 @@ pub struct Cli {
     /// camera distance leaf nodes become visible. Higher values make content visible earlier when zooming in.
     #[arg(long, short = 'e', default_value = "12")]
     pub geometric_error_above_leaf: Option<f64>,
-    /// Set the 2D cell size for the grid that is used for constructing the quadtree. In input units (eg. meters).
+    /// Set the 2D cell size for the grid that is used for constructing the quadtree.
+    /// In input units (eg. meters). Note that the cell size will be adjusted so that it is
+    /// possible to construct a tightly fit square, containing 4^n cells. The final cell size will
+    /// larger than this value.
     #[arg(long, default_value = "250")]
     pub grid_cellsize: Option<u32>,
     /// Generate the quadtree directly from a grid.tsv file, skipping the extent computation and feature indexing. A grid.tsv file is created with the --grid-export option. Used for debugging.

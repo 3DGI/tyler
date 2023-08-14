@@ -499,8 +499,23 @@ impl SquareGrid {
         // compute the number of cells.
         // We need a grid that is has 2^n cells in one dimension, so that we can build
         // a 4^n cells quadtree.
-        let d_cells = 2_usize.pow((d / cellsize as f64).log2().ceil() as u32);
-        debug!("Computed grid cells dimension: {}", &d_cells);
+        // Adjust the cellsize so that we can get a tightly fit square on the extent
+        let mut cellsize_new = d;
+        let cellsize_f64 = cellsize as f64;
+        loop {
+            let cn = cellsize_new / 2.0;
+            if cn < cellsize_f64 {
+                break;
+            } else {
+                cellsize_new /= 2.0;
+            }
+        }
+        let d_cells = (d / cellsize_new).ceil() as usize;
+        let cellsize = cellsize_new.ceil() as u32;
+        debug!(
+            "Computed grid cells dimension: {}, with cell size: {}",
+            &d_cells, cellsize
+        );
         // Compute new dimension from the calculated length
         d = d_cells as f64 * cellsize as f64;
         let origin = [
