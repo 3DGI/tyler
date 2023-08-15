@@ -829,12 +829,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|comp| comp.as_os_str())
                 .collect();
             let subtrees_dir_option = components.last().cloned().unwrap().to_str();
-            let tileset_explicit_path = cli.output.join("tileset_explicit.json");
-            info!(
-                "Writing pruned 3D Tiles explicit tileset to {}",
-                tileset_explicit_path.display()
-            );
-            tileset.to_file(&tileset_explicit_path)?;
             let (_, subtrees) = tileset.make_implicit(
                 &world.grid,
                 &quadtree,
