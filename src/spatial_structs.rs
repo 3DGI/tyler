@@ -681,6 +681,37 @@ impl SquareGrid {
     pub fn cell_mut(&mut self, cell_id: &CellId) -> &mut Cell {
         &mut self.data[cell_id.column][cell_id.row]
     }
+
+    /// Compute the vertex distribution in the cells of the grid.
+    pub fn compute_statistics(&self) -> SquareGridStats {
+        // nr. of vertices in the cells that are not empty
+        let mut nr_vertices_not_empty: Vec<usize> = Vec::with_capacity(self.length * self.length);
+        let mut nr_cells_not_empty: usize = 0;
+        for (_, cell) in self {
+            if cell.nr_vertices > 0 {
+                nr_vertices_not_empty.push(cell.nr_vertices);
+                nr_cells_not_empty += 1;
+            }
+        }
+        let sum = nr_vertices_not_empty.iter().sum();
+        let mean = sum as f64 / nr_cells_not_empty as f64;
+        // naive median
+        let median = if nr_vertices_not_empty.len() % 2 != 0 {
+            let c = (nr_vertices_not_empty.len() / 2) + 1;
+            nr_vertices_not_empty[c] as f64
+        } else {
+            let c = nr_vertices_not_empty.len() / 2;
+            (nr_vertices_not_empty[c] as f64 + nr_vertices_not_empty[c + 1] as f64) / 2.0
+        };
+        SquareGridStats {
+            nr_vertices: sum,
+            nr_cells_with_content: nr_cells_not_empty,
+            nr_vertices_min: *nr_vertices_not_empty.iter().min().unwrap(),
+            nr_vertices_max: *nr_vertices_not_empty.iter().max().unwrap(),
+            nr_vertices_mean: mean,
+            nr_vertices_median: median,
+        }
+    }
 }
 
 /// Returns a tuple of `(CellId, &Cell)` for each cell in column-major order.
@@ -727,6 +758,25 @@ impl<'squaregrid> Iterator for SquareGridIterator<'squaregrid> {
         } else {
             None
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct SquareGridStats {
+    nr_vertices: usize,
+    nr_cells_with_content: usize,
+    nr_vertices_min: usize,
+    nr_vertices_max: usize,
+    nr_vertices_mean: f64,
+    nr_vertices_median: f64,
+}
+
+impl Display for SquareGridStats {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Nr. cells with vertices: {nr_cells}; Nr. vertices: {nr_vertices}, min.: {min}, max.: {max}, median: {median}, mean: {mean}",
+               nr_vertices = self.nr_vertices, nr_cells = self.nr_cells_with_content,
+               min = self.nr_vertices_min, max = self.nr_vertices_max,
+               median = self.nr_vertices_median, mean = self.nr_vertices_mean)
     }
 }
 

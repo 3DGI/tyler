@@ -160,7 +160,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
 
     // --- Begin argument parsing
-    let mut cli = crate::cli::Cli::parse();
+    let cli = crate::cli::Cli::parse();
     debug!("{:?}", &cli);
     info!("tyler version: {}", clap::crate_version!());
     if !cli.output.is_dir() {
@@ -326,6 +326,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             bincode::deserialize_from(world_file)?
         }
     };
+
+    info!(
+        "Computed grid statistics: {}",
+        world.grid.compute_statistics()
+    );
 
     if cli.grid_export {
         info!("Exporting the grid to TSV to {:?}", &debug_data_output_path);
