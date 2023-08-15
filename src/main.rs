@@ -261,8 +261,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Formats::CityJSON => "".to_string(),
     };
     if cli.cesium3dtiles_content_bv_from_tile && !cli.cesium3dtiles_content_add_bv {
-        debug!("cesium3dtiles_content_bv_from_tile is true, but cesium3dtiles_content_add_bv is false, setting cesium3dtiles_content_add_bv to true");
-        cli.cesium3dtiles_content_add_bv = true;
+        warn!("cesium3dtiles_content_bv_from_tile is true, but cesium3dtiles_content_add_bv is false. The tile content bounding volumes are not going to be added, unless you set --3dtiles-content-add-bv");
     }
     let proj_data = match env::var("PROJ_DATA") {
         Ok(val) => {

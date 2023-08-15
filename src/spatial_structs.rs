@@ -512,10 +512,6 @@ impl SquareGrid {
         }
         let d_cells = (d / cellsize_new).ceil() as usize;
         let cellsize = cellsize_new.ceil() as u32;
-        debug!(
-            "Computed grid cells dimension: {}, with cell size: {}",
-            &d_cells, cellsize
-        );
         // Compute new dimension from the calculated length
         d = d_cells as f64 * cellsize as f64;
         let origin = [
