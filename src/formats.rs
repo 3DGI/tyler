@@ -989,6 +989,52 @@ pub mod cesium3dtiles {
         pub fn prune(&mut self, tiles_to_remove: &Vec<Tile>, qtree: &QuadTree) {
             self.root.prune(tiles_to_remove, qtree);
         }
+
+        /// Splits a tileset into several tilesets at the given level, to create
+        /// [external tilesets](https://docs.ogc.org/cs/22-025r4/22-025r4.html#core-external-tilesets).
+        /// The tile at `level` becomes the root tile of the new tileset.
+        /// It modifies the tileset, by removing the tiles after `level` and replacing
+        /// the `Tile.Content.uri` of the tiles on `level` to point to the child tilesets that are
+        /// returned from this function. The child tileset URIs follow the the pattern of
+        /// `tileset-<root tile ID>.json`, for example `tileset-7-0-0.json`.
+        /// The child tileset URI is returned with the Tileset, as the first member of the tuple.
+        pub fn split(&mut self, level: u16) -> Vec<(String, Tileset)> {
+            let max_nr_tilesets = 4_usize.pow(level as u32);
+            let mut child_tilesets: Vec<(String, Tileset)> = Vec::with_capacity(max_nr_tilesets);
+            let mut q = VecDeque::new();
+            q.push_back(&mut self.root);
+            while let Some(tile) = q.pop_front() {
+                if tile.id.level == level {
+                    let filename =
+                        format!("tileset-{}-{}-{}.json", tile.id.level, tile.id.x, tile.id.y);
+                    // Create the new tileset
+                    child_tilesets.push((
+                        filename.clone(),
+                        Tileset {
+                            asset: Default::default(),
+                            geometric_error: tile.geometric_error,
+                            root: tile.clone(),
+                            properties: None,
+                            extensions_used: None,
+                            extensions_required: None,
+                            extensions: None,
+                        },
+                    ));
+                    // Update the current tile to point to the new tileset
+                    tile.content = Some(Content {
+                        bounding_volume: None,
+                        uri: filename,
+                    });
+                    tile.children = None;
+                }
+                if let Some(ref mut children) = tile.children {
+                    for child in children.iter_mut() {
+                        q.push_back(child);
+                    }
+                }
+            }
+            child_tilesets
+        }
     }
 
     /// [Asset](https://github.com/CesiumGS/3d-tiles/tree/main/specification#asset).

@@ -856,6 +856,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     warn!("Failed to write subtree {} content", subtree_id);
                 }
             }
+        } else {
+            let available_levels = tileset.available_levels();
+            // A five level deep tree is still managable in size.
+            if available_levels > 5 {
+                // Try to find the split where each child tileset starts to have more tiles in their
+                // tree, than the ancestor tree. This way, the main tileset is smaller in size than
+                // the child tilesets, so it loads faster. This method is not very accurate, because
+                // it doesn't account for the actual number of tiles on each level, it only
+                // calculates with the theoretical maximum.
+                let mut split_at_level = 0;
+                for level in (0..available_levels).rev() {
+                    let subtree_depth: u32 = (available_levels - level) as u32;
+                    let nr_tiles_subtree = (4_usize.pow(subtree_depth) - 1) / 3;
+                    let ancestor_tree_depth: u32 =
+                        (available_levels - (available_levels - level)) as u32;
+                    let nr_tiles_ancestor = (4_usize.pow(ancestor_tree_depth) - 1) / 3;
+                    if nr_tiles_ancestor < nr_tiles_subtree {
+                        split_at_level = level;
+                        break;
+                    }
+                }
+                info!(
+                    "Splitting the explicit tileset into external tilesets at level {}",
+                    split_at_level
+                );
+                let external_tilesets = tileset.split(split_at_level);
+                for (filename, child_tileset) in &external_tilesets {
+                    let tileset_path = cli.output.join(filename);
+                    child_tileset.to_file(&tileset_path)?;
+                }
+            }
         }
         info!("Writing 3D Tiles tileset");
         tileset.to_file(&tileset_path)?;
