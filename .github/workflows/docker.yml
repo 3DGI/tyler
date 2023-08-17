@@ -9,10 +9,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-        submodules: true
+        with:
+          submodules: true
       - uses: elgohr/Publish-Docker-Github-Action@v5
         env:
-          VERSION: 0.3.5 
+          VERSION: ${{ github.ref }}
         with:
           name: "3dgi/tyler"
           username: ${{ secrets.DOCKER_USERNAME }}
