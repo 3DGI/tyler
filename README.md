@@ -22,8 +22,6 @@ Details of the 3D Tiles output:
 
 Additional information about the internals of *tyler* you will find in the [design document](https://github.com/3DGI/tyler/blob/master/docs/design_document.md).
 
-*Note on performance: For large input, like multiple millions of features you need have an SSD. Running on a HDD is not feasible.*
-
 ## Installation
 
 For the time being, *tyler* depends on the [geoflow-bundle](https://github.com/geoflow3d/geoflow-bundle) for converting CityJSONFeatures to glTF.
@@ -114,6 +112,41 @@ Tyler need two geoflow flowchart files in order to export glTF files.
 These files are located in the `resources/geof` directory and they are picked up automatically when the docker image is used.
 However, it is also possible to provide their location with the environment variable `TYLER_RESOURCES_DIR`, pointing to the `resources` directory.
 For example `export TYLER_RESOURCES_DIR=/some_path/resources`.
+
+### Performance
+
+For large input, like multiple millions of features you need have an SSD. 
+Running on a HDD is not feasible for large areas.
+
+There are three resource intensive steps, 1) computing the extent of the input, 2) indexing the input with the grid, 3) converting the tiles.
+Each of the three steps are executed concurrently, with the help of the [rayon library](https://crates.io/crates/rayon).
+
+You can control the level of parallelism by setting the `RAYON_NUM_THREADS` environment variables.
+By default *tyler* (rayon) will uses the same number of threads as the number of CPUs available. 
+Note that on systems with hyperthreading enabled this equals the number of logical cores and not the physical ones.
+
+### Calculating the extent and counting features
+
+The input features (`CityJSONFeature`) are passed in with the `--features` argument, and their type (`CityObject` type) can be restricted with the `--object-type` argument. See above for the details.
+
+Firstly, *tyler* calculates the complete extent of the input from the bounding box of each feature (of the specified type) that it can find in the `--features` directory tree.
+The result of this operation is reported in the logs.
+The example below shows that *tyler* found `436` features of type `Building` and `BuildingPart` in `--features`.
+The extent of the input data were calculated from these `436` features.
+The computed extent is a 3D bounding box in the CRS of the input data, and it is also reported in the logs. 
+In the example below, the coordinates are in *RD New (EPSG: 7415)*.
+
+```commandline
+[2023-07-05T08:52:06Z INFO  tyler::parser] Found 436 features of type Some([Building, BuildingPart])
+[2023-07-05T08:52:06Z INFO  tyler::parser] Ignored 0 features of type []
+[2023-07-05T08:52:06Z DEBUG tyler::parser] extent_qc: BboxQc([-86804720, -26383186, -5333, -86155251, -25703867, 52882])
+[2023-07-05T08:52:06Z DEBUG tyler::parser] Computed extent from features in real-world coordinates: [84995.28, 446316.814, -5.333, 85644.749, 446996.133, 52.882]
+```
+
+The extent calculation will be done parallel for each subdirectory of `--features`, if there are any.
+The contents of each subdirectory are processed sequentially.
+Individual files directly under `--features` are processed sequentially, after the subdirectories.
+Therefore, in order to achieve optimal performance, you should organize your features into subdirectories.
 
 ### Exporting 3D Tiles
 
@@ -223,28 +256,15 @@ For example:
 
 `tyler … --color-building-part #FF0000`
 
-### Calculating the extent and counting features
+#### Bounding volumes
 
-The input features (`CityJSONFeature`) are passed in with the `--features` argument, and their type (`CityObject` type) can be restricted with the `--object-type` argument. See above for the details.
+*tyler* represents the tile's bounding volume as a [Box](https://docs.ogc.org/cs/22-025r4/22-025r4.html#core-box).
 
-Firstly, *tyler* calculates the complete extent of the input from the bounding box of each feature (of the specified type) that it can find in the `--features` directory tree.
-The result of this operation is reported in the logs.
-The example below shows that *tyler* found `436` features of type `Building` and `BuildingPart` in `--features`.
-The extent of the input data were calculated from these `436` features.
-The computed extent is a 3D bounding box in the CRS of the input data, and it is also reported in the logs. 
-In the example below, the coordinates are in *RD New (EPSG: 7415)*.
+For explicit tilesets, it is possible to add a tightly-fitted bounding volume to the [tile's content](https://docs.ogc.org/cs/22-025r4/22-025r4.html#core-content-bounding-volume).
+You can enable this with the `--3dtiles-content-add-bv` option.
 
-```commandline
-[2023-07-05T08:52:06Z INFO  tyler::parser] Found 436 features of type Some([Building, BuildingPart])
-[2023-07-05T08:52:06Z INFO  tyler::parser] Ignored 0 features of type []
-[2023-07-05T08:52:06Z DEBUG tyler::parser] extent_qc: BboxQc([-86804720, -26383186, -5333, -86155251, -25703867, 52882])
-[2023-07-05T08:52:06Z DEBUG tyler::parser] Computed extent from features in real-world coordinates: [84995.28, 446316.814, -5.333, 85644.749, 446996.133, 52.882]
-```
-
-The extent calculation will be done parallel for each subdirectory of `--features`, if there are any.
-The contents of each subdirectory are processed sequentially.
-Individual files directly under `--features` are processed sequentially, after the subdirectories.
-Therefore, in order to achieve optimal performance, you should organize your features into subdirectories.
+If you do want a content bounding volume, but you want it to follow the tile bounding volume exactly, you can force this with the option `--3dtiles-content-bv-from-tile`.
+Usually, this happens for content that is clipped to the tile boundaries, such as terrain.
 
 ## Debugging
 
@@ -275,6 +295,9 @@ Only use this for small amount of features.
 
 In debug mode, *tyler* will write the unpruned tileset too, together with the tileset that was pruned after the glTF conversion.
 
+It is possible to only generate the tileset, without running the glTF conversion.
+This can be helpful for debugging the tileset itself.
+You can enable this with the `--3dtiles-tileset-only` option.
 
 ## Roadmap
 

@@ -2,12 +2,12 @@
 
 The goal of Tyler is to create tiles for large areas from 3D city objects that are stored as CityJSON. 
 In order to tile up large areas efficiently, it only loads the minimum required information from the 3D city objects for creating the tiles and keeps the remaining data on disk. 
-For fast, city object access, Tyler relies on CityJSONFeature-s. 
-CityJSONFeature is part of the CityJSON specification and it allows to store each feature (or city object) in a separate JSON document, or separate file. 
-In case of Tyler,  each CityJSONFeature is stored in a separate file.
+For fast access to individual city objects, Tyler relies on CityJSONFeature-s. 
+[CityJSONFeature](https://www.cityjson.org/specs/1.1.3/#text-sequences-and-streaming-with-cityjsonfeature) is part of the CityJSON specification and it allows to store each feature (or city object) in a separate JSON document, or separate file. 
+In case of Tyler, each CityJSONFeature is stored in a separate file.
 
 Tyler uses a square grid for indexing and counting the features. 
-The extent of the grid is determined by visiting each feature. 
+The extent of the grid is determined by visiting each feature, by "walking" the input directory recursively.
 In case the features contain outliers, the vertical extent of the grid can be limited (`--grid-min/maxz`). 
 The 2D cell size of the grid is an argument set by the user (`--grid-cellsize`).
 
