@@ -327,7 +327,7 @@ impl World {
     pub fn index_with_grid(&mut self) {
         let feature_dirs_files = Self::find_feature_dirs_and_files(&self.path_features_root);
         info!("Counting vertices in grid cells");
-        let features_in_cells: Vec<Vec<FeatureInGridCells>> = feature_dirs_files
+        let features_in_cells_dirs: Vec<Vec<FeatureInGridCells>> = feature_dirs_files
             .feature_dirs
             .into_par_iter()
             .map(|dir| {
@@ -346,7 +346,7 @@ impl World {
             .collect();
 
         let mut fcount: usize = 0;
-        for (fid, feature_in_cells) in features_in_cells
+        for (fid, feature_in_cells) in features_in_cells_dirs
             .iter()
             .flatten()
             .chain(features_in_cells_files.iter())
@@ -380,6 +380,57 @@ impl World {
             error!("Failed to parse the feature {:?}", &feature_path);
             None
         }
+    }
+
+    /// Counts the vertices of a CityJSONFeature in the grid.
+    /// Returns a [HashMap] of the grid [CellId] that contains vertices and the vertex count in
+    /// them.
+    fn count_vertices(&self, featurevertices: &CityJSONFeatureVertices) -> HashMap<CellId, usize> {
+        // We make a (cellid, vertex count) map and assign the feature to the cell that
+        // contains the most of the feature's vertices.
+        // But maybe a HashMap is not the most performant solution here? A Vec of tuples?
+        let mut cell_vtx_cnt: HashMap<CellId, usize> = HashMap::new();
+        for (_, co) in featurevertices.cityobjects.iter() {
+            // If the object_type argument was not passed, that means that we need all
+            // CityObject types. If it was passed, then we filter with its values.
+            // Doing this condition-tree would be much simpler if Option.is_some_and()
+            // was stable feature already.
+            let mut do_compute = self.cityobject_types.is_none();
+            if let Some(ref cotypes) = self.cityobject_types {
+                do_compute = cotypes.contains(&co.cotype);
+            }
+            if do_compute {
+                // Just counting vertices here
+                if co.geometry.len() > 0 && featurevertices.vertices.len() > 0 {
+                    for vtx_qc in featurevertices.vertices.iter() {
+                        let vtx_rw = [
+                            (vtx_qc[0] as f64 * self.transform.scale[0])
+                                + self.transform.translate[0],
+                            (vtx_qc[1] as f64 * self.transform.scale[1])
+                                + self.transform.translate[1],
+                        ];
+                        let cellid = self.grid.locate_point(&vtx_rw);
+                        *cell_vtx_cnt.entry(cellid).or_insert(1) += 1;
+                    }
+                }
+            }
+        }
+        // After counting the object vertices in the cells, we need to
+        // assign the object to the cells that intersect with its bbox,
+        // because of https://github.com/3DGI/tyler/issues/28
+        if let Some(bbox_qc) = featurevertices.bbox_of_types(self.cityobject_types.as_ref()) {
+            let bbox = bbox_qc.to_bbox(&self.transform, None, None);
+            let intersecting_cellids = self.grid.intersect_bbox(&bbox);
+            for cellid in intersecting_cellids {
+                // Just add a new entry with the intersecting cell to the map, but no not
+                // increase the vertex count, because the vertices have been counted
+                // already, these might be cells where the object does not actually have a
+                // vertex.
+                // REVIEW: actually, let's just increase the vertex count
+                *cell_vtx_cnt.entry(cellid).or_insert(1) += 1;
+            }
+        }
+        cell_vtx_cnt
     }
 
     /// Converts the [CityJSONFeatureVertices] into a [Feature] and returns the grid cells where
@@ -432,53 +483,6 @@ impl World {
         } else {
             None
         }
-    }
-
-    /// Counts the vertices of a CityJSONFeature in the grid.
-    /// Returns a [HashMap] of the grid [CellId] that contains vertices and the vertex count in
-    /// them.
-    fn count_vertices(&self, featurevertices: &CityJSONFeatureVertices) -> HashMap<CellId, usize> {
-        // We make a (cellid, vertex count) map and assign the feature to the cell that
-        // contains the most of the feature's vertices.
-        // But maybe a HashMap is not the most performant solution here? A Vec of tuples?
-        let mut cell_vtx_cnt: HashMap<CellId, usize> = HashMap::new();
-        for (_, co) in featurevertices.cityobjects.iter() {
-            // If the object_type argument was not passed, that means that we need all
-            // CityObject types. If it was passed, then we filter with its values.
-            // Doing this condition-tree would be much simpler if Option.is_some_and()
-            // was stable feature already.
-            let mut do_compute = self.cityobject_types.is_none();
-            if let Some(ref cotypes) = self.cityobject_types {
-                do_compute = cotypes.contains(&co.cotype);
-            }
-            if do_compute {
-                // Just counting vertices here
-                for vtx_qc in featurevertices.vertices.iter() {
-                    let vtx_rw = [
-                        (vtx_qc[0] as f64 * self.transform.scale[0]) + self.transform.translate[0],
-                        (vtx_qc[1] as f64 * self.transform.scale[1]) + self.transform.translate[1],
-                    ];
-                    let cellid = self.grid.locate_point(&vtx_rw);
-                    *cell_vtx_cnt.entry(cellid).or_insert(1) += 1;
-                }
-            }
-        }
-        // After counting the object vertices in the cells, we need to
-        // assign the object to the cells that intersect with its bbox,
-        // because of https://github.com/3DGI/tyler/issues/28
-        if let Some(bbox_qc) = featurevertices.bbox_of_types(self.cityobject_types.as_ref()) {
-            let bbox = bbox_qc.to_bbox(&self.transform, None, None);
-            let intersecting_cellids = self.grid.intersect_bbox(&bbox);
-            for cellid in intersecting_cellids {
-                // Just add a new entry with the intersecting cell to the map, but no not
-                // increase the vertex count, because the vertices have been counted
-                // already, these might be cells where the object does not actually have a
-                // vertex.
-                // REVIEW: actually, let's just increase the vertex count
-                *cell_vtx_cnt.entry(cellid).or_insert(1) += 1;
-            }
-        }
-        cell_vtx_cnt
     }
 
     /// Export the grid of the World into the working directory.
