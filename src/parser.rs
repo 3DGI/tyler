@@ -104,7 +104,14 @@ impl World {
             .collect();
         let mut nr_features = 0;
         let mut nr_features_ignored = 0;
-        let mut extent_qc: BboxQc = BboxQc::default();
+        let mut extent_qc = Self::extent_qc_init(&path_features_root, cityobject_types.as_ref())
+            .unwrap_or_else(|| {
+                panic!(
+                    "Did not find any CityJSONFeature of type {:?} in {}",
+                    cityobject_types,
+                    path_features_root.display()
+                )
+            });
         let mut cityobject_types_ignored: Vec<CityObjectType> = Vec::new();
         for (i, extent) in extents.iter().enumerate() {
             nr_features += extent.nr_features;
@@ -212,7 +219,10 @@ impl World {
         let mut features_enum_iter = WalkDir::new(&path_features)
             .into_iter()
             .filter_map(Self::jsonl_path);
-        // Init the extent with from the first feature of the requested types
+        // Init the extent with from the first feature of the requested types.
+        // We do not use extent_qc_init() here, because we need to collect the CityObject types
+        // and counts accurately, and we want to retain the position of the features_enum_iter
+        // for the full iteration after the first feature has been found.
         let mut extent_qc = BboxQc([0, 0, 0, 0, 0, 0]);
         let mut found_feature_type = false;
         let mut nr_features = 0;
@@ -258,6 +268,29 @@ impl World {
             cityobject_types_ignored,
             nr_features_ignored,
         })
+    }
+
+    /// Initialize a [BboxQc] from the first feature of the correct type that is found in the
+    /// `path_features`.
+    fn extent_qc_init<P: AsRef<Path> + std::fmt::Debug>(
+        path_features: P,
+        cityobject_types: Option<&Vec<CityObjectType>>,
+    ) -> Option<BboxQc> {
+        let features_enum_iter = WalkDir::new(&path_features)
+            .into_iter()
+            .filter_map(Self::jsonl_path);
+        // Iterate only until the first feature is found
+        for feature_path in features_enum_iter {
+            if let Ok(cf) = CityJSONFeatureVertices::from_file(&feature_path) {
+                let extent_qc_op = cf.bbox_of_types(cityobject_types);
+                if extent_qc_op.is_some() {
+                    return extent_qc_op;
+                }
+            } else {
+                warn!("Failed to parse {:?}", &feature_path)
+            }
+        }
+        None
     }
 
     fn extent_qc_file(
