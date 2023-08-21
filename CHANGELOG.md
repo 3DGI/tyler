@@ -1,6 +1,6 @@
 # Changelog
 
-## tyler 0.3.7 (unreleased)
+## tyler 0.3.7 (2023-08-21)
 
 ### Fixed
 - Geometric error calculation for the parents of the deepest leaves, where the leaf has an edge length of the grid cellsize.
@@ -13,6 +13,7 @@
 - Write quadtree content bounding box to .tsv with `--grid-export`.
 - Log all arguments in debug.
 - Split an explicit tileset to external tilesets if the tree is deep.
+- GitHub Action for publishing to DockerHub to `3dgi/tyler` ([#40](https://github.com/3DGI/tyler/pull/40))
 
 ### Changed
 - Debug data, incl. `--grid-export`, is written to the `debug` directory within the `--output` directory.
@@ -45,7 +46,6 @@
 ### Added
 - Option to only generate and write the 3D Tiles tileset, without running the glTF export. Enable with `--3dtiles-tileset-only`.
 - Timeout `--timeout` in seconds for the converter subprocesses. If speficied, tyler will kill the subprocess after the provided seconds, otherwise it will wait for the process to finish.
-- GitHub Action for publishing to DockerHub to `3dgi/tyler` (#40)
 
 ### Fixed
 - geoflow version reporting
