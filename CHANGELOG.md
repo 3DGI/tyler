@@ -1,5 +1,10 @@
 # Changelog
 
+## unreleased
+
+### Changed
+- Remove debug info from release build
+
 ## tyler 0.3.7 (2023-08-21)
 
 ### Fixed
