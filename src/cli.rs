@@ -63,7 +63,7 @@ pub struct Cli {
     pub cesium3dtiles_content_add_bv: bool,
     /// Set the geometric error (see 3D Tiles specification) on the parent nodes of leafs. This controls at what
     /// camera distance leaf nodes become visible. Higher values make content visible earlier when zooming in.
-    #[arg(long, short = 'e', default_value = "6")]
+    #[arg(long, short = 'e', default_value = "12")]
     pub geometric_error_above_leaf: Option<f64>,
     /// Set the 2D cell size for the grid that is used for constructing the quadtree.
     /// In input units (eg. meters). Note that the cell size will be adjusted so that it is
