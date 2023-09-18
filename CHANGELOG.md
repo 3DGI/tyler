@@ -5,6 +5,7 @@
 ### Changed
 - Remove debug info from release build
 - Geometric error above the leafs defaults to 12
+- Update geoflow-bundle docker image
 
 ## tyler 0.3.7 (2023-08-21)
 
