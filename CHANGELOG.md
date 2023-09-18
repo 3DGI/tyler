@@ -1,6 +1,6 @@
 # Changelog
 
-## unreleased
+## tyler 0.3.8 (2023-09-18)
 
 ### Changed
 - Remove debug info from release build
