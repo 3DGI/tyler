@@ -31,6 +31,10 @@
           [
             "CityJSONL2Mesh-LoD22",
             "jsonl_features_str"
+          ],
+          [
+            "CityJSONL2Mesh-attr",
+            "jsonl_features_str"
           ]
         ]
       },
@@ -64,6 +68,10 @@
           ],
           [
             "CityJSONL2Mesh-LoD22",
+            "jsonl_metadata_str"
+          ],
+          [
+            "CityJSONL2Mesh-attr",
             "jsonl_metadata_str"
           ]
         ]
@@ -220,6 +228,39 @@
       "position": [
         456.0,
         475.0
+      ],
+      "type": [
+        "CoreIO",
+        "CityJSONL2Mesh"
+      ]
+    },
+    "CityJSONL2Mesh-attr": {
+      "marked_inputs": {
+        "jsonl_features_str": false,
+        "jsonl_metadata_str": false
+      },
+      "marked_outputs": {
+        "attributes": true,
+        "feature_type": false,
+        "lod0_2d": false,
+        "meshes": false,
+        "meshes_attributes": false,
+        "roofparts": false,
+        "roofparts_lr": false,
+        "roofparts_lr_attributes": false
+      },
+      "parameters": {
+        "3bag_buildings_mode": true,
+        "atribute_spec": "",
+        "bag3d_attr_per_part": false,
+        "cotypes": "",
+        "lod_filter": {},
+        "optimal_lod": false,
+        "optimal_lod_value": "2.2"
+      },
+      "position": [
+        439.0,
+        -32.0
       ],
       "type": [
         "CoreIO",

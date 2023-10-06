@@ -328,6 +328,11 @@
           "processFeatures.b3_nodata_fractie_ahn4": "b3_nodata_fractie_ahn4",
           "processFeatures.b3_nodata_radius_ahn3": "b3_nodata_radius_ahn3",
           "processFeatures.b3_nodata_radius_ahn4": "b3_nodata_radius_ahn4",
+          "processFeatures.b3_opp_afscheidingsmuur": "b3_opp_scheidingsmuur",
+          "processFeatures.b3_opp_buitenmuur": "b3_opp_buitenmuur",
+          "processFeatures.b3_opp_dak_plat": "b3_opp_dak_plat",
+          "processFeatures.b3_opp_dak_schuin": "b3_opp_dak_schuin",
+          "processFeatures.b3_opp_grond": "b3_opp_grond",
           "processFeatures.b3_puntdichtheid_ahn3": "b3_puntdichtheid_ahn3",
           "processFeatures.b3_puntdichtheid_ahn4": "b3_puntdichtheid_ahn4",
           "processFeatures.b3_pw_bron": "b3_pw_bron",
@@ -343,11 +348,6 @@
           "processFeatures.b3_volume_lod12": "b3_volume_lod12",
           "processFeatures.b3_volume_lod13": "b3_volume_lod13",
           "processFeatures.b3_volume_lod22": "b3_volume_lod22",
-          "processFeatures.b3_opp_dak_plat": "b3_opp_dak_plat",
-          "processFeatures.b3_opp_grond": "b3_opp_grond",
-          "processFeatures.b3_opp_dak_schuin": "b3_opp_dak_schuin",
-          "processFeatures.b3_opp_afscheidingsmuur": "b3_opp_scheidingsmuur",
-          "processFeatures.b3_opp_buitenmuur": "b3_opp_buitenmuur",
           "processFeatures.begingeldigheid": "begingeldigheid",
           "processFeatures.documentdatum": "documentdatum",
           "processFeatures.documentnummer": "documentnummer",
@@ -432,6 +432,11 @@
           "processFeatures.b3_nodata_fractie_ahn4": "b3_nodata_fractie_ahn4",
           "processFeatures.b3_nodata_radius_ahn3": "b3_nodata_radius_ahn3",
           "processFeatures.b3_nodata_radius_ahn4": "b3_nodata_radius_ahn4",
+          "processFeatures.b3_opp_afscheidingsmuur": "b3_opp_scheidingsmuur",
+          "processFeatures.b3_opp_buitenmuur": "b3_opp_buitenmuur",
+          "processFeatures.b3_opp_dak_plat": "b3_opp_dak_plat",
+          "processFeatures.b3_opp_dak_schuin": "b3_opp_dak_schuin",
+          "processFeatures.b3_opp_grond": "b3_opp_grond",
           "processFeatures.b3_puntdichtheid_ahn3": "b3_puntdichtheid_ahn3",
           "processFeatures.b3_puntdichtheid_ahn4": "b3_puntdichtheid_ahn4",
           "processFeatures.b3_pw_bron": "b3_pw_bron",
@@ -447,11 +452,6 @@
           "processFeatures.b3_volume_lod12": "b3_volume_lod12",
           "processFeatures.b3_volume_lod13": "b3_volume_lod13",
           "processFeatures.b3_volume_lod22": "b3_volume_lod22",
-          "processFeatures.b3_opp_dak_plat": "b3_opp_dak_plat",
-          "processFeatures.b3_opp_grond": "b3_opp_grond",
-          "processFeatures.b3_opp_dak_schuin": "b3_opp_dak_schuin",
-          "processFeatures.b3_opp_afscheidingsmuur": "b3_opp_scheidingsmuur",
-          "processFeatures.b3_opp_buitenmuur": "b3_opp_buitenmuur",
           "processFeatures.begingeldigheid": "begingeldigheid",
           "processFeatures.documentdatum": "documentdatum",
           "processFeatures.documentnummer": "documentnummer",
@@ -536,6 +536,11 @@
           "processFeatures.b3_nodata_fractie_ahn4": "b3_nodata_fractie_ahn4",
           "processFeatures.b3_nodata_radius_ahn3": "b3_nodata_radius_ahn3",
           "processFeatures.b3_nodata_radius_ahn4": "b3_nodata_radius_ahn4",
+          "processFeatures.b3_opp_afscheidingsmuur": "b3_opp_scheidingsmuur",
+          "processFeatures.b3_opp_buitenmuur": "b3_opp_buitenmuur",
+          "processFeatures.b3_opp_dak_plat": "b3_opp_dak_plat",
+          "processFeatures.b3_opp_dak_schuin": "b3_opp_dak_schuin",
+          "processFeatures.b3_opp_grond": "b3_opp_grond",
           "processFeatures.b3_puntdichtheid_ahn3": "b3_puntdichtheid_ahn3",
           "processFeatures.b3_puntdichtheid_ahn4": "b3_puntdichtheid_ahn4",
           "processFeatures.b3_pw_bron": "b3_pw_bron",
@@ -551,11 +556,6 @@
           "processFeatures.b3_volume_lod12": "b3_volume_lod12",
           "processFeatures.b3_volume_lod13": "b3_volume_lod13",
           "processFeatures.b3_volume_lod22": "b3_volume_lod22",
-          "processFeatures.b3_opp_dak_plat": "b3_opp_dak_plat",
-          "processFeatures.b3_opp_grond": "b3_opp_grond",
-          "processFeatures.b3_opp_dak_schuin": "b3_opp_dak_schuin",
-          "processFeatures.b3_opp_afscheidingsmuur": "b3_opp_scheidingsmuur",
-          "processFeatures.b3_opp_buitenmuur": "b3_opp_buitenmuur",
           "processFeatures.begingeldigheid": "begingeldigheid",
           "processFeatures.documentdatum": "documentdatum",
           "processFeatures.documentnummer": "documentnummer",
@@ -601,6 +601,7 @@
         "layername": "pand",
         "only_output_mapped_attrs": true,
         "output_attribute_names": {
+          "processFeatures.b3_bag_bag_overlap": "b3_bag_bag_overlap",
           "processFeatures.b3_dak_type": "b3_dak_type",
           "processFeatures.b3_h_maaiveld": "b3_h_maaiveld",
           "processFeatures.b3_kas_warenhuis": "b3_kas_warenhuis",
@@ -609,6 +610,11 @@
           "processFeatures.b3_nodata_fractie_ahn4": "b3_nodata_fractie_ahn4",
           "processFeatures.b3_nodata_radius_ahn3": "b3_nodata_radius_ahn3",
           "processFeatures.b3_nodata_radius_ahn4": "b3_nodata_radius_ahn4",
+          "processFeatures.b3_opp_afscheidingsmuur": "b3_opp_scheidingsmuur",
+          "processFeatures.b3_opp_buitenmuur": "b3_opp_buitenmuur",
+          "processFeatures.b3_opp_dak_plat": "b3_opp_dak_plat",
+          "processFeatures.b3_opp_dak_schuin": "b3_opp_dak_schuin",
+          "processFeatures.b3_opp_grond": "b3_opp_grond",
           "processFeatures.b3_puntdichtheid_ahn3": "b3_puntdichtheid_ahn3",
           "processFeatures.b3_puntdichtheid_ahn4": "b3_puntdichtheid_ahn4",
           "processFeatures.b3_pw_bron": "b3_pw_bron",
@@ -624,12 +630,6 @@
           "processFeatures.b3_volume_lod12": "b3_volume_lod12",
           "processFeatures.b3_volume_lod13": "b3_volume_lod13",
           "processFeatures.b3_volume_lod22": "b3_volume_lod22",
-          "processFeatures.b3_bag_bag_overlap": "b3_bag_bag_overlap",
-          "processFeatures.b3_opp_dak_plat": "b3_opp_dak_plat",
-          "processFeatures.b3_opp_grond": "b3_opp_grond",
-          "processFeatures.b3_opp_dak_schuin": "b3_opp_dak_schuin",
-          "processFeatures.b3_opp_afscheidingsmuur": "b3_opp_scheidingsmuur",
-          "processFeatures.b3_opp_buitenmuur": "b3_opp_buitenmuur",
           "processFeatures.begingeldigheid": "begingeldigheid",
           "processFeatures.documentdatum": "documentdatum",
           "processFeatures.documentnummer": "documentnummer",
@@ -677,7 +677,7 @@
         ],
         "CityJSONL2Mesh-LoD12.attributes": [
           [
-            "OGRWriter-pand",
+            "OGRWriter-3D-LoD12-tri",
             "attributes"
           ]
         ],
@@ -712,6 +712,12 @@
         "CityJSONL2Mesh-LoD12.roofparts_lr_attributes": [
           [
             "OGRWriter-2D-LoD12",
+            "attributes"
+          ]
+        ],
+        "CityJSONL2Mesh-LoD13.attributes": [
+          [
+            "OGRWriter-3D-LoD13-tri",
             "attributes"
           ]
         ],
@@ -782,6 +788,12 @@
         "CityJSONL2Mesh-LoD22.roofparts_lr_attributes": [
           [
             "OGRWriter-2D-LoD22",
+            "attributes"
+          ]
+        ],
+        "CityJSONL2Mesh-attr.attributes": [
+          [
+            "OGRWriter-pand",
             "attributes"
           ]
         ],
@@ -860,6 +872,7 @@
         "CityJSONL2Mesh-LoD22.roofparts": false,
         "CityJSONL2Mesh-LoD22.roofparts_lr": false,
         "CityJSONL2Mesh-LoD22.roofparts_lr_attributes": false,
+        "CityJSONL2Mesh-attr.attributes": false,
         "PolygonTriangulator-LoD12.multi_triangle_collections": false,
         "PolygonTriangulator-LoD12.volumes": false,
         "PolygonTriangulator-LoD13.multi_triangle_collections": false,
