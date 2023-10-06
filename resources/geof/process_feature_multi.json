@@ -117,7 +117,7 @@
       "parameters": {
         "3bag_buildings_mode": true,
         "atribute_spec": "",
-        "bag3d_attr_per_part": false,
+        "bag3d_attr_per_part": true,
         "cotypes": "",
         "lod_filter": {},
         "optimal_lod": false,
@@ -268,8 +268,8 @@
         "output_mtc_for_every_input": true
       },
       "position": [
-        1107.0,
-        295.0
+        1110.0,
+        265.0
       ],
       "type": [
         "building-reconstruction",
@@ -293,8 +293,8 @@
         "output_mtc_for_every_input": true
       },
       "position": [
-        1124.0,
-        411.0
+        1112.0,
+        381.0
       ],
       "type": [
         "building-reconstruction",
