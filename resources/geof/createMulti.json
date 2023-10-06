@@ -751,14 +751,6 @@
         ],
         "CityJSONL2Mesh-LoD22.attributes": [
           [
-            "OGRWriter-3D-LoD13-tri",
-            "attributes"
-          ],
-          [
-            "OGRWriter-3D-LoD12-tri",
-            "attributes"
-          ],
-          [
             "OGRWriter-3D-LoD22-tri",
             "attributes"
           ]
