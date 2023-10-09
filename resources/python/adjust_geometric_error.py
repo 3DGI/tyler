@@ -34,9 +34,10 @@ def adjust_node(node, factor, external_tilesets):
         for child in node["children"]:
             adjust_node(child, factor, external_tilesets)
 
-def adjust_tileset(tileset_json, factor, overwrite):
+def adjust_tileset(tileset_basedir, tileset_filename, factor, overwrite):
+    tileset_filepath = tileset_basedir / tileset_filename
     external_tilesets = []
-    with open(tileset_json, "r") as in_file:
+    with open(tileset_filepath, "r") as in_file:
         tileset = json.load(in_file)
     
         # find and modify geometric error values
@@ -44,18 +45,21 @@ def adjust_tileset(tileset_json, factor, overwrite):
         adjust_node(tileset["root"], factor, external_tilesets)
 
         # save json
-        if (tileset_json).exists() and not overwrite:
-            overwrite = input(f'Tileset file \'{tileset_json}\' already exists. Overwrite and loose original contents? Y = yes, N = no\n')
+        if (tileset_filepath).exists() and not overwrite:
+            overwrite = input(f'Tileset file \'{tileset_filepath}\' already exists. Overwrite and loose original contents? This also affects any external tilesets Y = yes, N = no\n')
             if not overwrite.lower() == 'y': exit()
 
-        with open(tileset_json, "w") as file:
+        with open(tileset_filepath, "w") as file:
             json.dump(tileset, file)
 
     # adjust external tilesets if any
-    for ext_tileset_json in external_tilesets:
-        adjust_tileset(Path(ext_tileset_json), factor, overwrite)
+    for ext_tileset_relative_path in external_tilesets:
+        adjust_tileset(tileset_basedir, Path(ext_tileset_relative_path), factor, overwrite)
 
 if __name__ == "__main__":
     args = parser.parse_args()
 
-    adjust_tileset(Path(args.input_tileset), args.factor, args.overwrite)
+    tileset_path = Path(args.input_tileset)
+    tileset_filename = tileset_path.name
+    tileset_basedir = tileset_path.parent
+    adjust_tileset(tileset_basedir, tileset_filename, args.factor, args.overwrite)
