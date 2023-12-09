@@ -231,22 +231,25 @@ impl World {
         // Iterate only until the first feature is found
         #[allow(clippy::while_let_on_iterator)]
         while let Some(feature_path) = features_enum_iter.next() {
-            if let Ok(cf) = CityJSONFeatureVertices::from_file(&feature_path) {
-                if let Some(eqc) = cf.bbox_of_types(cityobject_types) {
-                    extent_qc = eqc;
-                    found_feature_type = true;
-                    nr_features += 1;
-                    break;
-                } else {
-                    for (_, co) in cf.cityobjects.iter() {
-                        if !cityobject_types_ignored.contains(&co.cotype) {
-                            cityobject_types_ignored.push(co.cotype);
+            match CityJSONFeatureVertices::from_file(&feature_path) {
+                Ok(cf) => {
+                    if let Some(eqc) = cf.bbox_of_types(cityobject_types) {
+                        extent_qc = eqc;
+                        found_feature_type = true;
+                        nr_features += 1;
+                        break;
+                    } else {
+                        for (_, co) in cf.cityobjects.iter() {
+                            if !cityobject_types_ignored.contains(&co.cotype) {
+                                cityobject_types_ignored.push(co.cotype);
+                            }
+                            nr_features_ignored += 1;
                         }
-                        nr_features_ignored += 1;
                     }
                 }
-            } else {
-                warn!("Failed to parse {:?}", &feature_path)
+                Err(e) => {
+                    warn!("Failed to parse {:?} with {:?}", &feature_path, e)
+                }
             }
         }
         if !found_feature_type {
@@ -281,13 +284,16 @@ impl World {
             .filter_map(Self::jsonl_path);
         // Iterate only until the first feature is found
         for feature_path in features_enum_iter {
-            if let Ok(cf) = CityJSONFeatureVertices::from_file(&feature_path) {
-                let extent_qc_op = cf.bbox_of_types(cityobject_types);
-                if extent_qc_op.is_some() {
-                    return extent_qc_op;
+            match CityJSONFeatureVertices::from_file(&feature_path) {
+                Ok(cf) => {
+                    let extent_qc_op = cf.bbox_of_types(cityobject_types);
+                    if extent_qc_op.is_some() {
+                        return extent_qc_op;
+                    }
                 }
-            } else {
-                warn!("Failed to parse {:?}", &feature_path)
+                Err(e) => {
+                    warn!("Failed to parse {:?} with {:?}", &feature_path, e)
+                }
             }
         }
         None
@@ -424,26 +430,28 @@ impl World {
         // But maybe a HashMap is not the most performant solution here? A Vec of tuples?
         let mut cell_vtx_cnt: HashMap<CellId, usize> = HashMap::new();
         for (_, co) in featurevertices.cityobjects.iter() {
-            // If the object_type argument was not passed, that means that we need all
-            // CityObject types. If it was passed, then we filter with its values.
-            // Doing this condition-tree would be much simpler if Option.is_some_and()
-            // was stable feature already.
-            let mut do_compute = self.cityobject_types.is_none();
-            if let Some(ref cotypes) = self.cityobject_types {
-                do_compute = cotypes.contains(&co.cotype);
-            }
-            if do_compute {
-                // Just counting vertices here
-                if co.geometry.len() > 0 && featurevertices.vertices.len() > 0 {
-                    for vtx_qc in featurevertices.vertices.iter() {
-                        let vtx_rw = [
-                            (vtx_qc[0] as f64 * self.transform.scale[0])
-                                + self.transform.translate[0],
-                            (vtx_qc[1] as f64 * self.transform.scale[1])
-                                + self.transform.translate[1],
-                        ];
-                        let cellid = self.grid.locate_point(&vtx_rw);
-                        *cell_vtx_cnt.entry(cellid).or_insert(1) += 1;
+            if let Some(ref geom) = co.geometry {
+                // If the object_type argument was not passed, that means that we need all
+                // CityObject types. If it was passed, then we filter with its values.
+                // Doing this condition-tree would be much simpler if Option.is_some_and()
+                // was stable feature already.
+                let mut do_compute = self.cityobject_types.is_none();
+                if let Some(ref cotypes) = self.cityobject_types {
+                    do_compute = cotypes.contains(&co.cotype);
+                }
+                if do_compute {
+                    // Just counting vertices here
+                    if geom.len() > 0 && featurevertices.vertices.len() > 0 {
+                        for vtx_qc in featurevertices.vertices.iter() {
+                            let vtx_rw = [
+                                (vtx_qc[0] as f64 * self.transform.scale[0])
+                                    + self.transform.translate[0],
+                                (vtx_qc[1] as f64 * self.transform.scale[1])
+                                    + self.transform.translate[1],
+                            ];
+                            let cellid = self.grid.locate_point(&vtx_rw);
+                            *cell_vtx_cnt.entry(cellid).or_insert(1) += 1;
+                        }
                     }
                 }
             }
@@ -719,36 +727,11 @@ impl CityJSONFeatureVertices {
                 do_compute = cotypes.contains(&co.cotype);
             }
             if do_compute {
-                for geom in co.geometry.iter() {
-                    match geom {
-                        Geometry::MultiSurface { boundaries, .. } => {
-                            for srf in boundaries {
-                                for ring in srf {
-                                    for vtx in ring {
-                                        let [x, y, z] = &self.vertices[*vtx];
-                                        if *x < x_min {
-                                            x_min = *x
-                                        } else if *x > x_max {
-                                            x_max = *x
-                                        }
-                                        if *y < y_min {
-                                            y_min = *y
-                                        } else if *y > y_max {
-                                            y_max = *y
-                                        }
-                                        if *z < z_min {
-                                            z_min = *z
-                                        } else if *z > z_max {
-                                            z_max = *z
-                                        }
-                                    }
-                                }
-                            }
-                            found_co_geometry = true;
-                        }
-                        Geometry::Solid { boundaries, .. } => {
-                            for shell in boundaries {
-                                for srf in shell {
+                if let Some(ref geom) = co.geometry {
+                    for g in geom.iter() {
+                        match g {
+                            Geometry::MultiSurface { boundaries, .. } => {
+                                for srf in boundaries {
                                     for ring in srf {
                                         for vtx in ring {
                                             let [x, y, z] = &self.vertices[*vtx];
@@ -770,8 +753,35 @@ impl CityJSONFeatureVertices {
                                         }
                                     }
                                 }
+                                found_co_geometry = true;
                             }
-                            found_co_geometry = true;
+                            Geometry::Solid { boundaries, .. } => {
+                                for shell in boundaries {
+                                    for srf in shell {
+                                        for ring in srf {
+                                            for vtx in ring {
+                                                let [x, y, z] = &self.vertices[*vtx];
+                                                if *x < x_min {
+                                                    x_min = *x
+                                                } else if *x > x_max {
+                                                    x_max = *x
+                                                }
+                                                if *y < y_min {
+                                                    y_min = *y
+                                                } else if *y > y_max {
+                                                    y_max = *y
+                                                }
+                                                if *z < z_min {
+                                                    z_min = *z
+                                                } else if *z > z_max {
+                                                    z_max = *z
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                found_co_geometry = true;
+                            }
                         }
                     }
                 }
@@ -914,7 +924,7 @@ enum Geometry {
 pub struct CityObject {
     #[serde(rename = "type")]
     pub cotype: CityObjectType,
-    geometry: Vec<Geometry>,
+    geometry: Option<Vec<Geometry>>,
 }
 
 #[cfg(test)]
