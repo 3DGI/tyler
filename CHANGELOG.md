@@ -1,6 +1,6 @@
 # Changelog
 
-## tyler 0.3.8 (2023-12-09)
+## tyler 0.3.9 (2023-12-09)
 
 ### Fixed
 - Parsing CityObjects without a `geometry` member
