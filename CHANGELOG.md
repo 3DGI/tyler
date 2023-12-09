@@ -1,5 +1,11 @@
 # Changelog
 
+## tyler 0.3.8 (2023-12-09)
+
+### Fixed
+- Parsing CityObjects without a `geometry` member
+- Median vertex count from a single CityObject
+
 ## tyler 0.3.8 (2023-09-18)
 
 ### Changed

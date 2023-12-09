@@ -697,8 +697,12 @@ impl SquareGrid {
         let mean = sum as f64 / nr_cells_not_empty as f64;
         // naive median
         let median = if nr_vertices_not_empty.len() % 2 != 0 {
-            let c = (nr_vertices_not_empty.len() / 2) + 1;
-            nr_vertices_not_empty[c] as f64
+            if nr_vertices_not_empty.len() > 1 {
+                let c = (nr_vertices_not_empty.len() / 2) + 1;
+                nr_vertices_not_empty[c] as f64
+            } else {
+                nr_vertices_not_empty[0] as f64
+            }
         } else {
             let c = nr_vertices_not_empty.len() / 2;
             (nr_vertices_not_empty[c] as f64 + nr_vertices_not_empty[c + 1] as f64) / 2.0
