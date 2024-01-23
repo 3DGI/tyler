@@ -103,9 +103,12 @@ pub struct Cli {
     /// Path to the geoflow executable for clipping and exporting the gltf files.
     #[arg(long, value_parser = existing_path)]
     pub exe_geof: Option<PathBuf>,
-    /// Use mesh simplification to reduce the number of vertices per object by this fraction. Value should be a float between 0.0 (100% reduction) and 1.0 (do not use simplification). Ignored for building object types.
-    #[arg(long, default_value = "0.05")]
-    pub reduce_vertices: Option<f64>,
+    /// Maximum error that is allowed in mesh simplification to reduce the number of vertices. Value should be a float that represents that maximum allowed error in meters. Ignored for building object types.
+    #[arg(long, default_value = "0.5")]
+    pub simplification_max_error: Option<f64>,
+    /// Compute smooth vertex normals.
+    #[arg(long)]
+    pub smooth_normals: bool,
     /// Wait for the tile conversion process to finish, or terminate it if it is not finished after the provided number of seconds.
     #[arg(long)]
     pub timeout: Option<u64>,

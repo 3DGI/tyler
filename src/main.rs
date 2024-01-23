@@ -774,14 +774,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if cotypes.contains(&parser::CityObjectType::Building)
                         || cotypes.contains(&parser::CityObjectType::BuildingPart)
                     {
-                        cmd = cmd.arg("--simplify_ratio=1.0").arg("--skip_clip=true");
-                    } else if cli.reduce_vertices.is_some() {
+                        cmd = cmd.arg("--simplify_error=0.0").arg("--skip_clip=true");
+                    } else if cli.simplification_max_error.is_some() {
                         cmd = cmd.arg(format!(
-                            "--simplify_ratio={}",
-                            cli.reduce_vertices.as_ref().unwrap()
+                            "--simplify_error={}",
+                            cli.simplification_max_error.as_ref().unwrap()
                         ));
                     }
                 }
+
+                cmd = cmd.arg(format!("--smooth_normals={}", cli.smooth_normals));
             }
 
             if let Some(pd) = &proj_data {

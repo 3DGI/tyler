@@ -45,6 +45,11 @@
       "str",
       "/mnt/Data/LocalData/Kadaster/db3dnl_features/metadata.city.json"
     ],
+    "simplify_error": [
+      "",
+      "float",
+      0.699999988079071
+    ],
     "simplify_ratio": [
       "",
       "float",
@@ -54,6 +59,11 @@
       "",
       "bool",
       false
+    ],
+    "smooth_normals": [
+      "",
+      "bool",
+      true
     ]
   },
   "nodes": {
@@ -80,8 +90,8 @@
         "min_z": "{{min_z}}"
       },
       "position": [
-        636.0,
-        258.0
+        630.0,
+        340.0
       ],
       "type": [
         "Core",
@@ -156,41 +166,46 @@
       "marked_outputs": {
         "attributes": true,
         "feature_type": true,
+        "lod0_2d": false,
         "meshes": false,
-        "roofparts": false
+        "meshes_attributes": false,
+        "roofparts": false,
+        "roofparts_lr": false,
+        "roofparts_lr_attributes": false
       },
       "parameters": {
         "3bag_buildings_mode": false,
         "atribute_spec": "{{attribute_spec}}",
+        "bag3d_attr_per_part": true,
         "cotypes": "{{cotypes}}",
         "lod_filter": {
-          "Building": "{{lodBuilding}}",
-          "BuildingPart": "{{lodBuildingPart}}",
-          "BuildingInstallation": "{{lodBuildingInstallation}}",
-          "TINRelief": "{{lodTINRelief}}",
-          "Road": "{{lodRoad}}",
-          "Railway": "{{lodRailway}}",
-          "TransportSquare": "{{lodTransportSquare}}",
-          "WaterBody": "{{lodWaterBody}}",
-          "PlantCover": "{{lodPlantCover}}",
-          "SolitaryVegetationObject": "{{lodSolitaryVegetationObject}}",
-          "LandUse": "{{lodLandUse}}",
-          "CityFurniture": "{{lodCityFurniture}}",
           "Bridge": "{{lodBridge}}",
-          "BridgePart": "{{lodBridgePart}}",
-          "BridgeInstallation": "{{lodBridgeInstallation}}",
           "BridgeConstructionElement": "{{lodBridgeConstructionElement}}",
+          "BridgeInstallation": "{{lodBridgeInstallation}}",
+          "BridgePart": "{{lodBridgePart}}",
+          "Building": "{{lodBuilding}}",
+          "BuildingInstallation": "{{lodBuildingInstallation}}",
+          "BuildingPart": "{{lodBuildingPart}}",
+          "CityFurniture": "{{lodCityFurniture}}",
+          "GenericCityObject": "{{lodGenericCityObject}}",
+          "LandUse": "{{lodLandUse}}",
+          "PlantCover": "{{lodPlantCover}}",
+          "Railway": "{{lodRailway}}",
+          "Road": "{{lodRoad}}",
+          "SolitaryVegetationObject": "{{lodSolitaryVegetationObject}}",
+          "TINRelief": "{{lodTINRelief}}",
+          "TransportSquare": "{{lodTransportSquare}}",
           "Tunnel": "{{lodTunnel}}",
-          "TunnelPart": "{{lodTunnelPart}}",
           "TunnelInstallation": "{{lodTunnelInstallation}}",
-          "GenericCityObject": "{{lodGenericCityObject}}"
+          "TunnelPart": "{{lodTunnelPart}}",
+          "WaterBody": "{{lodWaterBody}}"
         },
         "optimal_lod": false,
         "optimal_lod_value": "2.2"
       },
       "position": [
-        458.0,
-        153.0
+        426.0,
+        164.0
       ],
       "type": [
         "CoreIO",
@@ -201,7 +216,7 @@
       "connections": {
         "cgal_surface_mesh": [
           [
-            "MeshSimplify",
+            "MeshSimplify2D",
             "cgal_surface_mesh"
           ]
         ]
@@ -233,18 +248,19 @@
       },
       "parameters": {
         "cgal_clip": false,
-        "skip_clip": "{{skip_clip}}"
+        "skip_clip": "{{skip_clip}}",
+        "smooth_normals": "{{smooth_normals}}"
       },
       "position": [
-        896.0,
-        231.0
+        892.0,
+        279.0
       ],
       "type": [
         "building-reconstruction",
         "MeshClipper"
       ]
     },
-    "MeshSimplify": {
+    "MeshSimplify2D": {
       "connections": {
         "cgal_surface_mesh": [
           [
@@ -260,16 +276,15 @@
         "cgal_surface_mesh": false
       },
       "parameters": {
-        "border_correction": true,
-        "stop_ratio": "{{simplify_ratio}}"
+        "error": "{{simplify_error}}"
       },
       "position": [
-        870.0,
-        185.0
+        867.0,
+        207.0
       ],
       "type": [
         "building-reconstruction",
-        "MeshSimplify"
+        "MeshSimplify2D"
       ]
     }
   }

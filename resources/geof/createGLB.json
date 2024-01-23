@@ -8,12 +8,12 @@
     "GF_PROCESS_OFFSET_X": [
       "offset in X coordinate",
       "float",
-      76190.0
+      210478.234375
     ],
     "GF_PROCESS_OFFSET_Y": [
       "offset in Y coordinate",
       "float",
-      453857.75
+      468316.65625
     ],
     "GF_PROCESS_OFFSET_Z": [
       "offset in Z coordinate",
@@ -23,7 +23,7 @@
     "attribute_spec": [
       "Attribute names and types to output. Format: <attribute_name>:<attribute_type>,... eg: name1:string,name2:int,name3:float,name",
       "str",
-      "objectid:int,bronhouder:string,bgt_fysiekvoorkomen:string"
+      "objectid:int,bronhouder:string,bgt_fysiekvoorkomen:string,bgt_type:string"
     ],
     "colorBridge": [
       "colorBridge hex color (eg #AABBCC)",
@@ -128,80 +128,10 @@
     "cotypes": [
       "comma separated list of cityobject types. Leave empty for no filter.",
       "str",
-      "LandUse,PlantCover,WaterBody,Road,GenericCityObject,Bridge"
-    ],
-    "lodBuilding": [
-      "lod filter for Building features",
-      "str",
-      ""
-    ],
-    "lodBuildingPart": [
-      "lod filter for BuildingPart features",
-      "str",
-      ""
-    ],
-    "lodBuildingInstallation": [
-      "lod filter for BuildingInstallation features",
-      "str",
-      ""
-    ],
-    "lodTINRelief": [
-      "lod filter for TINRelief features",
-      "str",
-      ""
-    ],
-    "lodRoad": [
-      "lod filter for Road features",
-      "str",
-      ""
-    ],
-    "lodRailway": [
-      "lod filter for Railway features",
-      "str",
-      ""
-    ],
-    "lodTransportSquare": [
-      "lod filter for TransportSquare features",
-      "str",
-      ""
-    ],
-    "lodWaterBody": [
-      "lod filter for WaterBody features",
-      "str",
-      ""
-    ],
-    "lodPlantCover": [
-      "lod filter for PlantCover features",
-      "str",
-      ""
-    ],
-    "lodSolitaryVegetationObject": [
-      "lod filter for SolitaryVegetationObject features",
-      "str",
-      ""
-    ],
-    "lodLandUse": [
-      "lod filter for LandUse features",
-      "str",
-      ""
-    ],
-    "lodCityFurniture": [
-      "lod filter for CityFurniture features",
-      "str",
-      ""
+      "LandUse,Road,WaterBody,PlantCover,Bridge,OtherConstruction"
     ],
     "lodBridge": [
       "lod filter for Bridge features",
-      "str",
-      ""
-    ],
-    "lodBridgePart": [
-      "lod filter for BridgePart features",
-      "str",
-      ""
-    ],
-    "lodBridgeInstallation": [
-      "lod filter for BridgeInstallation features",
       "str",
       ""
     ],
@@ -210,18 +140,33 @@
       "str",
       ""
     ],
-    "lodTunnel": [
-      "lod filter for Tunnel features",
+    "lodBridgeInstallation": [
+      "lod filter for BridgeInstallation features",
       "str",
       ""
     ],
-    "lodTunnelPart": [
-      "lod filter for TunnelPart features",
+    "lodBridgePart": [
+      "lod filter for BridgePart features",
       "str",
       ""
     ],
-    "lodTunnelInstallation": [
-      "lod filter for TunnelInstallation features",
+    "lodBuilding": [
+      "lod filter for Building features",
+      "str",
+      ""
+    ],
+    "lodBuildingInstallation": [
+      "lod filter for BuildingInstallation features",
+      "str",
+      ""
+    ],
+    "lodBuildingPart": [
+      "lod filter for BuildingPart features",
+      "str",
+      ""
+    ],
+    "lodCityFurniture": [
+      "lod filter for CityFurniture features",
       "str",
       ""
     ],
@@ -230,20 +175,75 @@
       "str",
       ""
     ],
+    "lodLandUse": [
+      "lod filter for LandUse features",
+      "str",
+      ""
+    ],
+    "lodPlantCover": [
+      "lod filter for PlantCover features",
+      "str",
+      ""
+    ],
+    "lodRailway": [
+      "lod filter for Railway features",
+      "str",
+      ""
+    ],
+    "lodRoad": [
+      "lod filter for Road features",
+      "str",
+      ""
+    ],
+    "lodSolitaryVegetationObject": [
+      "lod filter for SolitaryVegetationObject features",
+      "str",
+      ""
+    ],
+    "lodTINRelief": [
+      "lod filter for TINRelief features",
+      "str",
+      ""
+    ],
+    "lodTransportSquare": [
+      "lod filter for TransportSquare features",
+      "str",
+      ""
+    ],
+    "lodTunnel": [
+      "lod filter for Tunnel features",
+      "str",
+      ""
+    ],
+    "lodTunnelInstallation": [
+      "lod filter for TunnelInstallation features",
+      "str",
+      ""
+    ],
+    "lodTunnelPart": [
+      "lod filter for TunnelPart features",
+      "str",
+      ""
+    ],
+    "lodWaterBody": [
+      "lod filter for WaterBody features",
+      "str",
+      ""
+    ],
     "max_x": [
       "",
       "float",
-      76690.0
+      210773.234375
     ],
     "max_y": [
       "",
       "float",
-      454357.75
+      468611.65625
     ],
     "max_z": [
       "",
       "float",
-      310.0
+      400.0
     ],
     "metadata_class": [
       "The name of the metadata class to create (for EXT_structural_metadata).",
@@ -253,12 +253,12 @@
     "min_x": [
       "",
       "float",
-      76190.0
+      210478.234375
     ],
     "min_y": [
       "",
       "float",
-      453857.75
+      468316.65625
     ],
     "min_z": [
       "",
@@ -268,7 +268,7 @@
     "output_file": [
       "output (glb) file",
       "str",
-      "/dev/shm/3dtiles-terrain/tiles/6/28/23.glb"
+      "/mnt/Data-2/3dbv_terrain/t/10/762/525.glb"
     ],
     "output_format": [
       "glb or city.json",
@@ -278,12 +278,17 @@
     "path_features_input_file": [
       "text file with on each line an input CityJSON feature path",
       "str",
-      "/dev/shm/3dtiles-terrain/inputs/6/28/23.input"
+      "/mnt/Data-2/3dbv_terrain/inputs/10/762/525.input"
     ],
     "path_metadata": [
       "CityJSON features metadata file",
       "str",
-      "/mnt/Data/LocalData/Kadaster/3dbasisvoorziening_dh/features/metadata.city.json"
+      "/mnt/Data-2/CityJSON_export/metadata.city.json"
+    ],
+    "simplify_error": [
+      "",
+      "float",
+      0.699999988079071
     ],
     "simplify_ratio": [
       "0-1 lower for more simplification",
@@ -294,6 +299,11 @@
       "",
       "bool",
       false
+    ],
+    "smooth_normals": [
+      "",
+      "bool",
+      true
     ]
   },
   "nodes": {
@@ -374,6 +384,7 @@
         "colorCityFurniture": "{{colorCityFurniture}}",
         "colorGenericCityObject": "{{colorGenericCityObject}}",
         "colorLandUse": "{{colorLandUse}}",
+        "colorOtherConstruction": "#4F4A6A",
         "colorPlantCover": "{{colorPlantCover}}",
         "colorRailway": "{{colorRailway}}",
         "colorRoad": "{{colorRoad}}",
@@ -422,6 +433,7 @@
         "colorCityFurniture": "#4F4A6A",
         "colorGenericCityObject": "#4F4A6A",
         "colorLandUse": "#C3DBB5",
+        "colorOtherConstruction": "#4F4A6A",
         "colorPlantCover": "#A6CD59",
         "colorRailway": "#474447",
         "colorRoad": "#474447",
