@@ -48,7 +48,7 @@
     "simplify_error": [
       "",
       "float",
-      0.699999988079071
+      1.0
     ],
     "simplify_ratio": [
       "",
@@ -63,7 +63,7 @@
     "smooth_normals": [
       "",
       "bool",
-      true
+      false
     ]
   },
   "nodes": {

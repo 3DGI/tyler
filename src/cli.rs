@@ -104,7 +104,7 @@ pub struct Cli {
     #[arg(long, value_parser = existing_path)]
     pub exe_geof: Option<PathBuf>,
     /// Maximum error that is allowed in mesh simplification to reduce the number of vertices. Value should be a float that represents that maximum allowed error in meters. Ignored for building object types.
-    #[arg(long, default_value = "0.5")]
+    #[arg(long, default_value = "1.0")]
     pub simplification_max_error: Option<f64>,
     /// Compute smooth vertex normals.
     #[arg(long)]
