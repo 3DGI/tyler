@@ -276,7 +276,8 @@
         "cgal_surface_mesh": false
       },
       "parameters": {
-        "error": "{{simplify_error}}"
+        "error": "{{simplify_error}}",
+        "minpts": 0.05000000074505806
       },
       "position": [
         867.0,
