@@ -254,6 +254,8 @@
         "only_output_mapped_attrs": true,
         "output_attribute_names": {
           "processFeatures.dak_deel_id": "b3_dd_id",
+          "processFeatures.b3_azimut": "b3_azimut",
+          "processFeatures.b3_hellingshoek": "b3_hellingshoek",
           "processFeatures.h_50p": "b3_h_50p",
           "processFeatures.h_70p": "b3_h_70p",
           "processFeatures.h_max": "b3_h_max",
@@ -321,6 +323,7 @@
         "only_output_mapped_attrs": true,
         "output_attribute_names": {
           "processFeatures.b3_dak_type": "b3_dak_type",
+          "processFeatures.b3_bouwlagen": "b3_bouwlagen",
           "processFeatures.b3_h_maaiveld": "b3_h_maaiveld",
           "processFeatures.b3_kas_warenhuis": "b3_kas_warenhuis",
           "processFeatures.b3_mutatie_ahn3_ahn4": "b3_mutatie_ahn3_ahn4",
@@ -425,6 +428,7 @@
         "only_output_mapped_attrs": true,
         "output_attribute_names": {
           "processFeatures.b3_dak_type": "b3_dak_type",
+          "processFeatures.b3_bouwlagen": "b3_bouwlagen",
           "processFeatures.b3_h_maaiveld": "b3_h_maaiveld",
           "processFeatures.b3_kas_warenhuis": "b3_kas_warenhuis",
           "processFeatures.b3_mutatie_ahn3_ahn4": "b3_mutatie_ahn3_ahn4",
@@ -529,6 +533,7 @@
         "only_output_mapped_attrs": true,
         "output_attribute_names": {
           "processFeatures.b3_dak_type": "b3_dak_type",
+          "processFeatures.b3_bouwlagen": "b3_bouwlagen",
           "processFeatures.b3_h_maaiveld": "b3_h_maaiveld",
           "processFeatures.b3_kas_warenhuis": "b3_kas_warenhuis",
           "processFeatures.b3_mutatie_ahn3_ahn4": "b3_mutatie_ahn3_ahn4",
@@ -602,6 +607,7 @@
         "only_output_mapped_attrs": true,
         "output_attribute_names": {
           "processFeatures.b3_bag_bag_overlap": "b3_bag_bag_overlap",
+          "processFeatures.b3_bouwlagen": "b3_bouwlagen",
           "processFeatures.b3_dak_type": "b3_dak_type",
           "processFeatures.b3_h_maaiveld": "b3_h_maaiveld",
           "processFeatures.b3_kas_warenhuis": "b3_kas_warenhuis",
