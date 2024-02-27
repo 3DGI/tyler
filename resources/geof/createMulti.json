@@ -324,6 +324,7 @@
         "output_attribute_names": {
           "processFeatures.b3_dak_type": "b3_dak_type",
           "processFeatures.b3_bouwlagen": "b3_bouwlagen",
+          "processFeatures.b3_kwaliteitsindicator": "b3_kwaliteitsindicator",
           "processFeatures.b3_h_maaiveld": "b3_h_maaiveld",
           "processFeatures.b3_kas_warenhuis": "b3_kas_warenhuis",
           "processFeatures.b3_mutatie_ahn3_ahn4": "b3_mutatie_ahn3_ahn4",
@@ -429,6 +430,7 @@
         "output_attribute_names": {
           "processFeatures.b3_dak_type": "b3_dak_type",
           "processFeatures.b3_bouwlagen": "b3_bouwlagen",
+          "processFeatures.b3_kwaliteitsindicator": "b3_kwaliteitsindicator",
           "processFeatures.b3_h_maaiveld": "b3_h_maaiveld",
           "processFeatures.b3_kas_warenhuis": "b3_kas_warenhuis",
           "processFeatures.b3_mutatie_ahn3_ahn4": "b3_mutatie_ahn3_ahn4",
@@ -534,6 +536,7 @@
         "output_attribute_names": {
           "processFeatures.b3_dak_type": "b3_dak_type",
           "processFeatures.b3_bouwlagen": "b3_bouwlagen",
+          "processFeatures.b3_kwaliteitsindicator": "b3_kwaliteitsindicator",
           "processFeatures.b3_h_maaiveld": "b3_h_maaiveld",
           "processFeatures.b3_kas_warenhuis": "b3_kas_warenhuis",
           "processFeatures.b3_mutatie_ahn3_ahn4": "b3_mutatie_ahn3_ahn4",
@@ -608,6 +611,7 @@
         "output_attribute_names": {
           "processFeatures.b3_bag_bag_overlap": "b3_bag_bag_overlap",
           "processFeatures.b3_bouwlagen": "b3_bouwlagen",
+          "processFeatures.b3_kwaliteitsindicator": "b3_kwaliteitsindicator",
           "processFeatures.b3_dak_type": "b3_dak_type",
           "processFeatures.b3_h_maaiveld": "b3_h_maaiveld",
           "processFeatures.b3_kas_warenhuis": "b3_kas_warenhuis",
