@@ -1,6 +1,6 @@
 # Changelog
 
-## tyler 0.3.11 (unreleased)
+## tyler 0.3.11 (2024-07-25)
 
 ### Fixed
 
