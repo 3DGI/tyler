@@ -1,5 +1,12 @@
 # Changelog
 
+## tyler 0.3.11 (unreleased)
+
+### Fixed
+
+- If there is only a single tile, the root contains the content and the tileset geometricError is
+  0.00. ([#45](https://github.com/3DGI/tyler/issues/45))
+
 ## tyler 0.3.10 (2024-03-08)
 
 ### Changed

@@ -193,7 +193,7 @@ pub mod cesium3dtiles {
 
             Self {
                 asset: Default::default(),
-                geometric_error: root.geometric_error * 1.5,
+                geometric_error: geometric_error_above_leaf + root.geometric_error * 1.5,
                 root,
                 properties: None,
                 extensions_used: None,
