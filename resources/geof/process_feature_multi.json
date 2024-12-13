@@ -115,7 +115,7 @@
       "marked_outputs": {
         "attributes": true,
         "feature_type": false,
-        "lod0_2d": true,
+        "lod0_2d": false,
         "meshes": true,
         "meshes_attributes": true,
         "roofparts": true,
@@ -242,7 +242,7 @@
       "marked_outputs": {
         "attributes": true,
         "feature_type": false,
-        "lod0_2d": false,
+        "lod0_2d": true,
         "meshes": false,
         "meshes_attributes": false,
         "roofparts": false,
