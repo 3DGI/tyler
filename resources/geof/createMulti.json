@@ -864,24 +864,6 @@
             "OGRWriter-3D-LoD22-tri",
             "geometries"
           ]
-        ],
-        "h_calc.lod12_hattr": [
-          [
-            "OGRWriter-2D-LoD12",
-            "attributes"
-          ]
-        ],
-        "h_calc.lod13_hattr": [
-          [
-            "OGRWriter-2D-LoD13",
-            "attributes"
-          ]
-        ],
-        "h_calc.lod22_hattr": [
-          [
-            "OGRWriter-2D-LoD22",
-            "attributes"
-          ]
         ]
       },
       "marked_inputs": {
@@ -915,9 +897,6 @@
         "PolygonTriangulator-LoD12.volumes": false,
         "PolygonTriangulator-LoD13.multi_triangle_collections": false,
         "PolygonTriangulator-LoD22.multi_triangle_collections": false,
-        "h_calc.lod12_hattr": false,
-        "h_calc.lod13_hattr": false,
-        "h_calc.lod22_hattr": false,
         "processFeatures.timings": false
       },
       "parameters": {

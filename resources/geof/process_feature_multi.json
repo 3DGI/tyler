@@ -100,12 +100,6 @@
             "PolygonTriangulator-LoD12",
             "polygons"
           ]
-        ],
-        "roofparts_lr": [
-          [
-            "h_calc",
-            "lod12_roofparts"
-          ]
         ]
       },
       "marked_inputs": {
@@ -147,12 +141,6 @@
             "PolygonTriangulator-LoD13",
             "polygons"
           ]
-        ],
-        "roofparts_lr": [
-          [
-            "h_calc",
-            "lod13_roofparts"
-          ]
         ]
       },
       "marked_inputs": {
@@ -193,12 +181,6 @@
           [
             "PolygonTriangulator-LoD22",
             "polygons"
-          ]
-        ],
-        "roofparts_lr": [
-          [
-            "h_calc",
-            "lod22_roofparts"
           ]
         ]
       },
@@ -340,29 +322,6 @@
       "type": [
         "building-reconstruction",
         "PolygonTriangulator"
-      ]
-    },
-    "h_calc": {
-      "marked_inputs": {
-        "lod12_roofparts": false,
-        "lod13_roofparts": false,
-        "lod22_roofparts": false
-      },
-      "marked_outputs": {
-        "lod12_hattr": true,
-        "lod13_hattr": true,
-        "lod22_hattr": true
-      },
-      "parameters": {
-        "cellsize": 0.5
-      },
-      "position": [
-        976.0,
-        22.0
-      ],
-      "type": [
-        "building-reconstruction",
-        "RoofPartition3DBAGRasterise"
       ]
     }
   }
