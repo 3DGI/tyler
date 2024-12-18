@@ -1,6 +1,6 @@
 [package]
 name = "tyler"
-version = "0.4.0-alpha7"
+version = "0.4.0-alpha8"
 edition = "2021"
 authors = ["Balázs Dukai <balazs.dukai@3dgi.nl>", "Ravi Peters <ravi.peters@3dgi.nl>"]
 description = "Create tiles from 3D city objects encoded as CityJSONFeatures."
@@ -30,7 +30,7 @@ subprocess = "0.2.9"
 rayon = "1.6.1"
 # crates needed for the proj adaptation
 #proj-sys = { version = "0.23.1" , features = ["network"]}
-proj-sys = { version = "0.23.1" , features = ["network"], path = "proj/proj-sys"}
+proj-sys = { version = "0.23.1", features = ["network"], path = "proj/proj-sys" }
 num-traits = "0.2.14"
 libc = "0.2.119"
 thiserror = "1.0.30"
