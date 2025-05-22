@@ -892,17 +892,20 @@ impl BboxQc {
     pub fn update_with(&mut self, bbox_qc: &Self) {
         if bbox_qc.0[0] < self.0[0] {
             self.0[0] = bbox_qc.0[0]
-        } else if bbox_qc.0[3] > self.0[3] {
+        }
+        if bbox_qc.0[3] > self.0[3] {
             self.0[3] = bbox_qc.0[3]
         }
         if bbox_qc.0[1] < self.0[1] {
             self.0[1] = bbox_qc.0[1]
-        } else if bbox_qc.0[4] > self.0[4] {
+        }
+        if bbox_qc.0[4] > self.0[4] {
             self.0[4] = bbox_qc.0[4]
         }
         if bbox_qc.0[2] < self.0[2] {
             self.0[2] = bbox_qc.0[2]
-        } else if bbox_qc.0[5] > self.0[5] {
+        }
+        if bbox_qc.0[5] > self.0[5] {
             self.0[5] = bbox_qc.0[5]
         }
     }
