@@ -1,6 +1,6 @@
 [package]
 name = "tyler"
-version = "0.3.11"
+version = "0.3.12"
 edition = "2021"
 authors = ["Balázs Dukai <balazs.dukai@3dgi.nl>", "Ravi Peters <ravi.peters@3dgi.nl>"]
 description = "Create tiles from 3D city objects encoded as CityJSONFeatures."
