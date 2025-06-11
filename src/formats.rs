@@ -202,6 +202,10 @@ pub mod cesium3dtiles {
             }
         }
 
+        // TODO: The function outputs a Tile even if the quadtree node has 0 items,
+        //  because the function is recursive and it must output a Tile. It would be
+        //  more elegant to output Option<Tile>, but that needs refactoring downstream
+        //  (eg. serialization).
         fn generate_tiles(
             quadtree: &QuadTree,
             world: &crate::parser::World,

@@ -492,6 +492,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let qtree_node = quadtree
                 .node(&qtree_nodeid)
                 .unwrap_or_else(|| panic!("did not find tile {} in quadtree", tileid_grid));
+            if qtree_node.nr_items == 0 {
+                // The Tileset.prune() method removes the empty tiles from the tileset,
+                //  so skipping the tile conversion without failure is ok if it's empty.
+                debug!("Tile is empty ({}), skipping conversion", tileid_grid);
+                return tile_failed;
+            }
             let tileid_string = tileid.to_string();
             let file_name = tileid_string;
             let output_file = path_output_tiles
