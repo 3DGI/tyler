@@ -174,9 +174,9 @@
         "roofparts_lr_attributes": false
       },
       "parameters": {
-        "3bag_buildings_mode": false,
+        "3bag_buildings_mode": "{{bag3dBuildingsMode}}",
         "atribute_spec": "{{attribute_spec}}",
-        "bag3d_attr_per_part": true,
+        "bag3d_attr_per_part": "{{bag3dAttributesPerPart}}",
         "cotypes": "{{cotypes}}",
         "lod_filter": {
           "Bridge": "{{lodBridge}}",

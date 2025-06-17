@@ -244,6 +244,12 @@ pub struct Cli {
     // /// installed.
     // #[arg(long, value_parser = existing_path)]
     // pub exe_python: Option<PathBuf>,
+    /// Assume 3DBAG Building-BuildingPart structure
+    #[arg(long)]
+    pub bag3d_buildings_mode: bool,
+    /// Push attributes for every BuildingPart (in bag3d_buildings_mode only)
+    #[arg(long)]
+    pub bag3d_attributes_per_part: bool,
 }
 
 fn existing_canonical_path(s: &str) -> Result<PathBuf, String> {

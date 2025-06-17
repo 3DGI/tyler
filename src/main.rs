@@ -540,7 +540,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .arg(format!("--cotypes={}", &cotypes_arg))
                 .arg(format!("--metadata_class={}", &metadata_class))
                 .arg(format!("--attribute_spec={}", &attribute_spec))
-                .arg(format!("--geometric_error={}", &tile.geometric_error));
+                .arg(format!("--geometric_error={}", &tile.geometric_error))
+                .arg(format!("--bag3dBuildingsMode={}", cli.bag3d_buildings_mode))
+                .arg(format!(
+                    "--bag3dAttributesPerPart={}",
+                    cli.bag3d_attributes_per_part
+                ));
 
             if format == Formats::_3DTiles {
                 // geof specific args

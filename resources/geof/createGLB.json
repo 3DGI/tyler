@@ -304,6 +304,16 @@
       "",
       "bool",
       false
+    ],
+    "bag3dBuildingsMode": [
+      "",
+      "bool",
+      false
+    ],
+    "bag3dAttributesPerPart": [
+      "",
+      "bool",
+      false
     ]
   },
   "nodes": {
