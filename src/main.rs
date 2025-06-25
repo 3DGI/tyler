@@ -547,6 +547,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     cli.bag3d_attributes_per_part
                 ));
 
+            if cli.verbose_geof {
+                cmd = cmd.arg("--verbose")
+            }
+
             if format == Formats::_3DTiles {
                 // geof specific args
                 // colors
