@@ -36,6 +36,7 @@ struct SubprocessConfig {
     exe: PathBuf,
     script: PathBuf,
     timeout: Option<Duration>,
+    verbose: bool,
 }
 
 #[derive(Debug, Clone, clap::ValueEnum, Eq, PartialEq)]
@@ -110,19 +111,19 @@ fn run_subprocess(
 ) -> Option<Tile> {
     let cmd_string = cmd.to_cmdline_lossy();
     debug!("{cmd_string}");
-    let redirection_stdout = subprocess::NullFile; // Redirection::Pipe
-    let redirection_stderr = subprocess::NullFile; // Redirection::Merge
+    let redirection_stdout = Redirection::Pipe; // Redirection::Pipe | subprocess::NullFile
+    let redirection_stderr = Redirection::Pipe; // Redirection::Merge
     let exec = cmd.stdout(redirection_stdout).stderr(redirection_stderr);
     let popen_res = exec.popen();
     match popen_res {
         Ok(mut popen) => {
-            let (mut _stdout_opt, mut _stderr_opt): (Option<String>, Option<String>) = (None, None);
+            let (mut stdout_opt, mut stderr_opt): (Option<String>, Option<String>) = (None, None);
             let mut _exit_status = subprocess::ExitStatus::Undetermined;
             if let Some(timeout) = subprocess_config.timeout {
                 let mut communicator = popen.communicate_start(None);
                 if let Some(status) = popen.wait_timeout(timeout).unwrap() {
                     if let Ok(s) = communicator.read_string() {
-                        (_stdout_opt, _stderr_opt) = s;
+                        (stdout_opt, stderr_opt) = s;
                     };
                     _exit_status = status;
                 } else {
@@ -135,16 +136,23 @@ fn run_subprocess(
                     _exit_status = popen.exit_status().unwrap();
                 }
             } else {
-                (_stdout_opt, _stderr_opt) = popen.communicate(None).unwrap();
+                (stdout_opt, stderr_opt) = popen.communicate(None).unwrap();
                 _exit_status = popen.wait().unwrap();
             }
 
             // The stderr is Redirection::Merge-d into the stdout
             if !output_file.exists() {
-                warn!(
-                    "Tile {} conversion failed, conversion subprocess command:\n{}",
-                    tile.id, cmd_string
-                );
+                if subprocess_config.verbose {
+                    warn!(
+                        "Tile {} conversion failed, conversion subprocess command:\n{}\nsubprocess stdout:\n{}\nsubprocess stderr:\n{}",
+                        tile.id, cmd_string, stdout_opt.unwrap_or_default(), stderr_opt.unwrap_or_default(),
+                    );
+                } else {
+                    warn!(
+                        "Tile {} conversion failed, conversion subprocess command:\n{}",
+                        tile.id, cmd_string
+                    );
+                }
                 return Some(tile);
             }
         }
@@ -219,6 +227,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 exe,
                 script: geof_flowchart_path,
                 timeout,
+                verbose: cli.verbose_geof,
             }
         }
         Formats::CityJSON => {
@@ -548,7 +557,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ));
 
             if cli.verbose_geof {
-                cmd = cmd.arg("--verbose")
+                cmd = cmd.arg("--verbose".to_string())
             }
 
             if format == Formats::_3DTiles {
