@@ -366,6 +366,8 @@ impl World {
     pub fn index_with_grid(&mut self) {
         let feature_dirs_files = Self::find_feature_dirs_and_files(&self.path_features_root);
         info!("Counting vertices in grid cells");
+        // todo input: split input file by newline?
+        // todo input: adapt to take paths from split files
         let features_in_cells_dirs: Vec<Vec<FeatureInGridCells>> = feature_dirs_files
             .feature_dirs
             .into_par_iter()
@@ -406,6 +408,7 @@ impl World {
 
     /// Indexes a CityJSONFeature file.
     fn index_feature_path(&self, feature_path: &PathBuf) -> Option<FeatureInGridCells> {
+        // todo input: adapt to interate the newline-split file and index per line
         let cf = CityJSONFeatureVertices::from_file(feature_path);
         if let Ok(featurevertices) = cf {
             let cell_vtx_cnt = self.count_vertices(&featurevertices);
@@ -852,6 +855,7 @@ pub struct Feature {
     pub(crate) centroid_qc: [i64; 2],
     pub(crate) nr_vertices: u16,
     pub path_jsonl: PathBuf,
+    // todo input: need line number in file
     pub bbox_qc: BboxQc,
 }
 

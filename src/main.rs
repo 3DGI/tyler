@@ -65,6 +65,7 @@ struct DebugData {
 /// Write the list of feature paths for a tile into a text file, instead of passing
 /// super long paths-string to the subprocess, because with very long arguments we can
 /// get an 'Argument list too long' error.
+// todo input: collect features from files and write them to a single newline-delimited file
 fn write_inputs(
     world: &parser::World,
     path_features_input_dir: &Path,
@@ -326,7 +327,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 cli.grid_minz,
                 cli.grid_maxz,
             )?;
-            world.index_with_grid();
+            world.index_with_grid(); // todo input: in general, build a line index
             world
         }
         Some(world_path) => {
