@@ -1,40 +1,19 @@
 {
   "globals": {
-    "GF_PROCESS_CRS": [
-      "",
-      "str",
-      "EPSG:7415"
-    ],
-    "OUTPUT_CRS": [
-      "",
-      "str",
-      "EPSG:7415"
-    ],
-    "output_file": [
-      "output (glb) file",
-      "str",
-      "tiles/out"
-    ],
+    "GF_PROCESS_CRS": ["", "str", "EPSG:7415"],
+    "OUTPUT_CRS": ["", "str", "EPSG:7415"],
+    "output_file": ["output (glb) file", "str", "tiles/out"],
     "path_features_input_file": [
       "text file with on each line an input CityJSON feature path",
       "str",
       "problem.input"
     ],
-    "path_metadata": [
-      "CityJSON features metadata file",
-      "str",
-      "metadata.json"
-    ]
+    "path_metadata": ["CityJSON features metadata file", "str", "metadata.json"]
   },
   "nodes": {
     "Box": {
       "connections": {
-        "ping": [
-          [
-            "processFeatures",
-            "processFeatures.wait"
-          ]
-        ]
+        "ping": [["processFeatures", "processFeatures.wait"]]
       },
       "marked_outputs": {
         "box": false,
@@ -49,23 +28,12 @@
         "min_y": 0.0,
         "min_z": 0.0
       },
-      "position": [
-        223.0,
-        269.0
-      ],
-      "type": [
-        "Core",
-        "Box"
-      ]
+      "position": [223.0, 269.0],
+      "type": ["Core", "Box"]
     },
     "CJFeature_paths": {
       "connections": {
-        "value": [
-          [
-            "processFeatures",
-            "processFeatures.globals"
-          ]
-        ]
+        "value": [["processFeatures", "processFeatures.globals"]]
       },
       "marked_outputs": {
         "value": false
@@ -75,14 +43,8 @@
         "limit": 0,
         "split": true
       },
-      "position": [
-        210.0,
-        197.0
-      ],
-      "type": [
-        "Core",
-        "TextReader"
-      ]
+      "position": [210.0, 197.0],
+      "type": ["Core", "TextReader"]
     },
     "CityJSONLinesWriter": {
       "marked_inputs": {
@@ -95,14 +57,8 @@
         "prettyPrint": false,
         "recompute_offset": true
       },
-      "position": [
-        1170.0,
-        -78.0
-      ],
-      "type": [
-        "CoreIO",
-        "CityJSONLinesWriter"
-      ]
+      "position": [1170.0, -78.0],
+      "type": ["CoreIO", "CityJSONLinesWriter"]
     },
     "OBJVecWriter-LoD12": {
       "marked_inputs": {
@@ -116,14 +72,8 @@
         "no_offset": false,
         "precision": 5
       },
-      "position": [
-        1263.0,
-        545.0
-      ],
-      "type": [
-        "CoreIO",
-        "OBJVecWriter"
-      ]
+      "position": [1263.0, 545.0],
+      "type": ["CoreIO", "OBJVecWriter"]
     },
     "OBJVecWriter-LoD13": {
       "marked_inputs": {
@@ -137,14 +87,8 @@
         "no_offset": false,
         "precision": 5
       },
-      "position": [
-        1263.0,
-        612.0
-      ],
-      "type": [
-        "CoreIO",
-        "OBJVecWriter"
-      ]
+      "position": [1263.0, 612.0],
+      "type": ["CoreIO", "OBJVecWriter"]
     },
     "OBJVecWriter-LoD22": {
       "marked_inputs": {
@@ -158,14 +102,8 @@
         "no_offset": false,
         "precision": 5
       },
-      "position": [
-        1260.0,
-        671.0
-      ],
-      "type": [
-        "CoreIO",
-        "OBJVecWriter"
-      ]
+      "position": [1260.0, 671.0],
+      "type": ["CoreIO", "OBJVecWriter"]
     },
     "OGRWriter-2D-LoD12": {
       "marked_inputs": {
@@ -194,14 +132,8 @@
         "require_attributes": true,
         "transaction_batch_size_": 1000
       },
-      "position": [
-        1516.0,
-        -9.0
-      ],
-      "type": [
-        "io-gdal",
-        "OGRWriter"
-      ]
+      "position": [1516.0, -9.0],
+      "type": ["io-gdal", "OGRWriter"]
     },
     "OGRWriter-2D-LoD13": {
       "marked_inputs": {
@@ -230,14 +162,8 @@
         "require_attributes": true,
         "transaction_batch_size_": 1000
       },
-      "position": [
-        1516.0,
-        50.0
-      ],
-      "type": [
-        "io-gdal",
-        "OGRWriter"
-      ]
+      "position": [1516.0, 50.0],
+      "type": ["io-gdal", "OGRWriter"]
     },
     "OGRWriter-2D-LoD22": {
       "marked_inputs": {
@@ -268,14 +194,8 @@
         "require_attributes": true,
         "transaction_batch_size_": 1000
       },
-      "position": [
-        1515.0,
-        107.0
-      ],
-      "type": [
-        "io-gdal",
-        "OGRWriter"
-      ]
+      "position": [1515.0, 107.0],
+      "type": ["io-gdal", "OGRWriter"]
     },
     "OGRWriter-3D-LoD12": {
       "marked_inputs": {
@@ -299,14 +219,8 @@
         "require_attributes": true,
         "transaction_batch_size_": 1000
       },
-      "position": [
-        1554.0,
-        421.0
-      ],
-      "type": [
-        "io-gdal",
-        "OGRWriter"
-      ]
+      "position": [1554.0, 421.0],
+      "type": ["io-gdal", "OGRWriter"]
     },
     "OGRWriter-3D-LoD12-tri": {
       "marked_inputs": {
@@ -329,23 +243,23 @@
           "processFeatures.b3_is_glas_dak": "b3_is_glas_dak",
           "processFeatures.b3_kas_warenhuis": "b3_kas_warenhuis",
           "processFeatures.b3_kwaliteitsindicator": "b3_kwaliteitsindicator",
-          "processFeatures.b3_mutatie_AHN3_AHN4": "b3_mutatie_AHN3_AHN4",
-          "processFeatures.b3_mutatie_AHN4_AHN5": "b3_mutatie_AHN4_AHN5",
+          "processFeatures.b3_mutatie_ahn3_ahn4": "b3_mutatie_ahn3_ahn4",
+          "processFeatures.b3_mutatie_ahn4_ahn5": "b3_mutatie_ahn4_ahn5",
           "processFeatures.b3_n_vlakken": "b3_n_vlakken",
-          "processFeatures.b3_nodata_fractie_AHN3": "b3_nodata_fractie_AHN3",
-          "processFeatures.b3_nodata_fractie_AHN4": "b3_nodata_fractie_AHN4",
-          "processFeatures.b3_nodata_fractie_AHN5": "b3_nodata_fractie_AHN5",
-          "processFeatures.b3_nodata_radius_AHN3": "b3_nodata_radius_AHN3",
-          "processFeatures.b3_nodata_radius_AHN4": "b3_nodata_radius_AHN4",
-          "processFeatures.b3_nodata_radius_AHN5": "b3_nodata_radius_AHN5",
+          "processFeatures.b3_nodata_fractie_ahn3": "b3_nodata_fractie_ahn3",
+          "processFeatures.b3_nodata_fractie_ahn4": "b3_nodata_fractie_ahn4",
+          "processFeatures.b3_nodata_fractie_ahn5": "b3_nodata_fractie_ahn5",
+          "processFeatures.b3_nodata_radius_ahn3": "b3_nodata_radius_ahn3",
+          "processFeatures.b3_nodata_radius_ahn4": "b3_nodata_radius_ahn4",
+          "processFeatures.b3_nodata_radius_ahn5": "b3_nodata_radius_ahn5",
           "processFeatures.b3_opp_buitenmuur": "b3_opp_buitenmuur",
           "processFeatures.b3_opp_dak_plat": "b3_opp_dak_plat",
           "processFeatures.b3_opp_dak_schuin": "b3_opp_dak_schuin",
           "processFeatures.b3_opp_grond": "b3_opp_grond",
           "processFeatures.b3_opp_scheidingsmuur": "b3_opp_scheidingsmuur",
-          "processFeatures.b3_puntdichtheid_AHN3": "b3_puntdichtheid_AHN3",
-          "processFeatures.b3_puntdichtheid_AHN4": "b3_puntdichtheid_AHN4",
-          "processFeatures.b3_puntdichtheid_AHN5": "b3_puntdichtheid_AHN5",
+          "processFeatures.b3_puntdichtheid_ahn3": "b3_puntdichtheid_ahn3",
+          "processFeatures.b3_puntdichtheid_ahn4": "b3_puntdichtheid_ahn4",
+          "processFeatures.b3_puntdichtheid_ahn5": "b3_puntdichtheid_ahn5",
           "processFeatures.b3_pw_bron": "b3_pw_bron",
           "processFeatures.b3_pw_datum": "b3_pw_datum",
           "processFeatures.b3_pw_onvoldoende": "b3_pw_onvoldoende",
@@ -383,14 +297,8 @@
         "require_attributes": true,
         "transaction_batch_size_": 1000
       },
-      "position": [
-        1642.0,
-        219.0
-      ],
-      "type": [
-        "io-gdal",
-        "OGRWriter"
-      ]
+      "position": [1642.0, 219.0],
+      "type": ["io-gdal", "OGRWriter"]
     },
     "OGRWriter-3D-LoD13": {
       "marked_inputs": {
@@ -414,14 +322,8 @@
         "require_attributes": true,
         "transaction_batch_size_": 1000
       },
-      "position": [
-        1554.0,
-        484.0
-      ],
-      "type": [
-        "io-gdal",
-        "OGRWriter"
-      ]
+      "position": [1554.0, 484.0],
+      "type": ["io-gdal", "OGRWriter"]
     },
     "OGRWriter-3D-LoD13-tri": {
       "marked_inputs": {
@@ -444,23 +346,23 @@
           "processFeatures.b3_is_glas_dak": "b3_is_glas_dak",
           "processFeatures.b3_kas_warenhuis": "b3_kas_warenhuis",
           "processFeatures.b3_kwaliteitsindicator": "b3_kwaliteitsindicator",
-          "processFeatures.b3_mutatie_AHN3_AHN4": "b3_mutatie_AHN3_AHN4",
-          "processFeatures.b3_mutatie_AHN4_AHN5": "b3_mutatie_AHN4_AHN5",
+          "processFeatures.b3_mutatie_ahn3_ahn4": "b3_mutatie_ahn3_ahn4",
+          "processFeatures.b3_mutatie_ahn4_ahn5": "b3_mutatie_ahn4_ahn5",
           "processFeatures.b3_n_vlakken": "b3_n_vlakken",
-          "processFeatures.b3_nodata_fractie_AHN3": "b3_nodata_fractie_AHN3",
-          "processFeatures.b3_nodata_fractie_AHN4": "b3_nodata_fractie_AHN4",
-          "processFeatures.b3_nodata_fractie_AHN5": "b3_nodata_fractie_AHN5",
-          "processFeatures.b3_nodata_radius_AHN3": "b3_nodata_radius_AHN3",
-          "processFeatures.b3_nodata_radius_AHN4": "b3_nodata_radius_AHN4",
-          "processFeatures.b3_nodata_radius_AHN5": "b3_nodata_radius_AHN5",
+          "processFeatures.b3_nodata_fractie_ahn3": "b3_nodata_fractie_ahn3",
+          "processFeatures.b3_nodata_fractie_ahn4": "b3_nodata_fractie_ahn4",
+          "processFeatures.b3_nodata_fractie_ahn5": "b3_nodata_fractie_ahn5",
+          "processFeatures.b3_nodata_radius_ahn3": "b3_nodata_radius_ahn3",
+          "processFeatures.b3_nodata_radius_ahn4": "b3_nodata_radius_ahn4",
+          "processFeatures.b3_nodata_radius_ahn5": "b3_nodata_radius_ahn5",
           "processFeatures.b3_opp_buitenmuur": "b3_opp_buitenmuur",
           "processFeatures.b3_opp_dak_plat": "b3_opp_dak_plat",
           "processFeatures.b3_opp_dak_schuin": "b3_opp_dak_schuin",
           "processFeatures.b3_opp_grond": "b3_opp_grond",
           "processFeatures.b3_opp_scheidingsmuur": "b3_opp_scheidingsmuur",
-          "processFeatures.b3_puntdichtheid_AHN3": "b3_puntdichtheid_AHN3",
-          "processFeatures.b3_puntdichtheid_AHN4": "b3_puntdichtheid_AHN4",
-          "processFeatures.b3_puntdichtheid_AHN5": "b3_puntdichtheid_AHN5",
+          "processFeatures.b3_puntdichtheid_ahn3": "b3_puntdichtheid_ahn3",
+          "processFeatures.b3_puntdichtheid_ahn4": "b3_puntdichtheid_ahn4",
+          "processFeatures.b3_puntdichtheid_ahn5": "b3_puntdichtheid_ahn5",
           "processFeatures.b3_pw_bron": "b3_pw_bron",
           "processFeatures.b3_pw_datum": "b3_pw_datum",
           "processFeatures.b3_pw_onvoldoende": "b3_pw_onvoldoende",
@@ -498,14 +400,8 @@
         "require_attributes": true,
         "transaction_batch_size_": 1000
       },
-      "position": [
-        1641.0,
-        279.0
-      ],
-      "type": [
-        "io-gdal",
-        "OGRWriter"
-      ]
+      "position": [1641.0, 279.0],
+      "type": ["io-gdal", "OGRWriter"]
     },
     "OGRWriter-3D-LoD22": {
       "marked_inputs": {
@@ -529,14 +425,8 @@
         "require_attributes": true,
         "transaction_batch_size_": 1000
       },
-      "position": [
-        1556.0,
-        549.0
-      ],
-      "type": [
-        "io-gdal",
-        "OGRWriter"
-      ]
+      "position": [1556.0, 549.0],
+      "type": ["io-gdal", "OGRWriter"]
     },
     "OGRWriter-3D-LoD22-tri": {
       "marked_inputs": {
@@ -559,23 +449,23 @@
           "processFeatures.b3_is_glas_dak": "b3_is_glas_dak",
           "processFeatures.b3_kas_warenhuis": "b3_kas_warenhuis",
           "processFeatures.b3_kwaliteitsindicator": "b3_kwaliteitsindicator",
-          "processFeatures.b3_mutatie_AHN3_AHN4": "b3_mutatie_AHN3_AHN4",
-          "processFeatures.b3_mutatie_AHN4_AHN5": "b3_mutatie_AHN4_AHN5",
+          "processFeatures.b3_mutatie_ahn3_ahn4": "b3_mutatie_ahn3_ahn4",
+          "processFeatures.b3_mutatie_ahn4_ahn5": "b3_mutatie_ahn4_ahn5",
           "processFeatures.b3_n_vlakken": "b3_n_vlakken",
-          "processFeatures.b3_nodata_fractie_AHN3": "b3_nodata_fractie_AHN3",
-          "processFeatures.b3_nodata_fractie_AHN4": "b3_nodata_fractie_AHN4",
-          "processFeatures.b3_nodata_fractie_AHN5": "b3_nodata_fractie_AHN5",
-          "processFeatures.b3_nodata_radius_AHN3": "b3_nodata_radius_AHN3",
-          "processFeatures.b3_nodata_radius_AHN4": "b3_nodata_radius_AHN4",
-          "processFeatures.b3_nodata_radius_AHN5": "b3_nodata_radius_AHN5",
+          "processFeatures.b3_nodata_fractie_ahn3": "b3_nodata_fractie_ahn3",
+          "processFeatures.b3_nodata_fractie_ahn4": "b3_nodata_fractie_ahn4",
+          "processFeatures.b3_nodata_fractie_ahn5": "b3_nodata_fractie_ahn5",
+          "processFeatures.b3_nodata_radius_ahn3": "b3_nodata_radius_ahn3",
+          "processFeatures.b3_nodata_radius_ahn4": "b3_nodata_radius_ahn4",
+          "processFeatures.b3_nodata_radius_ahn5": "b3_nodata_radius_ahn5",
           "processFeatures.b3_opp_buitenmuur": "b3_opp_buitenmuur",
           "processFeatures.b3_opp_dak_plat": "b3_opp_dak_plat",
           "processFeatures.b3_opp_dak_schuin": "b3_opp_dak_schuin",
           "processFeatures.b3_opp_grond": "b3_opp_grond",
           "processFeatures.b3_opp_scheidingsmuur": "b3_opp_scheidingsmuur",
-          "processFeatures.b3_puntdichtheid_AHN3": "b3_puntdichtheid_AHN3",
-          "processFeatures.b3_puntdichtheid_AHN4": "b3_puntdichtheid_AHN4",
-          "processFeatures.b3_puntdichtheid_AHN5": "b3_puntdichtheid_AHN5",
+          "processFeatures.b3_puntdichtheid_ahn3": "b3_puntdichtheid_ahn3",
+          "processFeatures.b3_puntdichtheid_ahn4": "b3_puntdichtheid_ahn4",
+          "processFeatures.b3_puntdichtheid_ahn5": "b3_puntdichtheid_ahn5",
           "processFeatures.b3_pw_bron": "b3_pw_bron",
           "processFeatures.b3_pw_datum": "b3_pw_datum",
           "processFeatures.b3_pw_onvoldoende": "b3_pw_onvoldoende",
@@ -613,14 +503,8 @@
         "require_attributes": true,
         "transaction_batch_size_": 1000
       },
-      "position": [
-        1643.0,
-        345.0
-      ],
-      "type": [
-        "io-gdal",
-        "OGRWriter"
-      ]
+      "position": [1643.0, 345.0],
+      "type": ["io-gdal", "OGRWriter"]
     },
     "OGRWriter-pand": {
       "marked_inputs": {
@@ -644,23 +528,23 @@
           "processFeatures.b3_is_glas_dak": "b3_is_glas_dak",
           "processFeatures.b3_kas_warenhuis": "b3_kas_warenhuis",
           "processFeatures.b3_kwaliteitsindicator": "b3_kwaliteitsindicator",
-          "processFeatures.b3_mutatie_AHN3_AHN4": "b3_mutatie_AHN3_AHN4",
-          "processFeatures.b3_mutatie_AHN4_AHN5": "b3_mutatie_AHN4_AHN5",
+          "processFeatures.b3_mutatie_ahn3_ahn4": "b3_mutatie_ahn3_ahn4",
+          "processFeatures.b3_mutatie_ahn4_ahn5": "b3_mutatie_ahn4_ahn5",
           "processFeatures.b3_n_vlakken": "b3_n_vlakken",
-          "processFeatures.b3_nodata_fractie_AHN3": "b3_nodata_fractie_AHN3",
-          "processFeatures.b3_nodata_fractie_AHN4": "b3_nodata_fractie_AHN4",
-          "processFeatures.b3_nodata_fractie_AHN5": "b3_nodata_fractie_AHN5",
-          "processFeatures.b3_nodata_radius_AHN3": "b3_nodata_radius_AHN3",
-          "processFeatures.b3_nodata_radius_AHN4": "b3_nodata_radius_AHN4",
-          "processFeatures.b3_nodata_radius_AHN5": "b3_nodata_radius_AHN5",
+          "processFeatures.b3_nodata_fractie_ahn3": "b3_nodata_fractie_ahn3",
+          "processFeatures.b3_nodata_fractie_ahn4": "b3_nodata_fractie_ahn4",
+          "processFeatures.b3_nodata_fractie_ahn5": "b3_nodata_fractie_ahn5",
+          "processFeatures.b3_nodata_radius_ahn3": "b3_nodata_radius_ahn3",
+          "processFeatures.b3_nodata_radius_ahn4": "b3_nodata_radius_ahn4",
+          "processFeatures.b3_nodata_radius_ahn5": "b3_nodata_radius_ahn5",
           "processFeatures.b3_opp_buitenmuur": "b3_opp_buitenmuur",
           "processFeatures.b3_opp_dak_plat": "b3_opp_dak_plat",
           "processFeatures.b3_opp_dak_schuin": "b3_opp_dak_schuin",
           "processFeatures.b3_opp_grond": "b3_opp_grond",
           "processFeatures.b3_opp_scheidingsmuur": "b3_opp_scheidingsmuur",
-          "processFeatures.b3_puntdichtheid_AHN3": "b3_puntdichtheid_AHN3",
-          "processFeatures.b3_puntdichtheid_AHN4": "b3_puntdichtheid_AHN4",
-          "processFeatures.b3_puntdichtheid_AHN5": "b3_puntdichtheid_AHN5",
+          "processFeatures.b3_puntdichtheid_ahn3": "b3_puntdichtheid_ahn3",
+          "processFeatures.b3_puntdichtheid_ahn4": "b3_puntdichtheid_ahn4",
+          "processFeatures.b3_puntdichtheid_ahn5": "b3_puntdichtheid_ahn5",
           "processFeatures.b3_pw_bron": "b3_pw_bron",
           "processFeatures.b3_pw_datum": "b3_pw_datum",
           "processFeatures.b3_pw_onvoldoende": "b3_pw_onvoldoende",
@@ -698,172 +582,68 @@
         "require_attributes": true,
         "transaction_batch_size_": 1000
       },
-      "position": [
-        1268.0,
-        7.0
-      ],
-      "type": [
-        "io-gdal",
-        "OGRWriter"
-      ]
+      "position": [1268.0, 7.0],
+      "type": ["io-gdal", "OGRWriter"]
     },
     "processFeatures": {
       "connections": {
-        "CJFeatureReader.value": [
-          [
-            "CityJSONLinesWriter",
-            "features"
-          ]
-        ],
-        "CJMetadata.value": [
-          [
-            "CityJSONLinesWriter",
-            "first_line"
-          ]
-        ],
+        "CJFeatureReader.value": [["CityJSONLinesWriter", "features"]],
+        "CJMetadata.value": [["CityJSONLinesWriter", "first_line"]],
         "CityJSONL2Mesh-LoD12.attributes": [
-          [
-            "OGRWriter-3D-LoD12-tri",
-            "attributes"
-          ]
+          ["OGRWriter-3D-LoD12-tri", "attributes"]
         ],
-        "CityJSONL2Mesh-LoD12.meshes": [
-          [
-            "OGRWriter-3D-LoD12",
-            "geometries"
-          ]
-        ],
+        "CityJSONL2Mesh-LoD12.meshes": [["OGRWriter-3D-LoD12", "geometries"]],
         "CityJSONL2Mesh-LoD12.meshes_attributes": [
-          [
-            "OBJVecWriter-LoD12",
-            "attributes"
-          ],
-          [
-            "OGRWriter-3D-LoD12",
-            "attributes"
-          ]
+          ["OBJVecWriter-LoD12", "attributes"],
+          ["OGRWriter-3D-LoD12", "attributes"]
         ],
         "CityJSONL2Mesh-LoD12.roofparts_lr": [
-          [
-            "OGRWriter-2D-LoD12",
-            "geometries"
-          ]
+          ["OGRWriter-2D-LoD12", "geometries"]
         ],
         "CityJSONL2Mesh-LoD12.roofparts_lr_attributes": [
-          [
-            "OGRWriter-2D-LoD12",
-            "attributes"
-          ]
+          ["OGRWriter-2D-LoD12", "attributes"]
         ],
         "CityJSONL2Mesh-LoD13.attributes": [
-          [
-            "OGRWriter-3D-LoD13-tri",
-            "attributes"
-          ]
+          ["OGRWriter-3D-LoD13-tri", "attributes"]
         ],
-        "CityJSONL2Mesh-LoD13.meshes": [
-          [
-            "OGRWriter-3D-LoD13",
-            "geometries"
-          ]
-        ],
+        "CityJSONL2Mesh-LoD13.meshes": [["OGRWriter-3D-LoD13", "geometries"]],
         "CityJSONL2Mesh-LoD13.meshes_attributes": [
-          [
-            "OBJVecWriter-LoD13",
-            "attributes"
-          ],
-          [
-            "OGRWriter-3D-LoD13",
-            "attributes"
-          ]
+          ["OBJVecWriter-LoD13", "attributes"],
+          ["OGRWriter-3D-LoD13", "attributes"]
         ],
         "CityJSONL2Mesh-LoD13.roofparts_lr": [
-          [
-            "OGRWriter-2D-LoD13",
-            "geometries"
-          ]
+          ["OGRWriter-2D-LoD13", "geometries"]
         ],
         "CityJSONL2Mesh-LoD13.roofparts_lr_attributes": [
-          [
-            "OGRWriter-2D-LoD13",
-            "attributes"
-          ]
+          ["OGRWriter-2D-LoD13", "attributes"]
         ],
         "CityJSONL2Mesh-LoD22.attributes": [
-          [
-            "OGRWriter-3D-LoD22-tri",
-            "attributes"
-          ]
+          ["OGRWriter-3D-LoD22-tri", "attributes"]
         ],
-        "CityJSONL2Mesh-LoD22.meshes": [
-          [
-            "OGRWriter-3D-LoD22",
-            "geometries"
-          ]
-        ],
+        "CityJSONL2Mesh-LoD22.meshes": [["OGRWriter-3D-LoD22", "geometries"]],
         "CityJSONL2Mesh-LoD22.meshes_attributes": [
-          [
-            "OBJVecWriter-LoD22",
-            "attributes"
-          ],
-          [
-            "OGRWriter-3D-LoD22",
-            "attributes"
-          ]
+          ["OBJVecWriter-LoD22", "attributes"],
+          ["OGRWriter-3D-LoD22", "attributes"]
         ],
         "CityJSONL2Mesh-LoD22.roofparts_lr": [
-          [
-            "OGRWriter-2D-LoD22",
-            "geometries"
-          ]
+          ["OGRWriter-2D-LoD22", "geometries"]
         ],
         "CityJSONL2Mesh-LoD22.roofparts_lr_attributes": [
-          [
-            "OGRWriter-2D-LoD22",
-            "attributes"
-          ]
+          ["OGRWriter-2D-LoD22", "attributes"]
         ],
-        "CityJSONL2Mesh-attr.attributes": [
-          [
-            "OGRWriter-pand",
-            "attributes"
-          ]
-        ],
-        "CityJSONL2Mesh-attr.lod0_2d": [
-          [
-            "OGRWriter-pand",
-            "geometries"
-          ]
-        ],
+        "CityJSONL2Mesh-attr.attributes": [["OGRWriter-pand", "attributes"]],
+        "CityJSONL2Mesh-attr.lod0_2d": [["OGRWriter-pand", "geometries"]],
         "PolygonTriangulator-LoD12.multi_triangle_collections": [
-          [
-            "OBJVecWriter-LoD12",
-            "triangles"
-          ],
-          [
-            "OGRWriter-3D-LoD12-tri",
-            "geometries"
-          ]
+          ["OBJVecWriter-LoD12", "triangles"],
+          ["OGRWriter-3D-LoD12-tri", "geometries"]
         ],
         "PolygonTriangulator-LoD13.multi_triangle_collections": [
-          [
-            "OBJVecWriter-LoD13",
-            "triangles"
-          ],
-          [
-            "OGRWriter-3D-LoD13-tri",
-            "geometries"
-          ]
+          ["OBJVecWriter-LoD13", "triangles"],
+          ["OGRWriter-3D-LoD13-tri", "geometries"]
         ],
         "PolygonTriangulator-LoD22.multi_triangle_collections": [
-          [
-            "OBJVecWriter-LoD22",
-            "triangles"
-          ],
-          [
-            "OGRWriter-3D-LoD22-tri",
-            "geometries"
-          ]
+          ["OBJVecWriter-LoD22", "triangles"],
+          ["OGRWriter-3D-LoD22-tri", "geometries"]
         ]
       },
       "marked_inputs": {
@@ -905,14 +685,8 @@
         "require_input_globals": true,
         "require_input_wait": false
       },
-      "position": [
-        416.0,
-        146.0
-      ],
-      "type": [
-        "Core",
-        "NestedFlowchart"
-      ]
+      "position": [416.0, 146.0],
+      "type": ["Core", "NestedFlowchart"]
     }
   }
 }

@@ -13,15 +13,15 @@ RUN wget https://cdn.proj.org/nl_nsgi_nlgeo2018.tif -O /usr/local/share/proj/nl_
 # Needed for the proj-sys bindings
 RUN apt-get install -y clang-15
 
-# Install rust
-RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
+# Install rust (apt package requires Ubuntu >=24.04)
+RUN apt-get install -y rustup && rustup default stable
 
 WORKDIR /usr/src/tyler
 COPY Cargo.toml Cargo.lock ./
 COPY resources ./resources
 COPY src ./src
 COPY proj ./proj
-RUN --mount=type=cache,target=/usr/src/tyler/target /root/.cargo/bin/cargo install --path .
+RUN --mount=type=cache,target=/usr/src/tyler/target cargo install --path .
 
 COPY docker/strip-docker-image-export ./
 RUN rm -rf /export
@@ -36,9 +36,9 @@ RUN mkdir /export && \
     -f $GF_PLUGIN_FOLDER/gfp_gdal.so \
     -f $GF_PLUGIN_FOLDER/gfp_val3dity.so \
     -f $GF_PLUGIN_FOLDER/gfp_las.so \
-    -f /root/.cargo/bin/tyler
+    -f /root/.cargo/bin/tyler-multiformat
 
-FROM ubuntu:lunar-20230301
+FROM ubuntu:noble-20250619
 ARG VERSION
 LABEL org.opencontainers.image.authors="Balázs Dukai <balazs.dukai@3dgi.nl>"
 LABEL org.opencontainers.image.vendor="3DGI"
@@ -56,8 +56,8 @@ COPY --from=builder $GF_PLUGIN_FOLDER $GF_PLUGIN_FOLDER
 COPY --from=builder /export/lib/ /lib/
 COPY --from=builder /export/lib64/ /lib64/
 COPY --from=builder /export/usr/ /usr/
-COPY --from=builder /export/root/.cargo/bin/tyler /usr/local/bin/tyler
+COPY --from=builder /export/root/.cargo/bin/tyler-multiformat /usr/local/bin/tyler-multiformat
 
 # Update library links
 RUN ldconfig
-CMD ["tyler"]
+CMD ["tyler-multiformat"]
