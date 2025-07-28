@@ -1,6 +1,6 @@
 [package]
 name = "tyler"
-version = "0.4.0-alpha8"
+version = "0.4.0-alpha9"
 edition = "2021"
 authors = ["Balázs Dukai <balazs.dukai@3dgi.nl>", "Ravi Peters <ravi.peters@3dgi.nl>"]
 description = "Create tiles from 3D city objects encoded as CityJSONFeatures."
@@ -15,7 +15,7 @@ categories = ["command-line-utilities", "science::geo"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [[bin]]
-name = "tyler"
+name = "tyler-multiformat"
 path = "src/main.rs"
 
 [dependencies]
