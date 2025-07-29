@@ -103,6 +103,8 @@ pub struct Cli {
     /// Path to the geoflow executable for clipping and exporting the gltf files.
     #[arg(long, value_parser = existing_path)]
     pub exe_geof: Option<PathBuf>,
+    #[arg(long)]
+    pub verbose_geof: bool,
     /// Maximum error that is allowed in mesh simplification to reduce the number of vertices. Value should be a float that represents that maximum allowed error in meters. Ignored for building object types.
     #[arg(long, default_value = "1.0")]
     pub simplification_max_error: Option<f64>,
