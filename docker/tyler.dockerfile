@@ -1,4 +1,4 @@
-FROM 3dgi/geoflow-bundle-builder:2025.02.12 AS builder
+FROM 3dgi/geoflow-bundle-builder:2025.07.15 AS builder
 
 USER root
 
