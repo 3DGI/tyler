@@ -693,20 +693,35 @@ impl SquareGrid {
                 nr_cells_not_empty += 1;
             }
         }
+        // Handle empty case
+        if nr_vertices_not_empty.is_empty() {
+            return SquareGridStats {
+                nr_vertices: 0,
+                nr_cells_with_content: 0,
+                nr_vertices_min: 0,
+                nr_vertices_max: 0,
+                nr_vertices_mean: 0.0,
+                nr_vertices_median: 0.0,
+            };
+        }
+
         let sum = nr_vertices_not_empty.iter().sum();
         let mean = sum as f64 / nr_cells_not_empty as f64;
-        // naive median
-        let median = if nr_vertices_not_empty.len() % 2 != 0 {
-            if nr_vertices_not_empty.len() > 1 {
-                let c = (nr_vertices_not_empty.len() / 2) + 1;
-                nr_vertices_not_empty[c] as f64
-            } else {
-                nr_vertices_not_empty[0] as f64
-            }
+
+        // Sort for median calculation
+        nr_vertices_not_empty.sort();
+
+        // Calculate median
+        let median = if nr_vertices_not_empty.len() % 2 == 0 {
+            // Even number of elements: average of the two middle elements
+            let mid = nr_vertices_not_empty.len() / 2;
+            (nr_vertices_not_empty[mid - 1] as f64 + nr_vertices_not_empty[mid] as f64) / 2.0
         } else {
-            let c = nr_vertices_not_empty.len() / 2;
-            (nr_vertices_not_empty[c] as f64 + nr_vertices_not_empty[c + 1] as f64) / 2.0
+            // Odd number of elements: the middle element
+            let mid = nr_vertices_not_empty.len() / 2;
+            nr_vertices_not_empty[mid] as f64
         };
+
         SquareGridStats {
             nr_vertices: sum,
             nr_cells_with_content: nr_cells_not_empty,
