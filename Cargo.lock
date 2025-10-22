@@ -880,7 +880,7 @@ dependencies = [
 
 [[package]]
 name = "tyler"
-version = "0.3.13"
+version = "0.3.14"
 dependencies = [
  "bincode",
  "bitvec",

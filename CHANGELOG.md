@@ -1,5 +1,12 @@
 # Changelog
 
+## tyler 0.3.14 (2025-10-22)
+
+### Fixed
+
+- Median calculation in compute_grid_statistics was incorrect. The case when 0-2 grid cells had vertices was not
+  handled correctly.
+
 ## tyler 0.3.11 (2024-07-25)
 
 ### Fixed
