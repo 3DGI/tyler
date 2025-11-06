@@ -919,7 +919,7 @@ type Solid = Vec<Shell>;
 
 #[derive(Deserialize, Debug)]
 #[serde(tag = "type")]
-enum Geometry {
+pub enum Geometry {
     MultiSurface { boundaries: MultiSurface },
     Solid { boundaries: Solid },
 }
@@ -928,7 +928,7 @@ enum Geometry {
 pub struct CityObject {
     #[serde(rename = "type")]
     pub cotype: CityObjectType,
-    geometry: Option<Vec<Geometry>>,
+    pub geometry: Option<Vec<Geometry>>,
 }
 
 #[cfg(test)]

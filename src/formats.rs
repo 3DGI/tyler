@@ -161,14 +161,14 @@ pub mod cesium3dtiles {
             content_add_bv: bool,
         ) -> Self {
             let crs_from = format!("EPSG:{}", world.crs.to_epsg().unwrap());
-            // Because we have a boundingVolume.box. For a boundingVolume.region we need 4979.
-            let crs_to = "EPSG:4978";
+            // Use EPSG:4979 (geographic 3D) for boundingVolume.region, matching pg2b3dm 2.0.0+ approach
+            // This is more compatible with viewers and matches the 3D Tiles spec better
+            let crs_to = "EPSG:4979";
             let transformer = Proj::new_known_crs(&crs_from, crs_to, None).unwrap();
-            // y-up to z-up transform needed because we are using gltf assets, which is y-up
-            // https://github.com/CesiumGS/3d-tiles/tree/main/specification#y-up-to-z-up
-            // let y_up_to_z_up = Transform([
-            //     1.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-            // ]);
+            
+            // Transform to ECEF for root transform - pg2b3dm still uses ECEF for root transform
+            // GLB content is in input CRS, but root transform is in ECEF
+            let transformer_to_ecef = Proj::new_known_crs(&crs_from, "EPSG:4978", None).unwrap();
 
             let root = Self::generate_tiles(
                 quadtree,
@@ -181,7 +181,36 @@ pub mod cesium3dtiles {
                 content_bv_from_tile,
                 content_add_bv,
             );
-            // root.transform = Some(y_up_to_z_up);
+            
+            // Add root transform to translate to ECEF center - matches pg2b3dm 2.0.0+ approach
+            // GLB content is in ECEF (relative to root center in ECEF) to match root transform coordinate system
+            // Root transform translates to ECEF center to position the content correctly
+            // Calculate root center from quadtree bbox - this must match the root center used in gltf_writer.rs
+            // Use the same root center calculation for both tileset transform and GLB coordinates
+            let root_bbox = quadtree.bbox(&world.grid);
+            let root_center_original = [
+                (root_bbox[0] + root_bbox[3]) * 0.5,
+                (root_bbox[1] + root_bbox[4]) * 0.5,
+                (root_bbox[2] + root_bbox[5]) * 0.5,
+            ];
+            let root_center_ecef = transformer_to_ecef
+                .convert((root_center_original[0], root_center_original[1], root_center_original[2]))
+                .unwrap();
+            
+            log::info!("Root center for tileset transform - input CRS: [{:.2}, {:.2}, {:.2}], ECEF: [{:.2}, {:.2}, {:.2}]",
+                root_center_original[0], root_center_original[1], root_center_original[2],
+                root_center_ecef.0, root_center_ecef.1, root_center_ecef.2);
+            
+            // Create identity transform with translation to ECEF center
+            let root_transform = Transform([
+                1.0, 0.0, 0.0, 0.0,
+                0.0, 1.0, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                root_center_ecef.0,
+                root_center_ecef.1,
+                root_center_ecef.2,
+                1.0,
+            ]);
 
             // Using gltf tile content
             let mut extensions: Extensions = HashMap::new();
@@ -191,14 +220,18 @@ pub mod cesium3dtiles {
             };
             extensions.insert(ExtensionName::ContentGltf, e1);
 
+            // Apply root transform to root tile
+            let mut root_with_transform = root;
+            root_with_transform.transform = Some(root_transform);
+            
             Self {
                 asset: Default::default(),
-                geometric_error: geometric_error_above_leaf + root.geometric_error * 1.5,
-                root,
+                geometric_error: geometric_error_above_leaf + root_with_transform.geometric_error * 1.5,
+                root: root_with_transform,
                 properties: None,
-                extensions_used: None,
-                extensions_required: None,
-                extensions: None,
+                extensions_used: Some(vec![ExtensionName::ContentGltf]),
+                extensions_required: Some(vec![ExtensionName::ContentGltf]),
+                extensions: Some(extensions),
             }
         }
 
@@ -234,7 +267,7 @@ pub mod cesium3dtiles {
                     tile_bbox[5] = tile_bbox[2] + tile_bbox[2] * 0.01;
                 }
                 let bounding_volume =
-                    BoundingVolume::box_from_bbox(&tile_bbox, transformer).unwrap();
+                    BoundingVolume::region_from_bbox(&tile_bbox, transformer).unwrap();
 
                 // The geometric error of a tile is computed based on the specified error
                 // for the nodes have leafs as children (assuming all leaf nodes are at the same level)
@@ -286,7 +319,7 @@ pub mod cesium3dtiles {
                     tile_bbox[5] = tile_bbox[2] + tile_bbox[2] * 0.01;
                 }
                 let bounding_volume =
-                    BoundingVolume::box_from_bbox(&tile_bbox, transformer).unwrap();
+                    BoundingVolume::region_from_bbox(&tile_bbox, transformer).unwrap();
                 let mut content: Option<Content> = None;
 
                 if quadtree.nr_items > 0 {
@@ -334,10 +367,24 @@ pub mod cesium3dtiles {
                     });
                 }
 
+                // Calculate geometric error for leaf tile based on tile size
+                // Use a small fraction of the tile's diagonal as geometric error
+                // This ensures positive value while being appropriate for leaf tiles
+                let dx = tile_bbox[3] - tile_bbox[0];
+                let dy = tile_bbox[4] - tile_bbox[1];
+                let dz = tile_bbox[5] - tile_bbox[2];
+                let diagonal = (dx * dx + dy * dy + dz * dz).sqrt();
+                let leaf_geometric_error = diagonal * 0.001; // 0.1% of diagonal as minimum
+                // Ensure minimum value of 0.1 to avoid issues with very small tiles
+                let geometric_error = leaf_geometric_error.max(0.1);
+
+                // For 3D Tiles with geographic 3D bounding volumes, GLB content uses input CRS (local coordinate system)
+                // This matches pg2b3dm 2.0.0+ approach - coordinates are in input CRS, not geographic 3D
+                // Root transform handles positioning in tileset.json
                 Tile {
                     id: tile_id,
                     bounding_volume,
-                    geometric_error: 0.0,
+                    geometric_error,
                     viewer_request_volume: None,
                     refine: Some(Refinement::Replace),
                     transform: None,
@@ -392,12 +439,20 @@ pub mod cesium3dtiles {
                 // its side on the x-axis.
                 let dz = cell_bbox[5] - cell_bbox[2];
 
-                // this is a leaf node, so the geometric_error is 0
-                // LoD2.2
+                // LoD2.2 - leaf node with minimum geometric error
+                // Calculate geometric error for leaf tile based on tile size
+                let dx = cell_bbox[3] - cell_bbox[0];
+                let dy = cell_bbox[4] - cell_bbox[1];
+                let diagonal = (dx * dx + dy * dy + dz * dz).sqrt();
+                let leaf_geometric_error = diagonal * 0.001; // 0.1% of diagonal as minimum
+                let geometric_error_lod22 = leaf_geometric_error.max(0.1); // Ensure minimum value
+                
+                // For 3D Tiles with geographic 3D bounding volumes, GLB content uses input CRS (local coordinate system)
+                // This matches pg2b3dm 2.0.0+ approach - coordinates are in input CRS, not geographic 3D
                 let tile_lod22 = Tile {
                     id: TileId::new(cellid.column, cellid.row, 3),
                     bounding_volume,
-                    geometric_error: 0.0,
+                    geometric_error: geometric_error_lod22,
                     viewer_request_volume: None,
                     refine: Some(Refinement::Replace),
                     transform: None,
@@ -443,7 +498,7 @@ pub mod cesium3dtiles {
                 });
             }
 
-            let root_volume = BoundingVolume::box_from_bbox(&grid.bbox, &transformer).unwrap();
+            let root_volume = BoundingVolume::region_from_bbox(&grid.bbox, &transformer).unwrap();
             debug!("root bbox: {:?}", &grid.bbox);
             debug!("root boundingVolume: {:?}", &root_volume);
             let root_geometric_error = grid.bbox[3] - grid.bbox[0];
@@ -473,9 +528,9 @@ pub mod cesium3dtiles {
                 geometric_error: root_geometric_error * 1.5,
                 root,
                 properties: None,
-                extensions_used: None,
-                extensions_required: None,
-                extensions: None,
+                extensions_used: Some(vec![ExtensionName::ContentGltf]),
+                extensions_required: Some(vec![ExtensionName::ContentGltf]),
+                extensions: Some(extensions),
             }
         }
 
@@ -1314,9 +1369,10 @@ pub mod cesium3dtiles {
         }
     }
 
-    /// Format the BoundingVolume coordinates to 2 decimal places in the JSON output.
-    /// 2 decimal places, because we have Cartesian ECEF coordinates.
-    /// If we had lat/long, we would need 6 decimal places, because that gives 0.11112m precision.
+    /// Format the BoundingVolume coordinates with appropriate precision in the JSON output.
+    /// For Region bounding volumes (lat/lon in radians), we need 6+ decimal places for precision.
+    /// 2 decimal places for radians gives ~0.01 rad = ~0.57° = ~63km precision (way too coarse!).
+    /// 6 decimal places gives ~0.000001 rad = ~0.000057° = ~6.3m precision (appropriate).
     /// See https://wiki.openstreetmap.org/wiki/Precision_of_coordinates
     struct BoundingVolumeFormatter;
 
@@ -1325,7 +1381,9 @@ pub mod cesium3dtiles {
         where
             W: ?Sized + Write,
         {
-            write!(writer, "{:.2}", value)
+            // Use 6 decimal places for sufficient precision in Region bounding volumes (radians)
+            // This ensures lat/lon coordinates have ~6.3m precision instead of ~63km
+            write!(writer, "{:.6}", value)
         }
     }
 
