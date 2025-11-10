@@ -28,7 +28,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::formats::cesium3dtiles::{Tile, TileId};
 use clap::Parser;
-use log::{debug, info, log_enabled, warn, Level};
+use log::{debug, log_enabled, warn, Level};
 use rayon::prelude::*;
 use subprocess::{Exec, Redirection};
 
@@ -174,10 +174,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --- Begin argument parsing
     let cli = crate::cli::Cli::parse();
     debug!("{:?}", &cli);
-    info!("tyler version: {}", clap::crate_version!());
+    debug!("tyler version: {}", clap::crate_version!());
     if !cli.output.is_dir() {
         fs::create_dir_all(&cli.output)?;
-        info!("Created output directory {:#?}", &cli.output);
+        debug!("Created output directory {:#?}", &cli.output);
     }
     // Since we have a default value, we can safely unwrap.
     let grid_cellsize = cli.grid_cellsize.unwrap();
@@ -208,7 +208,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .capture();
             if let Ok(capture_data) = res {
                 let plugins_stdout_str = res_plugins.unwrap().stdout_str();
-                info!(
+                debug!(
                     "geof version:\n{}{}",
                     capture_data.stdout_str(),
                     plugins_stdout_str
@@ -235,24 +235,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None
     };
     if geof_subprocess.is_none() {
-        info!("Using native glTF writer (--native-glb flag set)");
+        debug!("Using native glTF writer (--native-glb flag set)");
     } else {
-        info!("Using geoflow subprocess for glTF generation");
+        debug!("Using geoflow subprocess for glTF generation");
         debug!("{:?}", geof_subprocess.as_ref().unwrap());
     }
     use_geoflow = geof_subprocess.is_some();
-    info!("use_geoflow = {}", use_geoflow);
+    debug!("use_geoflow = {}", use_geoflow);
     
     // Validate PROJ availability for native glTF generation
     if !use_geoflow {
-        info!("Validating PROJ library availability for coordinate transformations...");
+        debug!("Validating PROJ library availability for coordinate transformations...");
         // Test with a simple, common transformation to verify PROJ data is available
         match crate::proj::Proj::new_known_crs("EPSG:4326", "EPSG:3857", None) {
             Ok(test_proj) => {
                 // Try a simple transformation to verify PROJ data is actually usable
                 match test_proj.convert((0.0, 0.0, 0.0)) {
                     Ok(_) => {
-                        info!("PROJ library validated successfully");
+                        debug!("PROJ library validated successfully");
                     }
                     Err(e) => {
                         return Err(format!(
@@ -359,19 +359,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             world
         }
         Some(world_path) => {
-            info!("Loading world from bincode {world_path:?}");
+            debug!("Loading world from bincode {world_path:?}");
             let world_file = File::open(world_path)?;
             bincode::deserialize_from(world_file)?
         }
     };
 
-    info!(
+    debug!(
         "Computed grid statistics: {}",
         world.grid.compute_statistics()
     );
 
     if cli.grid_export {
-        info!("Exporting the grid to TSV to {:?}", &debug_data_output_path);
+        debug!("Exporting the grid to TSV to {:?}", &debug_data_output_path);
         world.export_grid(cli.grid_export_features, Some(&debug_data_output_path))?;
     }
     if log_enabled!(Level::Debug) {
@@ -379,33 +379,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "Exporting the world instance to bincode to {:?}",
             &debug_data_output_path
         );
-        info!("[Progress] Starting world bincode export...");
-        info!("[Progress] This may take a while for large datasets ({} features)", 
+        debug!("[Progress] Starting world bincode export...");
+        debug!("[Progress] This may take a while for large datasets ({} features)", 
               world.features.len());
         world.export_bincode(Some("world"), Some(&debug_data_output_path))?;
-        info!("[Progress] Completed world bincode export");
+        debug!("[Progress] Completed world bincode export");
     }
 
     // Build quadtree
-    info!("[Progress] Starting quadtree construction...");
+    debug!("[Progress] Starting quadtree construction...");
     let quadtree: spatial_structs::QuadTree = match debug_data.quadtree {
         None => {
-            info!("Building quadtree");
+            debug!("Building quadtree");
             let quadtree = spatial_structs::QuadTree::from_world(&world, quadtree_capacity);
-            info!("[Progress] Completed quadtree construction");
+            debug!("[Progress] Completed quadtree construction");
             quadtree
         }
         Some(quadtree_path) => {
-            info!("Loading quadtree from bincode {quadtree_path:?}");
+            debug!("Loading quadtree from bincode {quadtree_path:?}");
             let quadtree_file = File::open(quadtree_path)?;
             let quadtree = bincode::deserialize_from(quadtree_file)?;
-            info!("[Progress] Completed quadtree loading from bincode");
+            debug!("[Progress] Completed quadtree loading from bincode");
             quadtree
         }
     };
 
     if cli.grid_export {
-        info!(
+        debug!(
             "Exporting the quadtree to TSV to {:?}",
             &debug_data_output_path
         );
@@ -416,18 +416,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "Exporting the quadtree instance to bincode to {:?}",
             &debug_data_output_path
         );
-        info!("[Progress] Starting quadtree bincode export...");
+        debug!("[Progress] Starting quadtree bincode export...");
         quadtree.export_bincode(Some("quadtree"), Some(&debug_data_output_path))?;
-        info!("[Progress] Completed quadtree bincode export");
+        debug!("[Progress] Completed quadtree bincode export");
     }
 
     // 3D Tiles
-    info!("[Progress] Starting tileset generation...");
+    debug!("[Progress] Starting tileset generation...");
     let tileset_path = cli.output.join("tileset.json");
     let subtrees_path = cli.output.join("subtrees");
     let tileset_path_unpruned = cli.output.join("tileset_unpruned.json");
     let subtrees_path_unpruned = cli.output.join("subtrees_unpruned");
-    info!("Generating 3D Tiles tileset");
+    debug!("Generating 3D Tiles tileset");
     let mut tileset = formats::cesium3dtiles::Tileset::from_quadtree(
         &quadtree,
         &world,
@@ -438,23 +438,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         cli.cesium3dtiles_content_bv_from_tile,
         cli.cesium3dtiles_content_add_bv,
     );
-    info!("[Progress] Completed tileset generation");
+    debug!("[Progress] Completed tileset generation");
 
     if cli.grid_export {
-        info!(
+        debug!(
             "Exporting the explicit tileset to TSV files to {:?}",
             &debug_data_output_path
         );
         tileset.export(Some(&debug_data_output_path))?;
     }
 
-    info!("[Progress] Starting tile collection...");
+    debug!("[Progress] Starting tile collection...");
     let (tiles, _subtrees) = match cli.cesium3dtiles_implicit {
         true => {
             let mut tileset_implicit = tileset.clone();
             // FIXME: here we have a Vec<(Tile, TileId)> in 'tiles' instead of Vec<&Tile>, because of the
             //  mess with the implicit/explicit tile id-s.
-            info!("Converting to implicit tiling");
+            debug!("Converting to implicit tiling");
             // Tileset.make_implicit() outputs the tiles that have content. If only the leaves have
             //  content, then only the leaves are outputted.
             let components: Vec<_> = subtrees_path_unpruned
@@ -471,10 +471,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
 
             if cli.cesium3dtiles_tileset_only || log_enabled!(Level::Debug) {
-                info!("Writing unpruned 3D Tiles tileset");
+                debug!("Writing unpruned 3D Tiles tileset");
                 tileset_implicit.to_file(&tileset_path_unpruned)?;
 
-                info!("Writing unpruned subtrees for implicit tiling");
+                debug!("Writing unpruned subtrees for implicit tiling");
                 fs::create_dir_all(&subtrees_path_unpruned)?;
                 for (subtree_id, subtree_bytes) in &tiles_subtrees.1 {
                     fs::create_dir_all(
@@ -504,9 +504,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|tile_ref| (tile_ref.clone(), tile_ref.id.clone()))
                 .collect();
 
-            info!("Writing unpruned 3D Tiles tileset");
+            debug!("Writing unpruned 3D Tiles tileset");
             tileset.to_file(&tileset_path_unpruned)?;
-            info!("[Progress] Completed tile collection, found {} tiles", tiles.len());
+            debug!("[Progress] Completed tile collection, found {} tiles", tiles.len());
 
             (tiles, vec![])
         }
@@ -531,15 +531,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     //  3d tiles tiles, but also works with cityjson output
     if !cli.cesium3dtiles_tileset_only {
         fs::create_dir_all(&path_output_tiles)?;
-        info!("Created output directory {:#?}", &path_output_tiles);
+        debug!("Created output directory {:#?}", &path_output_tiles);
         if use_geoflow {
         fs::create_dir_all(&path_features_input_dir)?;
-        info!("Created output directory {:#?}", &path_features_input_dir);
+        debug!("Created output directory {:#?}", &path_features_input_dir);
         }
 
         let tiles_len = tiles.len();
         let processed_count = if !use_geoflow {
-            info!("Starting to process {} tiles with native glTF generation...", tiles_len);
+            debug!("Starting to process {} tiles with native glTF generation...", tiles_len);
             Some(AtomicUsize::new(0))
         } else {
             None
@@ -558,33 +558,42 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(ref counter) = processed_count {
                     let count = counter.fetch_add(1, Ordering::Relaxed) + 1;
                     if count % 10 == 0 || count == tiles_len {
-                        info!("Progress: {}/{} tiles processed ({}%)", count, tiles_len, (count * 100) / tiles_len);
+                        debug!("Progress: {}/{} tiles processed ({}%)", count, tiles_len, (count * 100) / tiles_len);
                     }
                 }
-                debug!("Tile is empty ({}), skipping conversion", tileid_grid);
+                // Only log empty tiles if debug level is enabled
+                if log_enabled!(Level::Debug) {
+                    debug!("Tile is empty ({}), skipping conversion", tileid_grid);
+                }
                 return tile_failed;
             }
             let tileid_string = tileid.to_string();
             let file_name = tileid_string;
             if !use_geoflow {
                 let output_file = path_output_tiles.join(&file_name).with_extension("glb");
-                debug!("Writing native GLB for tile {} to {:?}", tile.id, output_file);
+                // Only log per-tile writes if debug level is enabled
+                if log_enabled!(Level::Debug) {
+                    debug!("Writing native GLB for tile {} to {:?}", tile.id, output_file);
+                }
                 match gltf_writer::write_tile_glb(&world, &quadtree, qtree_nodeid, &output_file, &cli.native_glb_color) {
                     Ok(_) => {
                         if let Some(ref counter) = processed_count {
                             let count = counter.fetch_add(1, Ordering::Relaxed) + 1;
                             if count % 10 == 0 || count == tiles_len {
-                                info!("Progress: {}/{} tiles processed ({}%)", count, tiles_len, (count * 100) / tiles_len);
+                                debug!("Progress: {}/{} tiles processed ({}%)", count, tiles_len, (count * 100) / tiles_len);
                             }
                         }
-                        debug!("Successfully wrote GLB for tile {}", tile.id);
+                        // Only log success if debug level is enabled
+                        if log_enabled!(Level::Debug) {
+                            debug!("Successfully wrote GLB for tile {}", tile.id);
+                        }
                         return tile_failed;
                     }
                     Err(err) => {
                         if let Some(ref counter) = processed_count {
                             let count = counter.fetch_add(1, Ordering::Relaxed) + 1;
                             if count % 10 == 0 || count == tiles_len {
-                                info!("Progress: {}/{} tiles processed ({}%)", count, tiles_len, (count * 100) / tiles_len);
+                                debug!("Progress: {}/{} tiles processed ({}%)", count, tiles_len, (count * 100) / tiles_len);
                             }
                         }
                         warn!("Tile {} conversion failed: {}", tile.id, err);
@@ -906,11 +915,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let mut tiles_results: Vec<Option<Tile>> = Vec::with_capacity(tiles_len + 2);
         if let Some(tiles_results_path) = debug_data.tiles_results {
-            info!("Loading tiles_results from {tiles_results_path:?}");
+            debug!("Loading tiles_results from {tiles_results_path:?}");
             let tiles_results_file = File::open(tiles_results_path)?;
             tiles_results = bincode::deserialize_from(tiles_results_file)?
         } else {
-            info!("Converting and optimizing {tiles_len} tiles");
+            debug!("Converting and optimizing {tiles_len} tiles");
             tiles_failed_iter.collect_into_vec(&mut tiles_results);
             if log_enabled!(Level::Debug) {
                 debug!(
@@ -923,13 +932,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         let tiles_failed: Vec<Tile> = tiles_results.into_iter().flatten().collect();
-        info!("Done");
+        debug!("Done");
 
         if use_geoflow && !log_enabled!(Level::Debug) {
             fs::remove_dir_all(path_features_input_dir)?;
         }
 
-        info!("Pruning tileset of {} failed tiles", tiles_failed.len());
+        debug!("Pruning tileset of {} failed tiles", tiles_failed.len());
         for (i, failed) in tiles_failed.iter().enumerate() {
             debug!("{}, removing failed from the tileset: {}", i, failed.id);
         }
@@ -952,7 +961,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 subtrees_dir_option,
                 Some(&debug_data_output_path),
             );
-            info!("Writing subtrees for implicit tiling");
+            debug!("Writing subtrees for implicit tiling");
             fs::create_dir_all(&subtrees_path)?;
             for (subtree_id, subtree_bytes) in subtrees {
                 fs::create_dir_all(
@@ -989,7 +998,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         break;
                     }
                 }
-                info!(
+                debug!(
                     "Splitting the explicit tileset into external tilesets at level {}",
                     split_at_level
                 );
@@ -1000,7 +1009,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
-        info!("Writing 3D Tiles tileset");
+        debug!("Writing 3D Tiles tileset");
         tileset.to_file(&tileset_path)?;
     }
 

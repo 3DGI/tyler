@@ -197,7 +197,7 @@ pub mod cesium3dtiles {
                 .convert((root_center_original[0], root_center_original[1], root_center_original[2]))
                 .unwrap();
             
-            log::info!("Root center for tileset transform - input CRS: [{:.2}, {:.2}, {:.2}], ECEF: [{:.2}, {:.2}, {:.2}]",
+            log::debug!("Root center for tileset transform - input CRS: [{:.2}, {:.2}, {:.2}], ECEF: [{:.2}, {:.2}, {:.2}]",
                 root_center_original[0], root_center_original[1], root_center_original[2],
                 root_center_ecef.0, root_center_ecef.1, root_center_ecef.2);
             

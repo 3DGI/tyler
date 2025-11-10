@@ -3,10 +3,9 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use earcutr::earcut;
 use gltf::json as json;
-use log::info;
 
 use crate::parser::{CityJSONFeatureVertices, Geometry, Transform, World};
 use crate::proj::Proj;
@@ -17,7 +16,7 @@ const GLTF_VERSION: &str = "2.0";
 /// Parse hex color string (#RRGGBB) to RGBA f32 array [R, G, B, A]
 fn hex_to_rgba(hex: &str) -> Result<[f32; 4], anyhow::Error> {
     if hex.len() != 7 || !hex.starts_with('#') {
-        return Err(anyhow::anyhow!("Invalid hex color format: expected #RRGGBB"));
+        bail!("Invalid hex color format: expected #RRGGBB");
     }
     let hex_digits = &hex[1..];
     let r = u8::from_str_radix(&hex_digits[0..2], 16)?;
@@ -71,7 +70,6 @@ pub fn write_tile_glb<P: AsRef<Path>>(
     output_path: P,
     default_color: &str,
 ) -> Result<()> {
-    info!("write_tile_glb called for node {:?}, output: {:?}", qtree_node_id, output_path.as_ref());
     let qtree_node = quadtree
         .node(&qtree_node_id)
         .context("Tile not present in quadtree")?;
@@ -99,15 +97,11 @@ pub fn write_tile_glb<P: AsRef<Path>>(
         (root_bbox[1] + root_bbox[4]) * 0.5,
         (root_bbox[2] + root_bbox[5]) * 0.5,
     ];
-    info!("Root center in input CRS: [{:.2}, {:.2}, {:.2}]", root_center_input_crs[0], root_center_input_crs[1], root_center_input_crs[2]);
-    info!("Root bbox: [{:.2}, {:.2}, {:.2}, {:.2}, {:.2}, {:.2}]", 
-        root_bbox[0], root_bbox[1], root_bbox[2], root_bbox[3], root_bbox[4], root_bbox[5]);
-    
     // Transform root center to ECEF for GLB content coordinates
     let root_center_ecef = transformer_to_ecef
         .convert((root_center_input_crs[0], root_center_input_crs[1], root_center_input_crs[2]))
         .context("Transform root center to ECEF")?;
-    info!("Root center in ECEF: [{:.2}, {:.2}, {:.2}]", root_center_ecef.0, root_center_ecef.1, root_center_ecef.2);
+    
 
     // Use tile center for vertical geoid correction (local to tile)
     let tile_bbox = qtree_node.bbox(&world.grid);
@@ -134,7 +128,6 @@ pub fn write_tile_glb<P: AsRef<Path>>(
         vertical_geoid_n
     );
 
-    let mut feature_count = 0;
     for cellid in qtree_node.cells() {
         let cell = world.grid.cell(cellid);
         for fid in cell.feature_ids.iter() {
@@ -142,11 +135,8 @@ pub fn write_tile_glb<P: AsRef<Path>>(
             let cf = CityJSONFeatureVertices::from_file(&feature.path_jsonl)
                 .map_err(|e| anyhow::anyhow!("Failed to read {:?}: {}", feature.path_jsonl, e))?;
             builder.add_feature(&cf, &world.transform)?;
-            feature_count += 1;
         }
     }
-    info!("Processed {} features for tile, writing GLB with {} vertices, {} indices", 
-          feature_count, builder.positions.len(), builder.indices.len());
 
     builder.write_glb(output_path, default_color)
 }
@@ -369,14 +359,6 @@ impl MeshBuilder {
         let y_local = (y_ecef - self.root_center_ecef.1) as f32;
         let z_local = (z_ecef - self.root_center_ecef.2) as f32;
         
-        // Debug: log first few coordinates to verify transformation is working
-        if idx == 0 {
-            log::info!("First vertex: input_CRS=({:.2}, {:.2}, {:.2}), ECEF=({:.2}, {:.2}, {:.2}), root_center_ECEF=({:.2}, {:.2}, {:.2}), relative_ECEF=({:.2}, {:.2}, {:.2})",
-                x_input, y_input, z_input,
-                x_ecef, y_ecef, z_ecef,
-                self.root_center_ecef.0, self.root_center_ecef.1, self.root_center_ecef.2,
-                x_local, y_local, z_local);
-        }
 
         // Return ECEF coordinates relative to root center
         // Y-up transformation in glTF node will convert from ECEF Z-up to glTF Y-up standard
@@ -387,7 +369,6 @@ impl MeshBuilder {
         self.normalize_normals();
 
         if self.positions.is_empty() {
-            info!("No geometry to write, creating empty GLB file at {:?}", output_path.as_ref());
             // Create parent directories if they don't exist
             if let Some(parent) = output_path.as_ref().parent() {
                 std::fs::create_dir_all(parent)
@@ -396,24 +377,10 @@ impl MeshBuilder {
             File::create(output_path.as_ref()).context("Create empty GLB file")?;
             return Ok(());
         }
-        info!("Writing GLB file with {} vertices, {} indices to {:?}", 
-              self.positions.len(), self.indices.len(), output_path.as_ref());
-        // Log root center being used (in ECEF)
-        info!("Root center in MeshBuilder (ECEF): [{:.2}, {:.2}, {:.2}]", 
-              self.root_center_ecef.0, self.root_center_ecef.1, self.root_center_ecef.2);
 
         let mut bin_buffer: Vec<u8> = Vec::new();
 
         let positions_offset = 0;
-        // Log first few positions to verify they're relative
-        if !self.positions.is_empty() {
-            info!("First position in self.positions: [{:.2}, {:.2}, {:.2}]", 
-                self.positions[0][0], self.positions[0][1], self.positions[0][2]);
-            if self.positions.len() > 1 {
-                info!("Second position in self.positions: [{:.2}, {:.2}, {:.2}]", 
-                    self.positions[1][0], self.positions[1][1], self.positions[1][2]);
-            }
-        }
         for p in &self.positions {
             for component in p {
                 bin_buffer.extend_from_slice(&component.to_le_bytes());
@@ -646,53 +613,8 @@ impl MeshBuilder {
                 .with_context(|| format!("Failed to create parent directory for {:?}", output_path.as_ref()))?;
         }
         
-        // Store path for logging before moving
-        let output_path_str = output_path.as_ref().to_string_lossy().to_string();
-        
         let mut file = File::create(output_path)?;
         file.write_all(&glb_bytes)?;
-        
-        // Log summary for this GLB file
-        if !self.positions.is_empty() {
-            let min_x = self.positions.iter().map(|p| p[0]).fold(f32::INFINITY, f32::min);
-            let max_x = self.positions.iter().map(|p| p[0]).fold(f32::NEG_INFINITY, f32::max);
-            let min_y = self.positions.iter().map(|p| p[1]).fold(f32::INFINITY, f32::min);
-            let max_y = self.positions.iter().map(|p| p[1]).fold(f32::NEG_INFINITY, f32::max);
-            let min_z = self.positions.iter().map(|p| p[2]).fold(f32::INFINITY, f32::min);
-            let max_z = self.positions.iter().map(|p| p[2]).fold(f32::NEG_INFINITY, f32::max);
-            
-            let center_x = (min_x + max_x) / 2.0;
-            let center_y = (min_y + max_y) / 2.0;
-            let center_z = (min_z + max_z) / 2.0;
-            
-            // Check if coordinates are relative (centered around zero) or absolute (large positive values)
-            // Relative coordinates should be within a few kilometers of zero
-            // Absolute coordinates in BC Albers (EPSG:6654) are typically 100k-500k range
-            let is_relative = min_x < 0.0 || max_x < 100000.0 || (min_x.abs() < 10000.0 && max_x.abs() < 10000.0);
-            
-            info!("═══════════════════════════════════════════════════════════════");
-            info!("GLB Summary: {}", output_path_str);
-            info!("  Root center (ECEF): [{:.2}, {:.2}, {:.2}]", self.root_center_ecef.0, self.root_center_ecef.1, self.root_center_ecef.2);
-            info!("  Vertices: {}", self.positions.len());
-            info!("  Coordinate range (ECEF, relative to root center):");
-            info!("    X: [{:.2}, {:.2}] (span: {:.2})", min_x, max_x, max_x - min_x);
-            info!("    Y: [{:.2}, {:.2}] (span: {:.2})", min_y, max_y, max_y - min_y);
-            info!("    Z: [{:.2}, {:.2}] (span: {:.2})", min_z, max_z, max_z - min_z);
-            info!("  Coordinate center: [{:.2}, {:.2}, {:.2}]", center_x, center_y, center_z);
-            if !self.positions.is_empty() {
-                info!("  First position: [{:.2}, {:.2}, {:.2}]", 
-                    self.positions[0][0], self.positions[0][1], self.positions[0][2]);
-            }
-            // ECEF coordinates relative to root center should be small (within a few kilometers)
-            // Absolute ECEF coordinates would be very large (millions of meters from Earth center)
-            if is_relative {
-                info!("  ✓ Status: RELATIVE to root center in ECEF (coordinates are local)");
-            } else {
-                info!("  ⚠️  Status: Coordinates may be absolute (check if values are very large)");
-                info!("     Expected: coordinates should be relative (small values, within a few km)");
-            }
-            info!("═══════════════════════════════════════════════════════════════");
-        }
         
         Ok(())
     }

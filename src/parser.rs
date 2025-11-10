@@ -19,7 +19,7 @@ use std::fmt;
 use std::fs::{read_to_string, File};
 use std::path::{Path, PathBuf};
 
-use log::{debug, error, info, warn};
+use log::{debug, error, warn};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::from_str;
@@ -83,7 +83,7 @@ impl World {
         let crs = cm.metadata.reference_system;
         let transform = cm.transform;
 
-        info!(
+        debug!(
             "Computing extent from the features of type {:?}",
             cityobject_types
         );
@@ -127,16 +127,42 @@ impl World {
                 }
             }
         }
-        // Walk the files at the root and update the counters
-        for feature_path in &feature_dirs_files.feature_files {
-            Self::extent_qc_file(
-                cityobject_types.as_ref(),
-                &mut extent_qc,
-                &mut nr_features,
-                &mut nr_features_ignored,
-                &mut cityobject_types_ignored,
-                feature_path,
-            );
+        // Walk the files at the root and update the counters (parallelized)
+        let root_file_results: Vec<_> = feature_dirs_files.feature_files
+            .par_iter()
+            .map(|feature_path| {
+                Self::extent_qc_file_parallel(feature_path, cityobject_types.as_ref())
+            })
+            .collect();
+        
+        // Merge results sequentially
+        for (bbox_qc_opt, count, ignored_count, ignored_types) in root_file_results {
+            if let Some(bbox_qc) = bbox_qc_opt {
+                // Feature of requested type found - update extent with new bbox
+                let [x_min, y_min, z_min, x_max, y_max, z_max] = bbox_qc.0;
+                if x_min < extent_qc.0[0] {
+                    extent_qc.0[0] = x_min
+                } else if x_max > extent_qc.0[3] {
+                    extent_qc.0[3] = x_max
+                }
+                if y_min < extent_qc.0[1] {
+                    extent_qc.0[1] = y_min
+                } else if y_max > extent_qc.0[4] {
+                    extent_qc.0[4] = y_max
+                }
+                if z_min < extent_qc.0[2] {
+                    extent_qc.0[2] = z_min
+                } else if z_max > extent_qc.0[5] {
+                    extent_qc.0[5] = z_max
+                }
+            }
+            nr_features += count;
+            nr_features_ignored += ignored_count;
+            for cotype in ignored_types {
+                if !cityobject_types_ignored.contains(&cotype) {
+                    cityobject_types_ignored.push(cotype);
+                }
+            }
         }
         if nr_features == 0 {
             panic!(
@@ -144,17 +170,17 @@ impl World {
                 cityobject_types
             );
         }
-        info!(
+        debug!(
             "Found {} features of type {:?}",
             nr_features, &cityobject_types
         );
-        info!(
+        debug!(
             "Ignored {} features of type {:?}",
             nr_features_ignored, &cityobject_types_ignored
         );
         debug!("extent_qc: {:?}", &extent_qc);
         let extent_rw = extent_qc.to_bbox(&transform, arg_minz, arg_maxz);
-        info!(
+        debug!(
             "Computed extent from features: {}",
             crate::spatial_structs::bbox_to_wkt(&extent_rw)
         );
@@ -214,63 +240,107 @@ impl World {
         path_features: P,
         cityobject_types: Option<&Vec<CityObjectType>>,
     ) -> Option<ExtentQcResult> {
-        // Do a first loop over the features to calculate their extent and their number.
-        // Need a mutable iterator, because .next() consumes the next value and advances the iterator.
-        let mut features_enum_iter = WalkDir::new(&path_features)
+        // Collect all feature paths first for parallel reading
+        let feature_paths: Vec<PathBuf> = WalkDir::new(&path_features)
             .into_iter()
-            .filter_map(Self::jsonl_path);
-        // Init the extent with from the first feature of the requested types.
-        // We do not use extent_qc_init() here, because we need to collect the CityObject types
-        // and counts accurately, and we want to retain the position of the features_enum_iter
-        // for the full iteration after the first feature has been found.
-        let mut extent_qc = BboxQc([0, 0, 0, 0, 0, 0]);
-        let mut found_feature_type = false;
+            .filter_map(Self::jsonl_path)
+            .collect();
+        
+        if feature_paths.is_empty() {
+            return None;
+        }
+        
+        // Read and parse JSONL files in parallel (I/O bottleneck)
+        let results: Vec<_> = feature_paths
+            .par_iter()
+            .map(|feature_path| {
+                Self::extent_qc_file_parallel(feature_path, cityobject_types)
+            })
+            .collect();
+        
+        // Merge results sequentially
+        let mut extent_qc: Option<BboxQc> = None;
         let mut nr_features = 0;
         let mut nr_features_ignored = 0;
         let mut cityobject_types_ignored: Vec<CityObjectType> = Vec::new();
-        // Iterate only until the first feature is found
-        #[allow(clippy::while_let_on_iterator)]
-        while let Some(feature_path) = features_enum_iter.next() {
-            match CityJSONFeatureVertices::from_file(&feature_path) {
-                Ok(cf) => {
-                    if let Some(eqc) = cf.bbox_of_types(cityobject_types) {
-                        extent_qc = eqc;
-                        found_feature_type = true;
-                        nr_features += 1;
-                        break;
-                    } else {
-                        for (_, co) in cf.cityobjects.iter() {
-                            if !cityobject_types_ignored.contains(&co.cotype) {
-                                cityobject_types_ignored.push(co.cotype);
-                            }
-                            nr_features_ignored += 1;
-                        }
+        
+        for (bbox_qc_opt, count, ignored_count, ignored_types) in results {
+            if let Some(bbox_qc) = bbox_qc_opt {
+                // Feature of requested type found
+                if let Some(ref mut eqc) = extent_qc {
+                    // Update extent with new bbox
+                    let [x_min, y_min, z_min, x_max, y_max, z_max] = bbox_qc.0;
+                    if x_min < eqc.0[0] {
+                        eqc.0[0] = x_min
+                    } else if x_max > eqc.0[3] {
+                        eqc.0[3] = x_max
                     }
+                    if y_min < eqc.0[1] {
+                        eqc.0[1] = y_min
+                    } else if y_max > eqc.0[4] {
+                        eqc.0[4] = y_max
+                    }
+                    if z_min < eqc.0[2] {
+                        eqc.0[2] = z_min
+                    } else if z_max > eqc.0[5] {
+                        eqc.0[5] = z_max
+                    }
+                } else {
+                    // First feature found - initialize extent
+                    extent_qc = Some(bbox_qc);
                 }
-                Err(e) => {
-                    warn!("Failed to parse {:?} with {:?}", &feature_path, e)
+            }
+            nr_features += count;
+            nr_features_ignored += ignored_count;
+            for cotype in ignored_types {
+                if !cityobject_types_ignored.contains(&cotype) {
+                    cityobject_types_ignored.push(cotype);
                 }
             }
         }
-        if !found_feature_type {
-            return None;
+        
+        if let Some(extent_qc) = extent_qc {
+            Some(ExtentQcResult {
+                extent_qc,
+                nr_features,
+                cityobject_types_ignored,
+                nr_features_ignored,
+            })
+        } else {
+            None
         }
-        for feature_path in features_enum_iter {
-            Self::extent_qc_file(
-                cityobject_types,
-                &mut extent_qc,
-                &mut nr_features,
-                &mut nr_features_ignored,
-                &mut cityobject_types_ignored,
-                &feature_path,
-            );
+    }
+    
+    /// Process a single feature file and return its extent data (parallel version)
+    /// Returns (bbox_qc_opt, nr_features, nr_features_ignored, cityobject_types_ignored)
+    /// bbox_qc_opt is Some(bbox) if feature of requested type found, None otherwise
+    fn extent_qc_file_parallel(
+        feature_path: &PathBuf,
+        cityobject_types: Option<&Vec<CityObjectType>>,
+    ) -> (Option<BboxQc>, usize, usize, Vec<CityObjectType>) {
+        match CityJSONFeatureVertices::from_file(feature_path) {
+            Ok(cf) => {
+                if let Some(bbox_qc) = cf.bbox_of_types(cityobject_types) {
+                    // Feature of requested type found
+                    (Some(bbox_qc), 1, 0, Vec::new())
+                } else {
+                    // Feature of different type - collect ignored types
+                    let mut cityobject_types_ignored: Vec<CityObjectType> = Vec::new();
+                    let mut nr_features_ignored = 0;
+                    for (_, co) in cf.cityobjects.iter() {
+                        if !cityobject_types_ignored.contains(&co.cotype) {
+                            cityobject_types_ignored.push(co.cotype);
+                        }
+                        nr_features_ignored += 1;
+                    }
+                    (None, 0, nr_features_ignored, cityobject_types_ignored)
+                }
+            }
+            Err(e) => {
+                warn!("Failed to parse {:?} with {:?}", feature_path, e);
+                (None, 0, 0, Vec::new())
+            }
         }
-        Some(ExtentQcResult {
-            extent_qc,
-            nr_features,
-            cityobject_types_ignored,
-            nr_features_ignored,
-        })
     }
 
     /// Initialize a [BboxQc] from the first feature of the correct type that is found in the
@@ -299,45 +369,7 @@ impl World {
         None
     }
 
-    fn extent_qc_file(
-        cityobject_types: Option<&Vec<CityObjectType>>,
-        extent_qc: &mut BboxQc,
-        nr_features: &mut usize,
-        nr_features_ignored: &mut usize,
-        cityobject_types_ignored: &mut Vec<CityObjectType>,
-        feature_path: &PathBuf,
-    ) {
-        if let Ok(cf) = CityJSONFeatureVertices::from_file(feature_path) {
-            if let Some(bbox_qc) = cf.bbox_of_types(cityobject_types) {
-                let [x_min, y_min, z_min, x_max, y_max, z_max] = bbox_qc.0;
-                if x_min < extent_qc.0[0] {
-                    extent_qc.0[0] = x_min
-                } else if x_max > extent_qc.0[3] {
-                    extent_qc.0[3] = x_max
-                }
-                if y_min < extent_qc.0[1] {
-                    extent_qc.0[1] = y_min
-                } else if y_max > extent_qc.0[4] {
-                    extent_qc.0[4] = y_max
-                }
-                if z_min < extent_qc.0[2] {
-                    extent_qc.0[2] = z_min
-                } else if z_max > extent_qc.0[5] {
-                    extent_qc.0[5] = z_max
-                }
-                *nr_features += 1;
-            } else {
-                for (_, co) in cf.cityobjects.iter() {
-                    if !cityobject_types_ignored.contains(&co.cotype) {
-                        cityobject_types_ignored.push(co.cotype);
-                    }
-                    *nr_features_ignored += 1;
-                }
-            }
-        } else {
-            error!("Failed to parse {:?}", &feature_path);
-        }
-    }
+    // Old sequential extent_qc_file removed - using parallel version instead
 
     /// Return the file path if the 'DirEntry' is a .jsonl file (eg. .city.jsonl).
     pub fn jsonl_path(walkdir_res: Result<walkdir::DirEntry, walkdir::Error>) -> Option<PathBuf> {
@@ -365,7 +397,7 @@ impl World {
     // Loop through the features and assign the features to the grid cells.
     pub fn index_with_grid(&mut self) {
         let feature_dirs_files = Self::find_feature_dirs_and_files(&self.path_features_root);
-        info!("Counting vertices in grid cells");
+        debug!("Counting vertices in grid cells");
         // todo input: split input file by newline?
         // todo input: adapt to take paths from split files
         let features_in_cells_dirs: Vec<Vec<FeatureInGridCells>> = feature_dirs_files
