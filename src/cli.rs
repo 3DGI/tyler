@@ -103,6 +103,14 @@ pub struct Cli {
     /// Path to the geoflow executable for clipping and exporting the gltf files.
     #[arg(long, value_parser = existing_path)]
     pub exe_geof: Option<PathBuf>,
+    /// Generate glTF tiles natively in Rust, bypassing geoflow.
+    /// If not specified, the default geoflow pipeline is used for backward compatibility.
+    #[arg(long = "native-glb")]
+    pub native_glb: bool,
+    /// Default PBR base color for native GLB generation, specified as a hex rgb-color value, eg. #FFC0CB is pink.
+    /// Default is #FFC0CB (pink).
+    #[arg(long = "native-glb-color", value_parser = hex_color, default_value = "#FFC0CB")]
+    pub native_glb_color: String,
     #[arg(long)]
     pub verbose_geof: bool,
     /// Maximum error that is allowed in mesh simplification to reduce the number of vertices. Value should be a float that represents that maximum allowed error in meters. Ignored for building object types.
