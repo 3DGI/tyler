@@ -132,9 +132,18 @@ pub fn write_tile_glb<P: AsRef<Path>>(
         let cell = world.grid.cell(cellid);
         for fid in cell.feature_ids.iter() {
             let feature = &world.features[*fid];
-            let cf = CityJSONFeatureVertices::from_file(&feature.path_jsonl)
-                .map_err(|e| anyhow::anyhow!("Failed to read {:?}: {}", feature.path_jsonl, e))?;
-            builder.add_feature(&cf, &world.transform)?;
+            // Check FCB cache first (for FCB-sourced features), otherwise read from file (JSONL path)
+            if let Some(ref cache) = world.fcb_feature_cache {
+                // FCB path - use cached feature (reference, no clone)
+                let cf = cache.get(&feature.path_jsonl)
+                    .ok_or_else(|| anyhow::anyhow!("Feature not found in FCB cache: {:?}", feature.path_jsonl))?;
+                builder.add_feature(cf, &world.transform)?;
+            } else {
+                // JSONL path - read from file (existing behavior, UNTOUCHED)
+                let cf = CityJSONFeatureVertices::from_file(&feature.path_jsonl)
+                    .map_err(|e| anyhow::anyhow!("Failed to read {:?}: {}", feature.path_jsonl, e))?;
+                builder.add_feature(&cf, &world.transform)?;
+            }
         }
     }
 
@@ -276,7 +285,7 @@ impl MeshBuilder {
             }
         }
 
-        let triangulated = earcut(&flat_coords, &hole_indices, 2);
+        let triangulated = earcut(&flat_coords, &hole_indices, 2)?;
         if triangulated.len() < 3 {
             return Ok(());
         }

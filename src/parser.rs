@@ -17,15 +17,73 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::fs::{read_to_string, File};
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use url;
 
 use log::{debug, error, warn};
 use rayon::prelude::*;
+use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::from_str;
+use serde_json::{from_str, to_string};
+use tempfile::NamedTempFile;
 use walkdir::WalkDir;
+use fcb_core::{FcbReader, SpatialQuery};
 
 use crate::spatial_structs::{BboxQc, Cell, CellId};
+
+/// Represents the source of input data - either a local file path or an HTTP(S) URL
+#[derive(Debug, Clone)]
+pub enum InputSource {
+    Local(PathBuf),
+    Http(String),
+}
+
+/// Check if a string is an HTTP(S) URL
+pub fn is_http_url(s: &str) -> bool {
+    s.starts_with("http://") || s.starts_with("https://")
+}
+
+/// Resolve an input string to an InputSource enum
+pub fn resolve_input_source(s: &str) -> Result<InputSource, Box<dyn std::error::Error>> {
+    if is_http_url(s) {
+        // Validate URL format
+        url::Url::parse(s)?;
+        Ok(InputSource::Http(s.to_string()))
+    } else {
+        let path = PathBuf::from(s);
+        if path.exists() {
+            Ok(InputSource::Local(path))
+        } else {
+            Err(format!("Path does not exist: {:?}", s).into())
+        }
+    }
+}
+
+/// Download a file from HTTP(S) URL to a temporary file
+/// Returns a NamedTempFile that will be automatically cleaned up when dropped
+pub fn download_to_tempfile(url: &str) -> Result<NamedTempFile, Box<dyn std::error::Error>> {
+    debug!("Downloading {} to temporary file", url);
+    
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(300)) // 5 minute timeout
+        .build()?;
+    
+    let response = client.get(url).send()?;
+    
+    if !response.status().is_success() {
+        return Err(format!("HTTP error: {} for URL {}", response.status(), url).into());
+    }
+    
+    let mut temp_file = NamedTempFile::new()?;
+    let content = response.bytes()?;
+    temp_file.write_all(&content)?;
+    temp_file.flush()?;
+    
+    debug!("Downloaded {} bytes to temporary file", content.len());
+    
+    Ok(temp_file)
+}
 
 /// Represents the "world" that contains some features and needs to be partitioned into
 /// tiles.
@@ -39,6 +97,8 @@ use crate::spatial_structs::{BboxQc, Cell, CellId};
 /// (also called CityJSON metadata in *tyler*).
 ///
 /// `cityobject_types` - The World only contains features of these types.
+///
+/// `fcb_feature_cache` - Optional cache for FCB features (keyed by feature path_jsonl)
 #[derive(Serialize, Deserialize)]
 pub struct World {
     pub cityobject_types: Option<Vec<CityObjectType>>,
@@ -48,6 +108,8 @@ pub struct World {
     pub path_features_root: PathBuf,
     pub path_metadata: PathBuf,
     pub transform: Transform,
+    #[serde(skip)]
+    pub fcb_feature_cache: Option<HashMap<PathBuf, CityJSONFeatureVertices>>,
 }
 
 struct ExtentQcResult {
@@ -202,7 +264,194 @@ impl World {
             cityobject_types,
             path_features_root,
             path_metadata,
+            fcb_feature_cache: None,
         })
+    }
+
+    /// Create a World from FCB (FlatCityBuf) file format
+    /// This is a NEW method that does not modify the existing new() used by JSONL path
+    /// Supports both local files and HTTP(S) URLs
+    pub fn new_from_fcb(
+        metadata_source: &str,
+        features_source: &str,
+        cellsize: u32,
+        cityobject_types: Option<Vec<CityObjectType>>,
+        arg_minz: Option<i32>,
+        arg_maxz: Option<i32>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        // Resolve metadata source
+        let metadata_source_enum = resolve_input_source(metadata_source)?;
+        let cm = CityJSONMetadata::from_source(metadata_source_enum)?;
+        let crs = cm.metadata.reference_system;
+        let transform = cm.transform;
+
+        debug!(
+            "Computing extent from FCB features of type {:?}",
+            cityobject_types
+        );
+
+        // Resolve features source and handle HTTP download if needed
+        let (_temp_fcb_file, fcb_path): (Option<NamedTempFile>, PathBuf) = 
+            match resolve_input_source(features_source)? {
+                InputSource::Local(path) => {
+                    // Check if it's an FCB file
+                    if let Some(ext) = path.extension() {
+                        if ext != "fcb" {
+                            return Err(format!("Expected .fcb file, got: {:?}", path).into());
+                        }
+                    }
+                    (None, path)
+                }
+                InputSource::Http(url) => {
+                    // Download FCB file to tempfile
+                    debug!("Downloading FCB file from {}", url);
+                    let temp_file = download_to_tempfile(&url)?;
+                    let path = temp_file.path().to_path_buf();
+                    (Some(temp_file), path)
+                }
+            };
+
+        // Open FCB file
+        let fcb_file = File::open(&fcb_path)?;
+        let fcb_reader = FcbReader::open(fcb_file)?;
+
+        // Query all features (entire bounding box)
+        let query = SpatialQuery::BBox(
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+            f64::INFINITY,
+        );
+
+        let mut feature_iter = fcb_reader.select_query(query, None, None)?;
+        
+        // First pass: compute extent and count features
+        let mut nr_features = 0;
+        let mut nr_features_ignored = 0;
+        let mut extent_qc: Option<BboxQc> = None;
+        let mut cityobject_types_ignored: Vec<CityObjectType> = Vec::new();
+        let mut feature_data: Vec<(String, CityJSONFeatureVertices)> = Vec::new(); // Store feature ID and parsed feature
+
+        while let Ok(Some(_)) = feature_iter.next() {
+            // Get the current feature as CityJSONFeature
+            let cj_feature = match feature_iter.cur_cj_feature() {
+                Ok(f) => f,
+                Err(e) => {
+                    warn!("Failed to get feature: {}", e);
+                    continue;
+                }
+            };
+            
+            // Serialize to JSON string, then parse into CityJSONFeatureVertices
+            let feature_json = match to_string(&cj_feature) {
+                Ok(json) => json,
+                Err(e) => {
+                    warn!("Failed to serialize feature to JSON: {}", e);
+                    continue;
+                }
+            };
+            
+            // Parse feature JSON
+            match from_str::<CityJSONFeatureVertices>(&feature_json) {
+                Ok(cf) => {
+                    // Get feature ID from cityobjects (first key)
+                    let feature_id = cf.cityobjects.keys().next()
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| format!("feature_{}", nr_features));
+                    
+                    if let Some(bbox_qc) = cf.bbox_of_types(cityobject_types.as_ref()) {
+                        // Feature of requested type found
+                        if let Some(ref mut eqc) = extent_qc {
+                            let [x_min, y_min, z_min, x_max, y_max, z_max] = bbox_qc.0;
+                            if x_min < eqc.0[0] {
+                                eqc.0[0] = x_min
+                            } else if x_max > eqc.0[3] {
+                                eqc.0[3] = x_max
+                            }
+                            if y_min < eqc.0[1] {
+                                eqc.0[1] = y_min
+                            } else if y_max > eqc.0[4] {
+                                eqc.0[4] = y_max
+                            }
+                            if z_min < eqc.0[2] {
+                                eqc.0[2] = z_min
+                            } else if z_max > eqc.0[5] {
+                                eqc.0[5] = z_max
+                            }
+                        } else {
+                            extent_qc = Some(bbox_qc);
+                        }
+                        nr_features += 1;
+                        feature_data.push((feature_id, cf));
+                    } else {
+                        // Feature of different type
+                        for (_, co) in cf.cityobjects.iter() {
+                            if !cityobject_types_ignored.contains(&co.cotype) {
+                                cityobject_types_ignored.push(co.cotype);
+                            }
+                        }
+                        nr_features_ignored += 1;
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to parse FCB feature: {}", e);
+                }
+            }
+        }
+
+        if nr_features == 0 {
+            return Err(format!(
+                "Did not find any FCB features of type {:?}",
+                cityobject_types
+            ).into());
+        }
+
+        let extent_qc = extent_qc.unwrap();
+        debug!("Found {} FCB features of type {:?}", nr_features, &cityobject_types);
+        debug!("Ignored {} FCB features of type {:?}", nr_features_ignored, &cityobject_types_ignored);
+        debug!("extent_qc: {:?}", &extent_qc);
+
+        // Apply minz/maxz limits if provided
+        let extent_rw = extent_qc.to_bbox(&transform, arg_minz, arg_maxz);
+        debug!(
+            "Computed extent from FCB features: {}",
+            crate::spatial_structs::bbox_to_wkt(&extent_rw)
+        );
+
+        // Allocate the grid
+        let epsg = crs.to_epsg()?;
+        let grid = crate::spatial_structs::SquareGrid::new(&extent_rw, cellsize, epsg);
+        debug!("{}", grid);
+
+        // Allocate the features container
+        let mut features: FeatureSet = Vec::with_capacity(nr_features + 1);
+        features.resize(nr_features + 1, Feature::default());
+
+        // Create feature cache for FCB features
+        let mut fcb_cache: HashMap<PathBuf, CityJSONFeatureVertices> = HashMap::new();
+        
+        // Create World instance (we'll populate features in index_with_grid_fcb)
+        let mut world = Self {
+            features,
+            crs,
+            transform,
+            grid,
+            cityobject_types,
+            path_features_root: fcb_path.parent().unwrap_or(Path::new(".")).to_path_buf(),
+            path_metadata: PathBuf::from(metadata_source),
+            fcb_feature_cache: None,
+        };
+
+        // Second pass: index features into grid and populate cache
+        world.index_with_grid_fcb(feature_data, &fcb_path, &mut fcb_cache)?;
+        
+        // Store cache in world
+        world.fcb_feature_cache = Some(fcb_cache);
+
+        // Keep temp file alive until world is created
+        drop(_temp_fcb_file);
+
+        Ok(world)
     }
 
     /// Find the direct subdirectories and CityJSONFeature files in the directory.
@@ -420,12 +669,13 @@ impl World {
 
         let mut fcount: usize = 0;
         for (fid, feature_in_cells) in features_in_cells_dirs
-            .iter()
+            .into_iter()
             .flatten()
-            .chain(features_in_cells_files.iter())
+            .chain(features_in_cells_files.into_iter())
             .enumerate()
         {
-            self.features[fid] = feature_in_cells.feature.clone();
+            // Move feature instead of cloning
+            self.features[fid] = feature_in_cells.feature;
             for (cellid, cell) in &feature_in_cells.cells {
                 let grid_cell = self.grid.cell_mut(cellid);
                 grid_cell.nr_vertices += cell.nr_vertices;
@@ -436,6 +686,45 @@ impl World {
             fcount += 1;
         }
         debug!("indexed {} features", fcount);
+    }
+
+    /// Index FCB features into the grid
+    /// This is a NEW method that does not modify the existing index_with_grid() used by JSONL path
+    fn index_with_grid_fcb(
+        &mut self,
+        feature_data: Vec<(String, CityJSONFeatureVertices)>,
+        fcb_path: &PathBuf,
+        fcb_cache: &mut HashMap<PathBuf, CityJSONFeatureVertices>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        debug!("Indexing {} FCB features into grid cells", feature_data.len());
+        
+        let mut fcount: usize = 0;
+        for (fid, (feature_id, cf)) in feature_data.into_iter().enumerate() {
+            // Count vertices in grid cells
+            let cell_vtx_cnt = self.count_vertices(&cf);
+            if !cell_vtx_cnt.is_empty() {
+                // Create a temporary path for the feature (for compatibility with existing code)
+                let feature_path = fcb_path.join(format!("{}.jsonl", feature_id));
+                
+                // Convert to FeatureInGridCells (using reference to avoid clone)
+                if let Some(feature_in_cells) = self.feature_to_cells(&feature_path, &cf, cell_vtx_cnt) {
+                    // Store feature in cache for later retrieval by gltf_writer (move cf, no clone)
+                    fcb_cache.insert(feature_path.clone(), cf);
+                    // Move feature instead of cloning
+                    self.features[fid] = feature_in_cells.feature;
+                    for (cellid, cell) in &feature_in_cells.cells {
+                        let grid_cell = self.grid.cell_mut(cellid);
+                        grid_cell.nr_vertices += cell.nr_vertices;
+                        if !grid_cell.feature_ids.contains(&fid) {
+                            grid_cell.feature_ids.push(fid)
+                        }
+                    }
+                    fcount += 1;
+                }
+            }
+        }
+        debug!("indexed {} FCB features", fcount);
+        Ok(())
     }
 
     /// Indexes a CityJSONFeature file.
@@ -579,13 +868,14 @@ impl World {
         &self,
         name: Option<&str>,
         output_dir: Option<&Path>,
-    ) -> bincode::Result<()> {
+    ) -> Result<(), bincode::error::EncodeError> {
         let file_name: &str = name.unwrap_or("world");
-        let file = match output_dir {
-            None => File::create(format!("{file_name}.bincode"))?,
-            Some(outdir) => File::create(outdir.join(format!("{file_name}.bincode")))?,
+        let mut file = match output_dir {
+            None => File::create(format!("{file_name}.bincode")).map_err(|e| bincode::error::EncodeError::Io { inner: e, index: 0 })?,
+            Some(outdir) => File::create(outdir.join(format!("{file_name}.bincode"))).map_err(|e| bincode::error::EncodeError::Io { inner: e, index: 0 })?,
         };
-        bincode::serialize_into(file, self)
+        bincode::serde::encode_into_std_write(self, &mut file, bincode::config::standard())?;
+        Ok(())
     }
 }
 
@@ -657,7 +947,7 @@ impl Crs {
 /// (see [video](https://youtu.be/DM2DI3ZI_BQ) for details), but I was getting an error of
 /// "Attempted to build VarZeroVec out of elements that cumulatively are larger than a u32 in size"
 /// from the zerovec crate, and I didn't investigate further.
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct CityJSONFeatureVertices {
     #[serde(rename = "CityObjects")]
     pub cityobjects: HashMap<String, CityObject>,
@@ -669,6 +959,24 @@ impl CityJSONMetadata {
         let cm_str = read_to_string(path.as_ref())?;
         let cm: CityJSONMetadata = from_str(&cm_str)?;
         Ok(cm)
+    }
+    
+    /// Load metadata from either a local file path or HTTP(S) URL
+    /// This is a new method that does not modify the existing from_file() used by JSONL path
+    pub fn from_source(source: InputSource) -> Result<Self, Box<dyn std::error::Error>> {
+        match source {
+            InputSource::Local(path) => {
+                // Use existing method for local files
+                Self::from_file(path)
+            }
+            InputSource::Http(url) => {
+                // Download to tempfile, then parse
+                let temp_file = download_to_tempfile(&url)?;
+                let cm_str = read_to_string(temp_file.path())?;
+                let cm: CityJSONMetadata = from_str(&cm_str)?;
+                Ok(cm)
+            }
+        }
     }
 }
 
@@ -949,14 +1257,14 @@ type Shell = Vec<Surface>;
 type MultiSurface = Vec<Surface>;
 type Solid = Vec<Shell>;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(tag = "type")]
 pub enum Geometry {
     MultiSurface { boundaries: MultiSurface },
     Solid { boundaries: Solid },
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct CityObject {
     #[serde(rename = "type")]
     pub cotype: CityObjectType,

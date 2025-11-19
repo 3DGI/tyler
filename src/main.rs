@@ -183,7 +183,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let grid_cellsize = cli.grid_cellsize.unwrap();
     let geometric_error_above_leaf = cli.geometric_error_above_leaf.unwrap();
     let format = Formats::_3DTiles; // override --format
-    let mut use_geoflow = !cli.native_glb;
+    let mut use_geoflow = !cli.native_glb && !cli.native_glb_from_fcb;
     let geof_subprocess = if use_geoflow {
         let exe = if let Some(exe_g) = cli.exe_geof.clone() {
                 assert!(exe_g.exists() && exe_g.is_file(), "geoflow executable must be an existing file for generating 3D Tiles, exe_geof: {:?}", &exe_g);
@@ -235,7 +235,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None
     };
     if geof_subprocess.is_none() {
-        debug!("Using native glTF writer (--native-glb flag set)");
+        if cli.native_glb_from_fcb {
+            debug!("Using native glTF writer (--native-glb-from-fcb flag set)");
+        } else {
+            debug!("Using native glTF writer (--native-glb-from-jsonl flag set)");
+        }
     } else {
         debug!("Using geoflow subprocess for glTF generation");
         debug!("{:?}", geof_subprocess.as_ref().unwrap());
@@ -306,7 +310,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(val)
         }
         Err(_val) => {
-            // PROJ_DATA warning only relevant for native-glb path (already validated above)
+            // PROJ_DATA warning only relevant for native-glb-from-jsonl path (already validated above)
             // For geoflow path, geoflow handles PROJ internally
             None
         }
@@ -347,21 +351,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ownership of the value (eg cli.object_type).
     let world: parser::World = match debug_data.world {
         None => {
-            let mut world = parser::World::new(
-                &cli.metadata,
-                &cli.features,
-                grid_cellsize,
-                cli.object_type,
-                cli.grid_minz,
-                cli.grid_maxz,
-            )?;
-            world.index_with_grid(); // todo input: in general, build a line index
-            world
+            if cli.native_glb_from_fcb {
+                // FCB path - use new method
+                debug!("Loading World from FCB file");
+                let world = parser::World::new_from_fcb(
+                    &cli.metadata,
+                    &cli.features,
+                    grid_cellsize,
+                    cli.object_type,
+                    cli.grid_minz,
+                    cli.grid_maxz,
+                )?;
+                // Features are already indexed in new_from_fcb, no need to call index_with_grid
+                world
+            } else {
+                // JSONL path - use existing method (UNTOUCHED)
+                // Convert String to PathBuf for existing method
+                let metadata_path = PathBuf::from(&cli.metadata);
+                let features_path = PathBuf::from(&cli.features);
+                let mut world = parser::World::new(
+                    &metadata_path,
+                    &features_path,
+                    grid_cellsize,
+                    cli.object_type,
+                    cli.grid_minz,
+                    cli.grid_maxz,
+                )?;
+                world.index_with_grid(); // todo input: in general, build a line index
+                world
+            }
         }
         Some(world_path) => {
             debug!("Loading world from bincode {world_path:?}");
-            let world_file = File::open(world_path)?;
-            bincode::deserialize_from(world_file)?
+            let mut world_file = File::open(world_path)?;
+            bincode::serde::decode_from_std_read(&mut world_file, bincode::config::standard())?
         }
     };
 
@@ -381,7 +404,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         debug!("[Progress] Starting world bincode export...");
         debug!("[Progress] This may take a while for large datasets ({} features)", 
-              world.features.len());
+              world.features.len().saturating_sub(1));
         world.export_bincode(Some("world"), Some(&debug_data_output_path))?;
         debug!("[Progress] Completed world bincode export");
     }
@@ -397,8 +420,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Some(quadtree_path) => {
             debug!("Loading quadtree from bincode {quadtree_path:?}");
-            let quadtree_file = File::open(quadtree_path)?;
-            let quadtree = bincode::deserialize_from(quadtree_file)?;
+            let mut quadtree_file = File::open(quadtree_path)?;
+            let quadtree = bincode::serde::decode_from_std_read(&mut quadtree_file, bincode::config::standard())?;
             debug!("[Progress] Completed quadtree loading from bincode");
             quadtree
         }
@@ -916,8 +939,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut tiles_results: Vec<Option<Tile>> = Vec::with_capacity(tiles_len + 2);
         if let Some(tiles_results_path) = debug_data.tiles_results {
             debug!("Loading tiles_results from {tiles_results_path:?}");
-            let tiles_results_file = File::open(tiles_results_path)?;
-            tiles_results = bincode::deserialize_from(tiles_results_file)?
+            let mut tiles_results_file = File::open(tiles_results_path)?;
+            tiles_results = bincode::serde::decode_from_std_read(&mut tiles_results_file, bincode::config::standard())?
         } else {
             debug!("Converting and optimizing {tiles_len} tiles");
             tiles_failed_iter.collect_into_vec(&mut tiles_results);
@@ -927,8 +950,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &debug_data_output_path
                 );
                 let outpath = debug_data_output_path.join("tiles_results.bincode");
-                let tiles_results_file = File::create(outpath)?;
-                bincode::serialize_into(tiles_results_file, &tiles_results)?;
+                let mut tiles_results_file = File::create(outpath)?;
+                bincode::serde::encode_into_std_write(&tiles_results, &mut tiles_results_file, bincode::config::standard())?;
             }
         }
         let tiles_failed: Vec<Tile> = tiles_results.into_iter().flatten().collect();

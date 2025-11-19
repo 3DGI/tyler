@@ -14,18 +14,20 @@
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
+use url;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
 pub struct Cli {
     /// Main CityJSON file (.city.json), containing the coordinate reference system and
-    /// transformation properties.
-    #[arg(short, long, value_parser = existing_canonical_path)]
-    pub metadata: PathBuf,
-    /// Directory of CityJSONFeatures (.city.jsonl). The directory and all its
-    /// subdirectories are searched recursively for feature files.
-    #[arg(short, long, value_parser = existing_canonical_path)]
-    pub features: PathBuf,
+    /// transformation properties. Can be a local file path or HTTP(S) URL.
+    #[arg(short, long, value_parser = metadata_or_url_parser)]
+    pub metadata: String,
+    /// Directory of CityJSONFeatures (.city.jsonl) or FCB file (.fcb). The directory and all its
+    /// subdirectories are searched recursively for feature files, or a single FCB file can be specified.
+    /// Can be a local file path or HTTP(S) URL.
+    #[arg(short, long, value_parser = features_or_url_parser)]
+    pub features: String,
     /// Directory for the output.
     #[arg(short, long)]
     pub output: PathBuf,
@@ -105,8 +107,12 @@ pub struct Cli {
     pub exe_geof: Option<PathBuf>,
     /// Generate glTF tiles natively in Rust, bypassing geoflow.
     /// If not specified, the default geoflow pipeline is used for backward compatibility.
-    #[arg(long = "native-glb")]
+    #[arg(long = "native-glb-from-jsonl")]
     pub native_glb: bool,
+    /// Generate glTF tiles natively in Rust from FCB (FlatCityBuf) format, bypassing geoflow.
+    /// Requires --features to point to an FCB file (.fcb).
+    #[arg(long = "native-glb-from-fcb")]
+    pub native_glb_from_fcb: bool,
     /// Default PBR base color for native GLB generation, specified as a hex rgb-color value, eg. #FFC0CB is pink.
     /// Default is #FFC0CB (pink).
     #[arg(long = "native-glb-color", value_parser = hex_color, default_value = "#FFC0CB")]
@@ -301,6 +307,40 @@ fn hex_color(s: &str) -> Result<String, String> {
         ));
     }
     Ok(String::from(s))
+}
+
+/// Parser for metadata argument: accepts HTTP(S) URLs or local file paths
+fn metadata_or_url_parser(s: &str) -> Result<String, String> {
+    if s.starts_with("http://") || s.starts_with("https://") {
+        // Validate URL format
+        url::Url::parse(s).map_err(|e| format!("Invalid URL: {}", e))?;
+        Ok(s.to_string())
+    } else {
+        // Validate local path exists
+        let path = Path::new(s);
+        if path.exists() {
+            Ok(s.to_string())
+        } else {
+            Err(format!("Path does not exist: {:?}", s))
+        }
+    }
+}
+
+/// Parser for features argument: accepts HTTP(S) URLs or local file/directory paths
+fn features_or_url_parser(s: &str) -> Result<String, String> {
+    if s.starts_with("http://") || s.starts_with("https://") {
+        // Validate URL format
+        url::Url::parse(s).map_err(|e| format!("Invalid URL: {}", e))?;
+        Ok(s.to_string())
+    } else {
+        // Validate local path exists
+        let path = Path::new(s);
+        if path.exists() {
+            Ok(s.to_string())
+        } else {
+            Err(format!("Path does not exist: {:?}", s))
+        }
+    }
 }
 
 #[cfg(test)]

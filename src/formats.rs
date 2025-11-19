@@ -68,13 +68,14 @@ pub mod cesium3dtiles {
             &self,
             name: Option<&str>,
             output_dir: Option<&Path>,
-        ) -> bincode::Result<()> {
+        ) -> Result<(), bincode::error::EncodeError> {
             let file_name: &str = name.unwrap_or("tileset");
-            let file = match output_dir {
-                None => File::create(format!("{file_name}.bincode"))?,
-                Some(outdir) => File::create(outdir.join(format!("{file_name}.bincode")))?,
+            let mut file = match output_dir {
+                None => File::create(format!("{file_name}.bincode")).map_err(|e| bincode::error::EncodeError::Io { inner: e, index: 0 })?,
+                Some(outdir) => File::create(outdir.join(format!("{file_name}.bincode"))).map_err(|e| bincode::error::EncodeError::Io { inner: e, index: 0 })?,
             };
-            bincode::serialize_into(file, self)
+            bincode::serde::encode_into_std_write(self, &mut file, bincode::config::standard())?;
+            Ok(())
         }
 
         /// Write the tile boundingVolume and content boundingVolume for each level of the tileset
