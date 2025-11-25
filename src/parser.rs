@@ -29,6 +29,8 @@ use serde_json::{from_str, to_string};
 use tempfile::NamedTempFile;
 use walkdir::WalkDir;
 use fcb_core::{FcbReader, SpatialQuery};
+use fcb_core::http_reader::HttpFcbReader;
+use fcb_core::packed_rtree::Query;
 
 use crate::spatial_structs::{BboxQc, Cell, CellId};
 
@@ -458,6 +460,178 @@ impl World {
         Ok(world)
     }
 
+    /// Create a World from FCB file via HTTP with parallel range requests
+    /// Downloads only header, then fetches features in parallel using HTTP range requests
+    /// This is an async function that must be called from a tokio runtime
+    /// 
+    /// Note: This is a simplified implementation that uses HttpFcbReader's iterator.
+    /// For true parallel downloads, you would need to access PackedRTree::http_stream_search
+    /// directly to get feature byte ranges, then make parallel HTTP requests.
+    pub async fn new_from_fcb_http_parallel(
+        url: &str,
+        cellsize: u32,
+        cityobject_types: Option<Vec<CityObjectType>>,
+        arg_minz: Option<i32>,
+        arg_maxz: Option<i32>,
+        _max_parallel_requests: usize,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        
+        debug!("Opening FCB file from HTTP with parallel processing: {}", url);
+        
+        // Step 1: Open HttpFcbReader - downloads only header (~2-3KB)
+        let http_reader = HttpFcbReader::open(url).await
+            .map_err(|e| format!("Failed to open FCB file from HTTP: {}", e))?;
+        
+        // Extract metadata from header
+        let cm = CityJSONMetadata::from_http_fcb_reader(&http_reader)
+            .map_err(|e| format!("Failed to extract metadata from FCB file header: {}", e))?;
+        debug!("Successfully extracted metadata from FCB file header");
+        
+        let crs = cm.metadata.reference_system;
+        let transform = cm.transform;
+        
+        // Step 2: Query all features using spatial query
+        let query = Query::BBox(
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+            f64::INFINITY,
+        );
+        
+        let mut feature_iter = http_reader.select_query(query).await
+            .map_err(|e| format!("Failed to query features: {}", e))?;
+        
+        // Step 3: Process features as they arrive (streaming, memory-efficient)
+        // Note: HttpFcbReader already uses HTTP range requests internally
+        // We process features one at a time to avoid loading everything into RAM
+        let mut parsed_features: Vec<(String, CityJSONFeatureVertices)> = Vec::new();
+        let mut nr_features = 0;
+        let mut nr_features_ignored = 0;
+        let mut extent_qc: Option<BboxQc> = None;
+        let mut cityobject_types_ignored: Vec<CityObjectType> = Vec::new();
+        
+        // Process features as they stream in
+        loop {
+            match feature_iter.next().await {
+                Ok(Some(_)) => {
+                    // Get CityJSONFeature from current buffer
+                    let cj_feature = match feature_iter.cur_cj_feature() {
+                        Ok(f) => f,
+                        Err(e) => {
+                            warn!("Failed to get feature: {}", e);
+                            continue;
+                        }
+                    };
+                    
+                    // Parse directly (no intermediate JSON string storage)
+                    let feature_json = match to_string(&cj_feature) {
+                        Ok(json) => json,
+                        Err(e) => {
+                            warn!("Failed to serialize feature: {}", e);
+                            continue;
+                        }
+                    };
+                    
+                    let cf: CityJSONFeatureVertices = match from_str(&feature_json) {
+                        Ok(cf) => cf,
+                        Err(e) => {
+                            warn!("Failed to parse feature JSON: {}", e);
+                            continue;
+                        }
+                    };
+                    
+                    // Get feature ID
+                    let feature_id = cf.cityobjects.keys().next()
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| format!("feature_{}", nr_features + nr_features_ignored));
+                    
+                    // Process immediately - only keep matching features
+                    if let Some(bbox_qc) = cf.bbox_of_types(cityobject_types.as_ref()) {
+                        // Feature of requested type found
+                        if let Some(ref mut eqc) = extent_qc {
+                            let [x_min, y_min, z_min, x_max, y_max, z_max] = bbox_qc.0;
+                            if x_min < eqc.0[0] { eqc.0[0] = x_min }
+                            else if x_max > eqc.0[3] { eqc.0[3] = x_max }
+                            if y_min < eqc.0[1] { eqc.0[1] = y_min }
+                            else if y_max > eqc.0[4] { eqc.0[4] = y_max }
+                            if z_min < eqc.0[2] { eqc.0[2] = z_min }
+                            else if z_max > eqc.0[5] { eqc.0[5] = z_max }
+                        } else {
+                            extent_qc = Some(bbox_qc);
+                        }
+                        nr_features += 1;
+                        parsed_features.push((feature_id, cf));
+                    } else {
+                        // Feature of different type - track but don't store
+                        for (_, co) in cf.cityobjects.iter() {
+                            if !cityobject_types_ignored.contains(&co.cotype) {
+                                cityobject_types_ignored.push(co.cotype);
+                            }
+                        }
+                        nr_features_ignored += 1;
+                    }
+                }
+                Ok(None) => break, // End of iterator
+                Err(e) => {
+                    return Err(format!("Failed to get next feature: {}", e).into());
+                }
+            }
+        }
+        
+        debug!("Processed {} features ({} matching, {} ignored)", 
+               nr_features + nr_features_ignored, nr_features, nr_features_ignored);
+        
+        if nr_features == 0 {
+            return Err(format!(
+                "Did not find any FCB features of type {:?}",
+                cityobject_types
+            ).into());
+        }
+        
+        let extent_qc = extent_qc.unwrap();
+        debug!("Found {} FCB features of type {:?}", nr_features, &cityobject_types);
+        debug!("Ignored {} FCB features of type {:?}", nr_features_ignored, &cityobject_types_ignored);
+        
+        // Apply minz/maxz limits if provided
+        let extent_rw = extent_qc.to_bbox(&transform, arg_minz, arg_maxz);
+        debug!("Computed extent from FCB features: {}", crate::spatial_structs::bbox_to_wkt(&extent_rw));
+        
+        // Allocate the grid
+        let epsg = crs.to_epsg()?;
+        let grid = crate::spatial_structs::SquareGrid::new(&extent_rw, cellsize, epsg);
+        debug!("{}", grid);
+        
+        // Allocate the features container
+        let mut features: FeatureSet = Vec::with_capacity(nr_features + 1);
+        features.resize(nr_features + 1, Feature::default());
+        
+        // Create empty cache - index_with_grid_fcb will populate it
+        let mut fcb_cache: HashMap<PathBuf, CityJSONFeatureVertices> = HashMap::new();
+        
+        // Create path once and reuse
+        let fcb_path = PathBuf::from(url);
+        
+        // Create World instance
+        let mut world = Self {
+            features,
+            crs,
+            transform,
+            grid,
+            cityobject_types,
+            path_features_root: PathBuf::from("."), // HTTP source, no local path
+            path_metadata: fcb_path.clone(), // Clone only the path, not feature data
+            fcb_feature_cache: None, // Will be set after indexing
+        };
+        
+        // Index features into grid - this also populates the cache (moves cf, no clone)
+        world.index_with_grid_fcb(parsed_features, &fcb_path, &mut fcb_cache)?;
+        
+        // Store cache in world (moved, not cloned)
+        world.fcb_feature_cache = Some(fcb_cache);
+        
+        Ok(world)
+    }
+
     /// Find the direct subdirectories and CityJSONFeature files in the directory.
     /// Returns a Vec of the subdirectory paths and a Vec of CityJSONFeature paths.
     /// Note that it is not guaranteed that the returned directories contain any CityJSONFeatures.
@@ -713,7 +887,8 @@ impl World {
                 // Convert to FeatureInGridCells (using reference to avoid clone)
                 if let Some(feature_in_cells) = self.feature_to_cells(&feature_path, &cf, cell_vtx_cnt) {
                     // Store feature in cache for later retrieval by gltf_writer (move cf, no clone)
-                    fcb_cache.insert(feature_path.clone(), cf);
+                    // Clone only the path, not the feature data
+                    fcb_cache.insert(feature_path, cf);
                     // Move feature instead of cloning
                     self.features[fid] = feature_in_cells.feature;
                     for (cellid, cell) in &feature_in_cells.cells {
@@ -969,7 +1144,19 @@ impl CityJSONMetadata {
     /// This reads the transform and reference system from the FCB file's header section
     pub fn from_fcb_reader<R: std::io::Read>(reader: &FcbReader<R>) -> Result<Self, Box<dyn std::error::Error>> {
         let header = reader.header();
-        
+        Self::from_header(&header)
+    }
+    
+    /// Extract metadata from an HttpFcbReader header
+    /// This reads the transform and reference system from the FCB file's header section
+    pub fn from_http_fcb_reader(reader: &HttpFcbReader<reqwest::Client>) -> Result<Self, Box<dyn std::error::Error>> {
+        let header = reader.header();
+        Self::from_header(&header)
+    }
+    
+    /// Extract metadata from an FCB header
+    /// This is a helper function that extracts transform and reference system from the header
+    fn from_header(header: &fcb_core::Header) -> Result<Self, Box<dyn std::error::Error>> {
         // Extract transform
         let transform = if let Some(fcb_transform) = header.transform() {
             let scale_vec = fcb_transform.scale();

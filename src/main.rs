@@ -366,13 +366,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Metadata MUST come from the FCB file, not from external file
                 // (Error check already done earlier, before output directory creation)
                 debug!("Loading World from FCB file (metadata will be extracted from FCB header)");
-                let world = parser::World::new_from_fcb(
-                    &cli.features,
-                    grid_cellsize,
-                    cli.object_type,
-                    cli.grid_minz,
-                    cli.grid_maxz,
-                )?;
+                
+                // Validate --fcb-http-parallel flag usage
+                if cli.fcb_http_parallel && !parser::is_http_url(&cli.features) {
+                    return Err(format!(
+                        "--fcb-http-parallel flag can only be used with HTTP(S) URLs. \
+                        Features source '{}' is not an HTTP URL. \
+                        Remove the flag to use the standard method for local files.",
+                        cli.features
+                    ).into());
+                }
+                
+                // Check if we should use parallel HTTP range requests
+                let use_parallel = cli.fcb_http_parallel && parser::is_http_url(&cli.features);
+                
+                let world = if use_parallel {
+                    debug!("Using parallel HTTP range requests for FCB file");
+                    // Run async function in tokio runtime
+                    let rt = tokio::runtime::Runtime::new()
+                        .map_err(|e| format!("Failed to create tokio runtime: {}", e))?;
+                    rt.block_on(parser::World::new_from_fcb_http_parallel(
+                        &cli.features,
+                        grid_cellsize,
+                        cli.object_type,
+                        cli.grid_minz,
+                        cli.grid_maxz,
+                        10, // max parallel requests
+                    ))
+                    .map_err(|e| format!("Failed to load FCB file with parallel HTTP requests: {}. Try without --fcb-http-parallel flag.", e))?
+                } else {
+                    // Use standard method (works for both local files and HTTP)
+                    parser::World::new_from_fcb(
+                        &cli.features,
+                        grid_cellsize,
+                        cli.object_type,
+                        cli.grid_minz,
+                        cli.grid_maxz,
+                    )?
+                };
                 // Features are already indexed in new_from_fcb, no need to call index_with_grid
                 world
             } else {

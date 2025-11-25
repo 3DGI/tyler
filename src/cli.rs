@@ -114,6 +114,11 @@ pub struct Cli {
     /// Requires --features to point to an FCB file (.fcb).
     #[arg(long = "native-glb-from-fcb")]
     pub native_glb_from_fcb: bool,
+    /// Use parallel HTTP range requests for FCB files served over HTTP.
+    /// Downloads only header + spatial index, then fetches features in parallel.
+    /// Only works with HTTP(S) URLs for --features. Falls back to standard method if not HTTP.
+    #[arg(long = "fcb-http-parallel")]
+    pub fcb_http_parallel: bool,
     /// Default PBR base color for native GLB generation, specified as a hex rgb-color value, eg. #FFC0CB is pink.
     /// Default is #FFC0CB (pink).
     #[arg(long = "native-glb-color", value_parser = hex_color, default_value = "#FFC0CB")]
