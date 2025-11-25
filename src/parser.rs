@@ -271,25 +271,14 @@ impl World {
     /// Create a World from FCB (FlatCityBuf) file format
     /// This is a NEW method that does not modify the existing new() used by JSONL path
     /// Supports both local files and HTTP(S) URLs
+    /// Metadata MUST be extracted from the FCB file header - no external metadata file is used
     pub fn new_from_fcb(
-        metadata_source: &str,
         features_source: &str,
         cellsize: u32,
         cityobject_types: Option<Vec<CityObjectType>>,
         arg_minz: Option<i32>,
         arg_maxz: Option<i32>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        // Resolve metadata source
-        let metadata_source_enum = resolve_input_source(metadata_source)?;
-        let cm = CityJSONMetadata::from_source(metadata_source_enum)?;
-        let crs = cm.metadata.reference_system;
-        let transform = cm.transform;
-
-        debug!(
-            "Computing extent from FCB features of type {:?}",
-            cityobject_types
-        );
-
         // Resolve features source and handle HTTP download if needed
         let (_temp_fcb_file, fcb_path): (Option<NamedTempFile>, PathBuf) = 
             match resolve_input_source(features_source)? {
@@ -314,6 +303,21 @@ impl World {
         // Open FCB file
         let fcb_file = File::open(&fcb_path)?;
         let fcb_reader = FcbReader::open(fcb_file)?;
+        
+        // Extract metadata from FCB file header
+        // Metadata MUST come from the FCB file - no external fallback allowed
+        let cm = CityJSONMetadata::from_fcb_reader(&fcb_reader)
+            .map_err(|e| format!("Failed to extract metadata from FCB file header: {}. \
+                The FCB file must contain valid metadata in its header section.", e))?;
+        debug!("Successfully extracted metadata from FCB file header");
+        
+        let crs = cm.metadata.reference_system;
+        let transform = cm.transform;
+
+        debug!(
+            "Computing extent from FCB features of type {:?}",
+            cityobject_types
+        );
 
         // Query all features (entire bounding box)
         let query = SpatialQuery::BBox(
@@ -438,7 +442,7 @@ impl World {
             grid,
             cityobject_types,
             path_features_root: fcb_path.parent().unwrap_or(Path::new(".")).to_path_buf(),
-            path_metadata: PathBuf::from(metadata_source),
+            path_metadata: fcb_path.clone(),
             fcb_feature_cache: None,
         };
 
@@ -961,22 +965,52 @@ impl CityJSONMetadata {
         Ok(cm)
     }
     
-    /// Load metadata from either a local file path or HTTP(S) URL
-    /// This is a new method that does not modify the existing from_file() used by JSONL path
-    pub fn from_source(source: InputSource) -> Result<Self, Box<dyn std::error::Error>> {
-        match source {
-            InputSource::Local(path) => {
-                // Use existing method for local files
-                Self::from_file(path)
+    /// Extract metadata from an FCB file header
+    /// This reads the transform and reference system from the FCB file's header section
+    pub fn from_fcb_reader<R: std::io::Read>(reader: &FcbReader<R>) -> Result<Self, Box<dyn std::error::Error>> {
+        let header = reader.header();
+        
+        // Extract transform
+        let transform = if let Some(fcb_transform) = header.transform() {
+            let scale_vec = fcb_transform.scale();
+            let translate_vec = fcb_transform.translate();
+            
+            // Vector has x(), y(), z() methods that return f64
+            Transform {
+                scale: [scale_vec.x(), scale_vec.y(), scale_vec.z()],
+                translate: [translate_vec.x(), translate_vec.y(), translate_vec.z()],
             }
-            InputSource::Http(url) => {
-                // Download to tempfile, then parse
-                let temp_file = download_to_tempfile(&url)?;
-                let cm_str = read_to_string(temp_file.path())?;
-                let cm: CityJSONMetadata = from_str(&cm_str)?;
-                Ok(cm)
+        } else {
+            return Err("FCB file header missing transform information".into());
+        };
+        
+        // Extract reference system
+        let reference_system = if let Some(ref_sys) = header.reference_system() {
+            // Try to construct CRS string from reference system
+            // Prefer code_string if available, otherwise construct from authority and code
+            if let Some(code_str) = ref_sys.code_string() {
+                Crs(code_str.to_string())
+            } else if let Some(authority) = ref_sys.authority() {
+                let code = ref_sys.code();
+                // Construct EPSG URI format: https://www.opengis.net/def/crs/EPSG/0/{code}
+                if authority.to_uppercase() == "EPSG" {
+                    Crs(format!("https://www.opengis.net/def/crs/EPSG/0/{}", code))
+                } else {
+                    Crs(format!("https://www.opengis.net/def/crs/{}/0/{}", authority, code))
+                }
+            } else {
+                return Err("FCB file header missing reference system information".into());
             }
-        }
+        } else {
+            return Err("FCB file header missing reference system information".into());
+        };
+        
+        Ok(CityJSONMetadata {
+            transform,
+            metadata: Metadata {
+                reference_system,
+            },
+        })
     }
 }
 

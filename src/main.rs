@@ -175,6 +175,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = crate::cli::Cli::parse();
     debug!("{:?}", &cli);
     debug!("tyler version: {}", clap::crate_version!());
+    
+    // Validate flag combinations before creating output directory
+    if cli.native_glb_from_fcb && cli.metadata.is_some() {
+        return Err(format!(
+            "Error: --metadata flag cannot be used with --native-glb-from-fcb. \
+            Metadata is automatically extracted from the FCB file header. \
+            Please remove the --metadata flag."
+        ).into());
+    }
+    
     if !cli.output.is_dir() {
         fs::create_dir_all(&cli.output)?;
         debug!("Created output directory {:#?}", &cli.output);
@@ -353,9 +363,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None => {
             if cli.native_glb_from_fcb {
                 // FCB path - use new method
-                debug!("Loading World from FCB file");
+                // Metadata MUST come from the FCB file, not from external file
+                // (Error check already done earlier, before output directory creation)
+                debug!("Loading World from FCB file (metadata will be extracted from FCB header)");
                 let world = parser::World::new_from_fcb(
-                    &cli.metadata,
                     &cli.features,
                     grid_cellsize,
                     cli.object_type,
@@ -366,8 +377,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 world
             } else {
                 // JSONL path - use existing method (UNTOUCHED)
-                // Convert String to PathBuf for existing method
-                let metadata_path = PathBuf::from(&cli.metadata);
+                // Extract metadata String from Option (required for JSONL)
+                let metadata = cli.metadata
+                    .ok_or("--metadata is required when using JSONL feature files")?;
+                // Rest of JSONL path code is identical to original
+                let metadata_path = PathBuf::from(&metadata);
                 let features_path = PathBuf::from(&cli.features);
                 let mut world = parser::World::new(
                     &metadata_path,
@@ -652,7 +666,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .arg(format!("--output_file={}", &output_file.to_str().unwrap()))
                 .arg(format!(
                     "--path_metadata={}",
-                    &world.path_metadata.to_str().unwrap()
+                    &world.path_metadata.to_str().unwrap_or("")
                 ))
                 .arg(format!(
                     "--path_features_input_file={}",

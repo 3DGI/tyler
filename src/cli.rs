@@ -21,8 +21,9 @@ use url;
 pub struct Cli {
     /// Main CityJSON file (.city.json), containing the coordinate reference system and
     /// transformation properties. Can be a local file path or HTTP(S) URL.
+    /// Optional when using FCB files (.fcb) as metadata is extracted from the FCB file header.
     #[arg(short, long, value_parser = metadata_or_url_parser)]
-    pub metadata: String,
+    pub metadata: Option<String>,
     /// Directory of CityJSONFeatures (.city.jsonl) or FCB file (.fcb). The directory and all its
     /// subdirectories are searched recursively for feature files, or a single FCB file can be specified.
     /// Can be a local file path or HTTP(S) URL.
