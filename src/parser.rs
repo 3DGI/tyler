@@ -25,14 +25,23 @@ use log::{debug, error, warn};
 use rayon::prelude::*;
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::{from_str, to_string};
+use serde_json::from_str;
 use tempfile::NamedTempFile;
 use walkdir::WalkDir;
 use fcb_core::{FcbReader, SpatialQuery};
 use fcb_core::http_reader::HttpFcbReader;
 use fcb_core::packed_rtree::Query;
+use cjseq2::{CityJSONFeature as CjseqFeature, GeometryType as CjseqGeometryType, NestedArray};
 
 use crate::spatial_structs::{BboxQc, Cell, CellId};
+
+// NOTE: Priority 4 (Streaming instead of full cache) is partially implemented.
+// Full streaming would require fcb_core to expose byte-level feature access.
+// Current implementation uses full cache but with optimized parsing (Priority 1).
+// 
+// Future enhancement: When fcb_core supports it, store (feature_id, byte_offset, byte_length)
+// tuples and read features on-demand during tile generation. This would reduce memory
+// from O(features * feature_size) to O(features * 24 bytes) for the index.
 
 /// Represents the source of input data - either a local file path or an HTTP(S) URL
 #[derive(Debug, Clone)]
@@ -332,11 +341,14 @@ impl World {
         let mut feature_iter = fcb_reader.select_query(query, None, None)?;
         
         // First pass: compute extent and count features
+        // Pre-allocate with reasonable estimates (tip 1)
         let mut nr_features = 0;
         let mut nr_features_ignored = 0;
         let mut extent_qc: Option<BboxQc> = None;
-        let mut cityobject_types_ignored: Vec<CityObjectType> = Vec::new();
-        let mut feature_data: Vec<(String, CityJSONFeatureVertices)> = Vec::new(); // Store feature ID and parsed feature
+        // Only ~25 CityObject types exist, small stack-friendly capacity
+        let mut cityobject_types_ignored: Vec<CityObjectType> = Vec::with_capacity(8);
+        // Estimate 1000 features initially, will grow if needed (tip 1)
+        let mut feature_data: Vec<(String, CityJSONFeatureVertices)> = Vec::with_capacity(1000);
 
         while let Ok(Some(_)) = feature_iter.next() {
             // Get the current feature as CityJSONFeature
@@ -348,17 +360,8 @@ impl World {
                 }
             };
             
-            // Serialize to JSON string, then parse into CityJSONFeatureVertices
-            let feature_json = match to_string(&cj_feature) {
-                Ok(json) => json,
-                Err(e) => {
-                    warn!("Failed to serialize feature to JSON: {}", e);
-                    continue;
-                }
-            };
-            
-            // Parse feature JSON
-            match from_str::<CityJSONFeatureVertices>(&feature_json) {
+            // Direct conversion from cjseq2 to CityJSONFeatureVertices (Priority 1 optimization)
+            match CityJSONFeatureVertices::from_cjseq_feature(&cj_feature) {
                 Ok(cf) => {
                     // Get feature ID from cityobjects (first key)
                     let feature_id = cf.cityobjects.keys().next()
@@ -504,11 +507,13 @@ impl World {
         // Step 3: Process features as they arrive (streaming, memory-efficient)
         // Note: HttpFcbReader already uses HTTP range requests internally
         // We process features one at a time to avoid loading everything into RAM
-        let mut parsed_features: Vec<(String, CityJSONFeatureVertices)> = Vec::new();
+        // Pre-allocate with reasonable estimates (tip 1)
+        let mut parsed_features: Vec<(String, CityJSONFeatureVertices)> = Vec::with_capacity(1000);
         let mut nr_features = 0;
         let mut nr_features_ignored = 0;
         let mut extent_qc: Option<BboxQc> = None;
-        let mut cityobject_types_ignored: Vec<CityObjectType> = Vec::new();
+        // Only ~25 CityObject types exist, small capacity
+        let mut cityobject_types_ignored: Vec<CityObjectType> = Vec::with_capacity(8);
         
         // Process features as they stream in
         loop {
@@ -523,19 +528,11 @@ impl World {
                         }
                     };
                     
-                    // Parse directly (no intermediate JSON string storage)
-                    let feature_json = match to_string(&cj_feature) {
-                        Ok(json) => json,
-                        Err(e) => {
-                            warn!("Failed to serialize feature: {}", e);
-                            continue;
-                        }
-                    };
-                    
-                    let cf: CityJSONFeatureVertices = match from_str(&feature_json) {
+                    // Direct conversion from cjseq2 to CityJSONFeatureVertices (Priority 1 optimization)
+                    let cf: CityJSONFeatureVertices = match CityJSONFeatureVertices::from_cjseq_feature(&cj_feature) {
                         Ok(cf) => cf,
                         Err(e) => {
-                            warn!("Failed to parse feature JSON: {}", e);
+                            warn!("Failed to convert feature directly: {}", e);
                             continue;
                         }
                     };
@@ -1133,6 +1130,202 @@ pub struct CityJSONFeatureVertices {
     pub vertices: Vec<[i64; 3]>,
 }
 
+impl CityJSONFeatureVertices {
+    /// Direct conversion from cjseq2::CityJSONFeature without JSON round-trip.
+    /// This is Priority 1 optimization - avoids serializing to JSON string then parsing back.
+    /// 
+    /// Optimization tips applied:
+    /// - Pre-allocate collections with_capacity (tip 1)
+    /// - Avoid unnecessary cloning - use references (tip 2)
+    /// - Use iterator chaining, avoid intermediate collect() (tip 4)
+    #[inline]
+    pub fn from_cjseq_feature(feature: &CjseqFeature) -> Result<Self, Box<dyn std::error::Error>> {
+        // Pre-allocate vertices with exact capacity (tip 1)
+        let vertex_count = feature.vertices.len();
+        let mut vertices: Vec<[i64; 3]> = Vec::with_capacity(vertex_count);
+        
+        // Convert vertices: Vec<Vec<i64>> -> Vec<[i64; 3]>
+        // Direct loop avoids iterator overhead for this simple case
+        for v in &feature.vertices {
+            // Most vertices have exactly 3 coordinates - optimize for common case
+            let arr = if v.len() >= 3 {
+                // SAFETY consideration: could use get_unchecked here, but bounds check is cheap
+                [v[0], v[1], v[2]]
+            } else {
+                // Fallback for malformed data - pad with zeros (rare case)
+                let mut arr = [0i64; 3];
+                for (i, val) in v.iter().take(3).enumerate() {
+                    arr[i] = *val;
+                }
+                arr
+            };
+            vertices.push(arr);
+        }
+
+        // Pre-allocate cityobjects HashMap with capacity (tip 1)
+        let mut cityobjects: HashMap<String, CityObject> = 
+            HashMap::with_capacity(feature.city_objects.len());
+        
+        // Convert city_objects - avoid cloning id by using into_iter if we owned the data
+        // Since we borrow feature, we must clone the String key (unavoidable)
+        for (id, co) in &feature.city_objects {
+            let cotype = CityObjectType::from_str(&co.thetype)?;
+            let geometry = Self::convert_geometry_vec(co.geometry.as_ref())?;
+            // Clone only the key String, CityObject is constructed in-place
+            cityobjects.insert(id.clone(), CityObject { cotype, geometry });
+        }
+
+        Ok(CityJSONFeatureVertices { cityobjects, vertices })
+    }
+
+    /// Convert geometry vector from cjseq2 format to tyler format
+    /// Pre-allocates result vector (tip 1)
+    #[inline]
+    fn convert_geometry_vec(geoms: Option<&Vec<cjseq2::Geometry>>) -> Result<Option<Vec<Geometry>>, Box<dyn std::error::Error>> {
+        let Some(geoms) = geoms else {
+            return Ok(None);
+        };
+        
+        if geoms.is_empty() {
+            return Ok(None);
+        }
+        
+        // Pre-allocate with capacity (tip 1)
+        let mut result = Vec::with_capacity(geoms.len());
+        for g in geoms {
+            if let Some(converted) = Self::convert_geometry(g)? {
+                result.push(converted);
+            }
+        }
+        
+        if result.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(result))
+        }
+    }
+
+    /// Convert a single geometry from cjseq2 format to tyler format
+    #[inline]
+    fn convert_geometry(g: &cjseq2::Geometry) -> Result<Option<Geometry>, Box<dyn std::error::Error>> {
+        match g.thetype {
+            CjseqGeometryType::MultiSurface | CjseqGeometryType::CompositeSurface => {
+                let boundaries = Self::convert_multisurface_boundaries(&g.boundaries)?;
+                Ok(Some(Geometry::MultiSurface { boundaries }))
+            }
+            CjseqGeometryType::Solid => {
+                let boundaries = Self::convert_solid_boundaries(&g.boundaries)?;
+                Ok(Some(Geometry::Solid { boundaries }))
+            }
+            // Skip unsupported geometry types (MultiPoint, MultiLineString, etc.)
+            _ => Ok(None),
+        }
+    }
+
+    /// Convert NestedArray boundaries to MultiSurface format (3 levels deep)
+    /// MultiSurface = Vec<Surface>, Surface = Vec<Ring>, Ring = Vec<usize>
+    #[inline]
+    fn convert_multisurface_boundaries(boundaries: &NestedArray<u32>) -> Result<MultiSurface, Box<dyn std::error::Error>> {
+        match boundaries {
+            NestedArray::Nested(surfaces) => {
+                // Pre-allocate with capacity (tip 1)
+                let mut result: MultiSurface = Vec::with_capacity(surfaces.len());
+                for surface in surfaces {
+                    result.push(Self::convert_surface(surface)?);
+                }
+                Ok(result)
+            }
+            NestedArray::Indices(_) => {
+                Err("Unexpected flat indices for MultiSurface boundaries".into())
+            }
+        }
+    }
+
+    /// Convert a Surface from NestedArray (2 levels: rings containing vertex indices)
+    #[inline]
+    fn convert_surface(surface: &NestedArray<u32>) -> Result<Surface, Box<dyn std::error::Error>> {
+        match surface {
+            NestedArray::Nested(rings) => {
+                // Pre-allocate with capacity (tip 1)
+                let mut result: Surface = Vec::with_capacity(rings.len());
+                for ring in rings {
+                    result.push(Self::convert_ring(ring)?);
+                }
+                Ok(result)
+            }
+            NestedArray::Indices(_) => {
+                Err("Unexpected flat indices for Surface boundaries".into())
+            }
+        }
+    }
+
+    /// Convert a Ring from NestedArray (should be flat indices at this level)
+    /// Uses direct iteration to avoid intermediate collect() (tip 4)
+    #[inline]
+    fn convert_ring(ring: &NestedArray<u32>) -> Result<Ring, Box<dyn std::error::Error>> {
+        match ring {
+            NestedArray::Indices(indices) => {
+                // Pre-allocate and extend (tip 1, tip 4 - avoid intermediate collect)
+                let mut result: Ring = Vec::with_capacity(indices.len());
+                // Direct loop with cast is faster than iterator + map + collect
+                for &i in indices {
+                    result.push(i as usize);
+                }
+                Ok(result)
+            }
+            NestedArray::Nested(nested) => {
+                // Handle case where ring is still nested (rare, shouldn't happen in valid data)
+                // Estimate capacity based on nested structure
+                let estimated_cap = nested.len() * 4; // Assume ~4 indices per nested item
+                let mut result: Ring = Vec::with_capacity(estimated_cap);
+                for item in nested {
+                    if let NestedArray::Indices(indices) = item {
+                        // Use extend to avoid multiple pushes (tip 4)
+                        result.extend(indices.iter().map(|&i| i as usize));
+                    }
+                }
+                Ok(result)
+            }
+        }
+    }
+
+    /// Convert NestedArray boundaries to Solid format (4 levels deep)
+    #[inline]
+    fn convert_solid_boundaries(boundaries: &NestedArray<u32>) -> Result<Solid, Box<dyn std::error::Error>> {
+        match boundaries {
+            NestedArray::Nested(shells) => {
+                // Pre-allocate with capacity (tip 1)
+                let mut result: Solid = Vec::with_capacity(shells.len());
+                for shell in shells {
+                    result.push(Self::convert_shell(shell)?);
+                }
+                Ok(result)
+            }
+            NestedArray::Indices(_) => {
+                Err("Unexpected flat indices for Solid boundaries".into())
+            }
+        }
+    }
+
+    /// Convert a Shell from NestedArray (3 levels: surfaces containing rings)
+    #[inline]
+    fn convert_shell(shell: &NestedArray<u32>) -> Result<Shell, Box<dyn std::error::Error>> {
+        match shell {
+            NestedArray::Nested(surfaces) => {
+                // Pre-allocate with capacity (tip 1)
+                let mut result: Shell = Vec::with_capacity(surfaces.len());
+                for surface in surfaces {
+                    result.push(Self::convert_surface(surface)?);
+                }
+                Ok(result)
+            }
+            NestedArray::Indices(_) => {
+                Err("Unexpected flat indices for Shell boundaries".into())
+            }
+        }
+    }
+}
+
 impl CityJSONMetadata {
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {
         let cm_str = read_to_string(path.as_ref())?;
@@ -1467,6 +1660,45 @@ pub enum CityObjectType {
 impl fmt::Display for CityObjectType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+impl CityObjectType {
+    /// Parse CityObjectType from string (used for direct cjseq2 conversion)
+    /// Uses static string matching - no heap allocation on success path (tip 3)
+    #[inline]
+    pub fn from_str(s: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        // Static match - compiler optimizes this into efficient jump table
+        match s {
+            "Bridge" => Ok(CityObjectType::Bridge),
+            "BridgePart" => Ok(CityObjectType::BridgePart),
+            "BridgeInstallation" => Ok(CityObjectType::BridgeInstallation),
+            "BridgeConstructiveElement" => Ok(CityObjectType::BridgeConstructiveElement),
+            "BridgeRoom" => Ok(CityObjectType::BridgeRoom),
+            "BridgeFurniture" => Ok(CityObjectType::BridgeFurniture),
+            "Building" => Ok(CityObjectType::Building),
+            "BuildingPart" => Ok(CityObjectType::BuildingPart),
+            "BuildingInstallation" => Ok(CityObjectType::BuildingInstallation),
+            "BuildingConstructiveElement" => Ok(CityObjectType::BuildingConstructiveElement),
+            "BuildingFurniture" => Ok(CityObjectType::BuildingFurniture),
+            "BuildingStorey" => Ok(CityObjectType::BuildingStorey),
+            "BuildingRoom" => Ok(CityObjectType::BuildingRoom),
+            "BuildingUnit" => Ok(CityObjectType::BuildingUnit),
+            "CityFurniture" => Ok(CityObjectType::CityFurniture),
+            "LandUse" => Ok(CityObjectType::LandUse),
+            "OtherConstruction" => Ok(CityObjectType::OtherConstruction),
+            "PlantCover" => Ok(CityObjectType::PlantCover),
+            "SolitaryVegetationObject" => Ok(CityObjectType::SolitaryVegetationObject),
+            "TINRelief" => Ok(CityObjectType::TINRelief),
+            "WaterBody" => Ok(CityObjectType::WaterBody),
+            "Road" => Ok(CityObjectType::Road),
+            "Railway" => Ok(CityObjectType::Railway),
+            "Waterway" => Ok(CityObjectType::Waterway),
+            "TransportSquare" => Ok(CityObjectType::TransportSquare),
+            "+GenericCityObject" | "GenericCityObject" => Ok(CityObjectType::GenericCityObject),
+            // Error path allocates, but this is rare (only for invalid data)
+            _ => Err(format!("Unknown CityObjectType: {}", s).into()),
+        }
     }
 }
 

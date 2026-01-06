@@ -18,13 +18,13 @@ categories = ["command-line-utilities", "science::geo"]
 name = "tyler"
 path = "src/main.rs"
 
-[[bin]]
-name = "validate_features"
-path = "validate_features.rs"
+# [[bin]]
+# name = "validate_features"
+# path = "validate_features.rs"
 
-[[bin]]
-name = "find_missing_feature"
-path = "find_missing_feature.rs"
+# [[bin]]
+# name = "find_missing_feature"
+# path = "find_missing_feature.rs"
 
 [dependencies]
 log = "0.4.17"

@@ -1,0 +1,25 @@
+# Set default line ending behavior for all files
+* text=auto eol=lf
+
+# Explicitly set text files
+*.rs text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.jsonl text eol=lf
+*.txt text eol=lf
+*.tsv text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.tar binary
+*.gz binary
+*.glb binary
+*.gltf binary
+

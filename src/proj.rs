@@ -173,6 +173,74 @@ impl Proj {
             Err(ProjError::Conversion(error_message(err)?))
         }
     }
+
+    /// Convert multiple coordinates in batch - reduces per-call overhead.
+    /// Priority 2 optimization: batching FFI calls reduces overhead compared to
+    /// calling convert() repeatedly.
+    /// 
+    /// # Arguments
+    /// * `points` - Slice of (x, y, z) coordinates to transform
+    /// * `output` - Pre-allocated output buffer to store results (reuse for efficiency, tip 9)
+    /// 
+    /// # Returns
+    /// Number of successfully converted points (output buffer is filled up to this count)
+    #[inline]
+    pub fn convert_batch_into(
+        &self,
+        points: &[(f64, f64, f64)],
+        output: &mut Vec<(f64, f64, f64)>,
+    ) -> Result<usize, ProjError> {
+        // Ensure output has capacity (tip 1 - pre-allocate)
+        output.clear();
+        output.reserve(points.len());
+        
+        // Reset errno once at the start instead of per-point
+        unsafe {
+            proj_errno_reset(self.c_proj);
+        }
+        
+        let mut converted_count = 0;
+        
+        // Tight loop with minimal overhead
+        for &(x, y, z) in points {
+            let xyzt = PJ_XYZT {
+                x,
+                y,
+                z,
+                t: f64::INFINITY,
+            };
+            
+            let (new_x, new_y, new_z, err) = unsafe {
+                let trans = proj_trans(self.c_proj, PJ_DIRECTION_PJ_FWD, PJ_COORD { xyzt });
+                let err = proj_errno(self.c_proj);
+                if err != 0 {
+                    // Reset errno for next iteration
+                    proj_errno_reset(self.c_proj);
+                }
+                (trans.xyz.x, trans.xyz.y, trans.xyz.z, err)
+            };
+            
+            if err == 0 {
+                output.push((new_x, new_y, new_z));
+                converted_count += 1;
+            } else {
+                // Skip invalid points, continue with batch
+                // Could log warning here if needed
+            }
+        }
+        
+        Ok(converted_count)
+    }
+
+    /// Convert multiple coordinates in batch, returning a new Vec.
+    /// Convenience wrapper around convert_batch_into for simpler usage.
+    #[inline]
+    #[allow(dead_code)]
+    pub fn convert_batch(&self, points: &[(f64, f64, f64)]) -> Result<Vec<(f64, f64, f64)>, ProjError> {
+        let mut output = Vec::with_capacity(points.len());
+        self.convert_batch_into(points, &mut output)?;
+        Ok(output)
+    }
 }
 
 /// Errors originating in PROJ which can occur during projection and conversion

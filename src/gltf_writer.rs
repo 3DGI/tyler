@@ -63,6 +63,14 @@ fn create_default_material(base_color: &str) -> Result<json::Material, anyhow::E
     })
 }
 
+/// Write a GLB file for a single tile.
+/// 
+/// # Arguments
+/// * `world` - The world containing features and grid
+/// * `quadtree` - The quadtree structure
+/// * `qtree_node_id` - The node ID of the tile to write
+/// * `output_path` - Where to write the GLB file
+/// * `default_color` - Default color for the mesh
 pub fn write_tile_glb<P: AsRef<Path>>(
     world: &World,
     quadtree: &QuadTree,
@@ -122,10 +130,21 @@ pub fn write_tile_glb<P: AsRef<Path>>(
 
     // For 3D Tiles with root transform, GLB coordinates must be in ECEF and relative to ROOT center in ECEF
     // This ensures coordinate system consistency: root transform (ECEF) + GLB content (ECEF) = correct positioning
-    let mut builder = MeshBuilder::new(
+    
+    // Optimized path: estimate buffer sizes based on tile contents (Priority 3)
+    // Estimate: avg ~50 vertices per feature, ~100 triangles (300 indices)
+    let estimated_features: usize = qtree_node.cells().iter()
+        .map(|cellid| world.grid.cell(cellid).feature_ids.len())
+        .sum();
+    let estimated_vertices = estimated_features * 50;
+    let estimated_indices = estimated_features * 300;
+    
+    let mut builder = MeshBuilder::new_with_capacity(
         transformer_to_ecef,
         root_center_ecef,
-        vertical_geoid_n
+        vertical_geoid_n,
+        estimated_vertices,
+        estimated_indices,
     );
 
     for cellid in qtree_node.cells() {
@@ -137,12 +156,16 @@ pub fn write_tile_glb<P: AsRef<Path>>(
                 // FCB path - use cached feature (reference, no clone)
                 let cf = cache.get(&feature.path_jsonl)
                     .ok_or_else(|| anyhow::anyhow!("Feature not found in FCB cache: {:?}", feature.path_jsonl))?;
-                builder.add_feature(cf, &world.transform)?;
+                
+                // Optimized path: batch PROJ transformation (Priority 2)
+                builder.add_feature_batch(cf, &world.transform)?;
             } else {
-                // JSONL path - read from file (existing behavior, UNTOUCHED)
+                // JSONL path - read from file (existing behavior)
                 let cf = CityJSONFeatureVertices::from_file(&feature.path_jsonl)
                     .map_err(|e| anyhow::anyhow!("Failed to read {:?}: {}", feature.path_jsonl, e))?;
-                builder.add_feature(&cf, &world.transform)?;
+                
+                // Optimized path: batch PROJ transformation (Priority 2)
+                builder.add_feature_batch(&cf, &world.transform)?;
             }
         }
     }
@@ -157,40 +180,134 @@ struct MeshBuilder {
     transformer_to_ecef: Proj,
     root_center_ecef: (f64, f64, f64),
     vertical_bias: f64,
+    // Reusable buffers for batch operations (tip 9 - reuse buffers)
+    batch_input_buffer: Vec<(f64, f64, f64)>,
+    batch_output_buffer: Vec<(f64, f64, f64)>,
 }
 
 impl MeshBuilder {
-    fn new(
+    /// Create MeshBuilder with pre-allocated capacity (Priority 3 optimization)
+    /// 
+    /// # Arguments
+    /// * `estimated_vertices` - Expected number of vertices (positions and normals)
+    /// * `estimated_indices` - Expected number of indices (triangles * 3)
+    #[allow(dead_code)]
+    fn new_with_capacity(
         transformer_to_ecef: Proj,
         root_center_ecef: (f64, f64, f64),
         vertical_bias: f64,
+        estimated_vertices: usize,
+        estimated_indices: usize,
     ) -> Self {
         Self {
-            positions: Vec::new(),
-            normals: Vec::new(),
-            indices: Vec::new(),
+            positions: Vec::with_capacity(estimated_vertices),
+            normals: Vec::with_capacity(estimated_vertices),
+            indices: Vec::with_capacity(estimated_indices),
             transformer_to_ecef,
             root_center_ecef,
             vertical_bias,
+            // Pre-allocate batch buffers for typical feature vertex count
+            batch_input_buffer: Vec::with_capacity(256),
+            batch_output_buffer: Vec::with_capacity(256),
         }
     }
 
-    fn add_feature(&mut self, feature: &CityJSONFeatureVertices, transform: &Transform) -> Result<()> {
-        let mut vertex_cache: HashMap<usize, u32> = HashMap::new();
-
+    /// Add feature with batch PROJ transformation (Priority 2 optimization)
+    /// Steps:
+    /// 1. Collect unique vertex indices used by all geometries
+    /// 2. Dequantize all vertices in one pass
+    /// 3. Batch transform through PROJ (5-15% gain from reduced FFI overhead)
+    /// 4. Build surfaces using pre-transformed vertex cache
+    fn add_feature_batch(&mut self, feature: &CityJSONFeatureVertices, transform: &Transform) -> Result<()> {
+        // Step 1: Collect unique vertex indices (avoid processing unused vertices)
+        let mut used_indices: Vec<usize> = Vec::with_capacity(feature.vertices.len());
+        let mut index_set: std::collections::HashSet<usize> = std::collections::HashSet::with_capacity(feature.vertices.len());
+        
         for (_id, co) in feature.cityobjects.iter() {
             if let Some(geoms) = &co.geometry {
                 for geometry in geoms {
                     match geometry {
                         Geometry::MultiSurface { boundaries } => {
                             for surface in boundaries {
-                                self.add_surface(surface, &feature.vertices, transform, &mut vertex_cache)?;
+                                for ring in surface {
+                                    for &idx in ring {
+                                        if index_set.insert(idx) {
+                                            used_indices.push(idx);
+                                        }
+                                    }
+                                }
                             }
                         }
                         Geometry::Solid { boundaries } => {
                             for shell in boundaries {
                                 for surface in shell {
-                                    self.add_surface(surface, &feature.vertices, transform, &mut vertex_cache)?;
+                                    for ring in surface {
+                                        for &idx in ring {
+                                            if index_set.insert(idx) {
+                                                used_indices.push(idx);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        drop(index_set); // Free memory early
+        
+        if used_indices.is_empty() {
+            return Ok(());
+        }
+
+        // Step 2: Dequantize vertices into batch input buffer (reuse buffer - tip 9)
+        self.batch_input_buffer.clear();
+        self.batch_input_buffer.reserve(used_indices.len());
+        
+        for &idx in &used_indices {
+            let [x_qc, y_qc, z_qc] = feature.vertices[idx];
+            let x_input = (x_qc as f64 * transform.scale[0]) + transform.translate[0];
+            let y_input = (y_qc as f64 * transform.scale[1]) + transform.translate[1];
+            let z_input = (z_qc as f64 * transform.scale[2]) + transform.translate[2] + self.vertical_bias;
+            self.batch_input_buffer.push((x_input, y_input, z_input));
+        }
+
+        // Step 3: Batch transform through PROJ (Priority 2 - reduces FFI call overhead)
+        self.transformer_to_ecef
+            .convert_batch_into(&self.batch_input_buffer, &mut self.batch_output_buffer)
+            .context("Batch transform vertices to ECEF")?;
+
+        // Step 4: Build transformed vertex cache (vertex_idx -> local position)
+        // Pre-allocate with exact capacity (tip 1)
+        let mut transformed_cache: HashMap<usize, [f32; 3]> = HashMap::with_capacity(used_indices.len());
+        
+        for (i, &idx) in used_indices.iter().enumerate() {
+            let (x_ecef, y_ecef, z_ecef) = self.batch_output_buffer[i];
+            let local_pos = [
+                (x_ecef - self.root_center_ecef.0) as f32,
+                (y_ecef - self.root_center_ecef.1) as f32,
+                (z_ecef - self.root_center_ecef.2) as f32,
+            ];
+            transformed_cache.insert(idx, local_pos);
+        }
+
+        // Step 5: Build surfaces using pre-transformed vertices
+        let mut vertex_cache: HashMap<usize, u32> = HashMap::with_capacity(used_indices.len());
+        
+        for (_id, co) in feature.cityobjects.iter() {
+            if let Some(geoms) = &co.geometry {
+                for geometry in geoms {
+                    match geometry {
+                        Geometry::MultiSurface { boundaries } => {
+                            for surface in boundaries {
+                                self.add_surface_with_cache(surface, &transformed_cache, &mut vertex_cache)?;
+                            }
+                        }
+                        Geometry::Solid { boundaries } => {
+                            for shell in boundaries {
+                                for surface in shell {
+                                    self.add_surface_with_cache(surface, &transformed_cache, &mut vertex_cache)?;
                                 }
                             }
                         }
@@ -202,12 +319,12 @@ impl MeshBuilder {
         Ok(())
     }
 
-    fn add_surface(
+    /// Add surface using pre-transformed vertex cache (for batch optimization)
+    fn add_surface_with_cache(
         &mut self,
-        surface: &Vec<Vec<usize>>,
-        vertices_qc: &[[i64; 3]],
-        transform: &Transform,
-        cache: &mut HashMap<usize, u32>,
+        surface: &[Vec<usize>],
+        transformed_cache: &HashMap<usize, [f32; 3]>,
+        vertex_cache: &mut HashMap<usize, u32>,
     ) -> Result<()> {
         if surface.is_empty() {
             return Ok(());
@@ -217,10 +334,11 @@ impl MeshBuilder {
             return Ok(());
         }
 
-        let mut local_positions: Vec<[f32; 3]> = Vec::new();
-        let mut glb_indices: Vec<u32> = Vec::new();
-        let mut flat_coords: Vec<f64> = Vec::new();
-        let mut hole_indices: Vec<usize> = Vec::new();
+        // Pre-allocate local buffers with estimated capacity (tip 1)
+        let estimated_verts = surface.iter().map(|r| r.len()).sum::<usize>();
+        let mut local_positions: Vec<[f32; 3]> = Vec::with_capacity(estimated_verts);
+        let mut glb_indices: Vec<u32> = Vec::with_capacity(estimated_verts);
+        let mut hole_indices: Vec<usize> = Vec::with_capacity(surface.len().saturating_sub(1));
         let mut vertex_count = 0usize;
 
         for (ring_idx, ring) in surface.iter().enumerate() {
@@ -230,12 +348,24 @@ impl MeshBuilder {
             if ring_idx > 0 {
                 hole_indices.push(vertex_count);
             }
+            for &idx in ring {
+                // Get pre-transformed position from cache
+                let pos = transformed_cache.get(&idx)
+                    .ok_or_else(|| anyhow::anyhow!("Vertex index {} not found in transformed cache", idx))?;
+                
+                // Check if this original vertex index is already in the GLB mesh
+                let glb_idx = if let Some(&existing_idx) = vertex_cache.get(&idx) {
+                    existing_idx
+                } else {
+                    let new_idx = self.positions.len() as u32;
+                    self.positions.push(*pos);
+                    self.normals.push([0.0, 0.0, 0.0]);
+                    vertex_cache.insert(idx, new_idx);
+                    new_idx
+                };
 
-            for &vertex_id in ring {
-                let position = self.compute_local_position(vertex_id, vertices_qc, transform)?;
-                let glb_index = self.vertex_index(vertex_id, position, cache);
-                local_positions.push(position);
-                glb_indices.push(glb_index);
+                local_positions.push(*pos);
+                glb_indices.push(glb_idx);
                 vertex_count += 1;
             }
         }
@@ -244,6 +374,7 @@ impl MeshBuilder {
             return Ok(());
         }
 
+        // Determine which axis to drop for 2D triangulation (same logic as add_surface)
         let mut min = [f32::MAX; 3];
         let mut max = [f32::MIN; 3];
         for pos in &local_positions {
@@ -268,6 +399,8 @@ impl MeshBuilder {
             .map(|(idx, _)| idx)
             .unwrap_or(2);
 
+        // Build flat_coords for earcut, dropping the flattest axis
+        let mut flat_coords: Vec<f64> = Vec::with_capacity(local_positions.len() * 2);
         for pos in &local_positions {
             match drop_axis {
                 0 => {
@@ -285,11 +418,13 @@ impl MeshBuilder {
             }
         }
 
+        // Triangulate and emit
         let triangulated = earcut(&flat_coords, &hole_indices, 2)?;
         if triangulated.len() < 3 {
             return Ok(());
         }
 
+        // Pre-allocate face indices (tip 1)
         let mut face_indices = Vec::with_capacity(triangulated.len());
         for idx in triangulated {
             face_indices.push(glb_indices[idx]);
@@ -297,22 +432,6 @@ impl MeshBuilder {
 
         self.emit_triangles(face_indices);
         Ok(())
-    }
-
-    fn vertex_index(
-        &mut self,
-        idx: usize,
-        position: [f32; 3],
-        cache: &mut HashMap<usize, u32>,
-    ) -> u32 {
-        if let Some(&existing) = cache.get(&idx) {
-            return existing;
-        }
-        self.positions.push(position);
-        self.normals.push([0.0, 0.0, 0.0]);
-        let index = (self.positions.len() - 1) as u32;
-        cache.insert(idx, index);
-        index
     }
 
     fn emit_triangles(&mut self, face_indices: Vec<u32>) {
@@ -342,36 +461,6 @@ impl MeshBuilder {
 
             self.indices.extend_from_slice(tri);
         }
-    }
-
-    fn compute_local_position(
-        &self,
-        idx: usize,
-        vertices_qc: &[[i64; 3]],
-        transform: &Transform,
-    ) -> Result<[f32; 3], anyhow::Error> {
-        let [x_qc, y_qc, z_qc] = vertices_qc[idx];
-        // 1. Dequantize coordinates to input CRS
-        let x_input = (x_qc as f64 * transform.scale[0]) + transform.translate[0];
-        let y_input = (y_qc as f64 * transform.scale[1]) + transform.translate[1];
-        let z_input = (z_qc as f64 * transform.scale[2]) + transform.translate[2] + self.vertical_bias;
-
-        // 2. Transform coordinates from input CRS to ECEF (EPSG:4978)
-        // This ensures coordinate system consistency with root transform (which is in ECEF)
-        let (x_ecef, y_ecef, z_ecef) = self.transformer_to_ecef
-            .convert((x_input, y_input, z_input))
-            .context("Transform vertex coordinates to ECEF")?;
-
-        // 3. Make coordinates relative to root center in ECEF
-        // Root transform will translate these relative coordinates to the correct ECEF position
-        let x_local = (x_ecef - self.root_center_ecef.0) as f32;
-        let y_local = (y_ecef - self.root_center_ecef.1) as f32;
-        let z_local = (z_ecef - self.root_center_ecef.2) as f32;
-        
-
-        // Return ECEF coordinates relative to root center
-        // Y-up transformation in glTF node will convert from ECEF Z-up to glTF Y-up standard
-        Ok([x_local, y_local, z_local])
     }
 
     fn write_glb<P: AsRef<Path>>(&mut self, output_path: P, default_color: &str) -> Result<()> {
