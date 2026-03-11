@@ -10,8 +10,11 @@
 
 # misc
 /tmp
+*.pem
 
 # Debug data
 *.tsv
 *.bincode
 *.log
+certs/*
+!certs/.gitkeep

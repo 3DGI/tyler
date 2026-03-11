@@ -17,249 +17,205 @@ use clap::Parser;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
+#[command(group(
+    clap::ArgGroup::new("input")
+        .required(true)
+        .multiple(true)
+        .args(["buildings", "trees"]),
+))]
 pub struct Cli {
-    /// Main CityJSON file (.city.json), containing the coordinate reference system and
-    /// transformation properties.
-    #[arg(short, long, value_parser = existing_canonical_path)]
-    pub metadata: PathBuf,
-    /// Directory of CityJSONFeatures (.city.jsonl). The directory and all its
-    /// subdirectories are searched recursively for feature files.
-    #[arg(short, long, value_parser = existing_canonical_path)]
-    pub features: PathBuf,
+    /// CityJSONL file with building features (e.g. from roofer).
+    #[arg(long, value_parser = existing_canonical_path, display_order = 1)]
+    pub buildings: Option<PathBuf>,
+    /// GeoParquet file with tree (SolitaryVegetationObject) 3D polygons.
+    /// When combined with --buildings, the trees are reprojected and quantized
+    /// to the buildings' coordinate reference system.
+    #[arg(long, value_parser = existing_canonical_path, display_order = 2)]
+    pub trees: Option<PathBuf>,
+    /// Column name in the GeoParquet file to use as the feature ID.
+    /// If not specified, sequential IDs (tree-00000, tree-00001, ...) are generated.
+    #[arg(long, display_order = 3)]
+    pub tree_id_column: Option<String>,
     /// Directory for the output.
-    #[arg(short, long)]
+    #[arg(short, long, display_order = 4)]
     pub output: PathBuf,
-    // /// Output format.
-    // #[arg(long, value_enum)]
-    // pub format: crate::Formats,
     /// The CityObject type to use for the 3D Tiles
     /// (https://www.cityjson.org/specs/1.1.3/#the-different-city-objects).
-    /// You can specify it multiple times.
-    #[arg(long, value_enum)]
+    /// You can specify it multiple times. If not set, all types are accepted.
+    #[arg(long, value_enum, display_order = 5)]
     pub object_type: Option<Vec<crate::parser::CityObjectType>>,
-    /// The CityObject attribute name and value type to include as feature attribute when the
-    /// output is 3D Tiles. Format: <attribute_name>:<attribute_type> eg: 'name1:string'.
-    /// Possible value types are, 'bool', 'int', 'float', 'string'.
-    /// You can specify it multiple times.
-    #[arg(long)]
-    pub object_attribute: Option<Vec<String>>,
-    /// The CityObject attribute
     /// The metadata class to assign to the property table when the output is
     /// 3D Tiles (https://github.com/CesiumGS/glTF/tree/3d-tiles-next/extensions/2.0/Vendor/EXT_structural_metadata#class).
-    #[arg(long = "3dtiles-metadata-class")]
+    #[arg(long = "3dtiles-metadata-class", display_order = 10)]
     pub cesium3dtiles_metadata_class: Option<String>,
     /// Create implicit tiling when the output format is 3D Tiles (https://docs.ogc.org/cs/22-025r4/22-025r4.html#toc31).
     /// By default, explicit tiling is created for the 3D Tiles output.
-    #[arg(long = "3dtiles-implicit")]
+    #[arg(long = "3dtiles-implicit", display_order = 11)]
     pub cesium3dtiles_implicit: bool,
     /// Generate and write the Tileset only, without exporting the glTF tiles, when the output format is 3D Tiles (https://docs.ogc.org/cs/22-025r4/22-025r4.html#toc31).
-    #[arg(long = "3dtiles-tileset-only")]
+    #[arg(long = "3dtiles-tileset-only", display_order = 12)]
     pub cesium3dtiles_tileset_only: bool,
     /// Use the tile boundingVolume as the content boundingVolume, instead of calculating the content boundingVolume from the data.
-    #[arg(long = "3dtiles-content-bv-from-tile")]
+    #[arg(long = "3dtiles-content-bv-from-tile", display_order = 13)]
     pub cesium3dtiles_content_bv_from_tile: bool,
     /// Add the boundingVolume of the content for the the tiles that have content.
-    #[arg(long = "3dtiles-content-add-bv")]
+    #[arg(long = "3dtiles-content-add-bv", display_order = 14)]
     pub cesium3dtiles_content_add_bv: bool,
     /// Set the geometric error (see 3D Tiles specification) on the parent nodes of leafs. This controls at what
     /// camera distance leaf nodes become visible. Higher values make content visible earlier when zooming in.
-    #[arg(long, short = 'e', default_value = "12")]
+    #[arg(long, short = 'e', default_value = "12", display_order = 15)]
     pub geometric_error_above_leaf: Option<f64>,
     /// Set the 2D cell size for the grid that is used for constructing the quadtree.
     /// In input units (eg. meters). Note that the cell size will be adjusted so that it is
     /// possible to construct a tightly fit square, containing 4^n cells. The final cell size will
     /// larger than this value.
-    #[arg(long, default_value = "250")]
+    #[arg(long, default_value = "250", display_order = 16)]
     pub grid_cellsize: Option<u32>,
-    /// Generate the quadtree directly from a grid.tsv file, skipping the extent computation and feature indexing. A grid.tsv file is created with the --grid-export option. Used for debugging.
-    #[arg(long)]
-    pub grid_file: Option<String>,
     /// Limit the minimum z coordinate for the bounding box that is computed from the
     /// features. Useful if the features contain errors with extremely small z
     /// coordinates. In input units (eg. meters).
-    #[arg(long)]
+    #[arg(long, display_order = 17)]
     pub grid_minz: Option<i32>,
     /// Limit the maximum z coordinate for the bounding box that is computed from the
     /// features. Useful if the features contain errors with extremely large z
     /// coordinates. In input units (eg. meters).
-    #[arg(long)]
+    #[arg(long, display_order = 18)]
     pub grid_maxz: Option<i32>,
     /// Export the grid into .tsv files in the working
     /// directory. Used for debugging.
-    #[arg(long)]
+    #[arg(long, display_order = 50)]
     pub grid_export: bool,
     /// Export the grid, and also the feature centroids into .tsv files in the working
     /// directory. Used for debugging.
-    #[arg(long)]
+    #[arg(long, display_order = 51)]
     pub grid_export_features: bool,
     /// Load instances from this directory.
     /// In debug mode, tyler writes the generated world, quadtree etc. instances to .bincode files, which later can be used for debugging.
     /// When this argument is specified, tyler will load the instances from the .bincode files that are available in the directory.
-    #[arg(long, value_parser = existing_canonical_path)]
+    #[arg(long, value_parser = existing_canonical_path, display_order = 52)]
     pub debug_load_data: Option<PathBuf>,
     /// The maximum number of vertices in a leaf of the quadtree.
-    #[arg(long, default_value = "42000")]
+    #[arg(long, default_value = "42000", display_order = 19)]
     pub qtree_capacity: Option<usize>,
-    /// Path to the geoflow executable for clipping and exporting the gltf files.
-    #[arg(long, value_parser = existing_path)]
-    pub exe_geof: Option<PathBuf>,
-    /// Generate glTF tiles natively in Rust, bypassing geoflow.
-    /// If not specified, the default geoflow pipeline is used for backward compatibility.
-    #[arg(long = "native-glb")]
-    pub native_glb: bool,
-    /// Default PBR base color for native GLB generation, specified as a hex rgb-color value, eg. #FFC0CB is pink.
-    /// Default is #FFC0CB (pink).
-    #[arg(long = "native-glb-color", value_parser = hex_color, default_value = "#FFC0CB")]
-    pub native_glb_color: String,
-    #[arg(long)]
-    pub verbose_geof: bool,
-    /// Maximum error that is allowed in mesh simplification to reduce the number of vertices. Value should be a float that represents that maximum allowed error in meters. Ignored for building object types.
-    #[arg(long, default_value = "1.0")]
-    pub simplification_max_error: Option<f64>,
-    /// Compute smooth vertex normals.
-    #[arg(long)]
-    pub smooth_normals: bool,
-    /// Wait for the tile conversion process to finish, or terminate it if it is not finished after the provided number of seconds.
-    #[arg(long)]
-    pub timeout: Option<u64>,
-    /// LoD to use in output for Building features
-    #[arg(long)]
-    pub lod_building: Option<String>,
-    /// LoD to use in output for building_part features
-    #[arg(long)]
-    pub lod_building_part: Option<String>,
-    /// LoD to use in output for building_installation features
-    #[arg(long)]
-    pub lod_building_installation: Option<String>,
-    /// LoD to use in output for tin_relief features
-    #[arg(long)]
-    pub lod_tin_relief: Option<String>,
-    /// LoD to use in output for road features
-    #[arg(long)]
-    pub lod_road: Option<String>,
-    /// LoD to use in output for railway features
-    #[arg(long)]
-    pub lod_railway: Option<String>,
-    /// LoD to use in output for transport_square features
-    #[arg(long)]
-    pub lod_transport_square: Option<String>,
-    /// LoD to use in output for water_body features
-    #[arg(long)]
-    pub lod_water_body: Option<String>,
-    /// LoD to use in output for plant_cover features
-    #[arg(long)]
-    pub lod_plant_cover: Option<String>,
-    /// LoD to use in output for solitary_vegetation_object features
-    #[arg(long)]
-    pub lod_solitary_vegetation_object: Option<String>,
-    /// LoD to use in output for land_use features
-    #[arg(long)]
-    pub lod_land_use: Option<String>,
-    /// LoD to use in output for city_furniture features
-    #[arg(long)]
-    pub lod_city_furniture: Option<String>,
-    /// LoD to use in output for bridge features
-    #[arg(long)]
-    pub lod_bridge: Option<String>,
-    /// LoD to use in output for bridge_part features
-    #[arg(long)]
-    pub lod_bridge_part: Option<String>,
-    /// LoD to use in output for bridge_installation features
-    #[arg(long)]
-    pub lod_bridge_installation: Option<String>,
-    /// LoD to use in output for bridge_construction_element features
-    #[arg(long)]
-    pub lod_bridge_construction_element: Option<String>,
-    /// LoD to use in output for tunnel features
-    #[arg(long)]
-    pub lod_tunnel: Option<String>,
-    /// LoD to use in output for tunnel_part features
-    #[arg(long)]
-    pub lod_tunnel_part: Option<String>,
-    /// LoD to use in output for tunnel_installation features
-    #[arg(long)]
-    pub lod_tunnel_installation: Option<String>,
-    /// LoD to use in output for lod_generic_city_object features
-    #[arg(long)]
-    pub lod_generic_city_object: Option<String>,
-    /// Color for Building features specified as a hex rgb-color value, eg. #FF0000 is red.
-    #[arg(long, value_parser = hex_color)]
-    pub color_building: Option<String>,
-    /// Color for BuildingPart features specified as a hex rgb-color value, eg. #FF0000 is red.
-    #[arg(long, value_parser = hex_color)]
-    pub color_building_part: Option<String>,
-    /// Color for BuildingInstallation features specified as a hex rgb-color value, eg. #FF0000 is red.
-    #[arg(long, value_parser = hex_color)]
-    pub color_building_installation: Option<String>,
-    /// Color for TINRelief features specified as a hex rgb-color value, eg. #FF0000 is red.
-    #[arg(long, value_parser = hex_color)]
-    pub color_tin_relief: Option<String>,
-    /// Color for Road features specified as a hex rgb-color value, eg. #FF0000 is red.
-    #[arg(long, value_parser = hex_color)]
-    pub color_road: Option<String>,
-    /// Color for Railway features specified as a hex rgb-color value, eg. #FF0000 is red.
-    #[arg(long, value_parser = hex_color)]
-    pub color_railway: Option<String>,
-    /// Color for TransportSquare features specified as a hex rgb-color value, eg. #FF0000 is red.
-    #[arg(long, value_parser = hex_color)]
-    pub color_transport_square: Option<String>,
-    /// Color for WaterBody features specified as a hex rgb-color value, eg. #FF0000 is red.
-    #[arg(long, value_parser = hex_color)]
-    pub color_water_body: Option<String>,
-    /// Color for PlantCover features specified as a hex rgb-color value, eg. #FF0000 is red.
-    #[arg(long, value_parser = hex_color)]
-    pub color_plant_cover: Option<String>,
-    /// Color for SolitaryVegetationObject features specified as a hex rgb-color value, eg. #FF0000 is red.
-    #[arg(long, value_parser = hex_color)]
-    pub color_solitary_vegetation_object: Option<String>,
-    /// Color for LandUse features specified as a hex rgb-color value, eg. #FF0000 is red.
-    #[arg(long, value_parser = hex_color)]
-    pub color_land_use: Option<String>,
-    /// Color for CityFurniture features specified as a hex rgb-color value, eg. #FF0000 is red.
-    #[arg(long, value_parser = hex_color)]
-    pub color_city_furniture: Option<String>,
-    /// Color for Bridge features specified as a hex rgb-color value, eg. #FF0000 is red.
-    #[arg(long, value_parser = hex_color)]
-    pub color_bridge: Option<String>,
-    /// Color for BridgePart features specified as a hex rgb-color value, eg. #FF0000 is red.
-    #[arg(long, value_parser = hex_color)]
-    pub color_bridge_part: Option<String>,
-    /// Color for BridgeInstallation features specified as a hex rgb-color value, eg. #FF0000 is red.
-    #[arg(long, value_parser = hex_color)]
-    pub color_bridge_installation: Option<String>,
-    /// Color for BridgeConstructionElement features specified as a hex rgb-color value, eg. #FF0000 is red.
-    #[arg(long, value_parser = hex_color)]
-    pub color_bridge_construction_element: Option<String>,
-    /// Color for Tunnel features specified as a hex rgb-color value, eg. #FF0000 is red.
-    #[arg(long, value_parser = hex_color)]
-    pub color_tunnel: Option<String>,
-    /// Color for TunnelPart features specified as a hex rgb-color value, eg. #FF0000 is red.
-    #[arg(long, value_parser = hex_color)]
-    pub color_tunnel_part: Option<String>,
-    /// Color for TunnelInstallation features specified as a hex rgb-color value, eg. #FF0000 is red.
-    #[arg(long, value_parser = hex_color)]
-    pub color_tunnel_installation: Option<String>,
-    /// Color for GenericCityObject features specified as a hex rgb-color value, eg. #FF0000 is red.
-    #[arg(long, value_parser = hex_color)]
-    pub color_generic_city_object: Option<String>,
-    // The number of levels to export as content from the quadtree.
-    // Counted from the leaves.
-    // #[arg(long, default_value = "0")]
-    // pub qtree_export_levels: Option<u16>,
-    // /// The criteria to check for the quadtree leaf capacity.
-    // #[arg(long, value_enum, default_value = "vertices")]
-    // pub qtree_criteria: Option<crate::spatial_structs::QuadTreeCriteria>,
-    // /// Path to the python interpreter (>=3.8) to use for generating CityJSON tiles.
-    // /// The interpreter must have a recent cjio (https://github.com/cityjson/cjio)
-    // /// installed.
-    // #[arg(long, value_parser = existing_path)]
-    // pub exe_python: Option<PathBuf>,
-    /// Assume 3DBAG Building-BuildingPart structure
-    #[arg(long)]
-    pub bag3d_buildings_mode: bool,
-    /// Push attributes for every BuildingPart (in bag3d_buildings_mode only)
-    #[arg(long)]
-    pub bag3d_attributes_per_part: bool,
+
+    // --- Per-CityObjectType GLB colors ---
+    // Each is a hex color (#RRGGBB). The type name in the flag is case-insensitive.
+    // If not specified for a type, the default pink (#FFC0CB) is used.
+
+    /// GLB color for Building features, hex #RRGGBB (default #FFC0CB).
+    #[arg(long = "glb-color-building", value_parser = hex_color, display_order = 30)]
+    pub glb_color_building: Option<String>,
+    /// GLB color for BuildingPart features, hex #RRGGBB (default #FFC0CB).
+    #[arg(long = "glb-color-buildingpart", value_parser = hex_color, display_order = 30)]
+    pub glb_color_building_part: Option<String>,
+    /// GLB color for BuildingInstallation features, hex #RRGGBB (default #FFC0CB).
+    #[arg(long = "glb-color-buildinginstallation", value_parser = hex_color, display_order = 30)]
+    pub glb_color_building_installation: Option<String>,
+    /// GLB color for TINRelief features, hex #RRGGBB (default #FFC0CB).
+    #[arg(long = "glb-color-tinrelief", value_parser = hex_color, display_order = 30)]
+    pub glb_color_tin_relief: Option<String>,
+    /// GLB color for Road features, hex #RRGGBB (default #FFC0CB).
+    #[arg(long = "glb-color-road", value_parser = hex_color, display_order = 30)]
+    pub glb_color_road: Option<String>,
+    /// GLB color for Railway features, hex #RRGGBB (default #FFC0CB).
+    #[arg(long = "glb-color-railway", value_parser = hex_color, display_order = 30)]
+    pub glb_color_railway: Option<String>,
+    /// GLB color for TransportSquare features, hex #RRGGBB (default #FFC0CB).
+    #[arg(long = "glb-color-transportsquare", value_parser = hex_color, display_order = 30)]
+    pub glb_color_transport_square: Option<String>,
+    /// GLB color for WaterBody features, hex #RRGGBB (default #FFC0CB).
+    #[arg(long = "glb-color-waterbody", value_parser = hex_color, display_order = 30)]
+    pub glb_color_water_body: Option<String>,
+    /// GLB color for PlantCover features, hex #RRGGBB (default #FFC0CB).
+    #[arg(long = "glb-color-plantcover", value_parser = hex_color, display_order = 30)]
+    pub glb_color_plant_cover: Option<String>,
+    /// GLB color for SolitaryVegetationObject features, hex #RRGGBB (default #FFC0CB).
+    #[arg(long = "glb-color-solitaryvegetationobject", value_parser = hex_color, display_order = 30)]
+    pub glb_color_solitary_vegetation_object: Option<String>,
+    /// GLB color for LandUse features, hex #RRGGBB (default #FFC0CB).
+    #[arg(long = "glb-color-landuse", value_parser = hex_color, display_order = 30)]
+    pub glb_color_land_use: Option<String>,
+    /// GLB color for CityFurniture features, hex #RRGGBB (default #FFC0CB).
+    #[arg(long = "glb-color-cityfurniture", value_parser = hex_color, display_order = 30)]
+    pub glb_color_city_furniture: Option<String>,
+    /// GLB color for Bridge features, hex #RRGGBB (default #FFC0CB).
+    #[arg(long = "glb-color-bridge", value_parser = hex_color, display_order = 30)]
+    pub glb_color_bridge: Option<String>,
+    /// GLB color for BridgePart features, hex #RRGGBB (default #FFC0CB).
+    #[arg(long = "glb-color-bridgepart", value_parser = hex_color, display_order = 30)]
+    pub glb_color_bridge_part: Option<String>,
+    /// GLB color for BridgeInstallation features, hex #RRGGBB (default #FFC0CB).
+    #[arg(long = "glb-color-bridgeinstallation", value_parser = hex_color, display_order = 30)]
+    pub glb_color_bridge_installation: Option<String>,
+    /// GLB color for BridgeConstructionElement features, hex #RRGGBB (default #FFC0CB).
+    #[arg(long = "glb-color-bridgeconstructionelement", value_parser = hex_color, display_order = 30)]
+    pub glb_color_bridge_construction_element: Option<String>,
+    /// GLB color for Tunnel features, hex #RRGGBB (default #FFC0CB).
+    #[arg(long = "glb-color-tunnel", value_parser = hex_color, display_order = 30)]
+    pub glb_color_tunnel: Option<String>,
+    /// GLB color for TunnelPart features, hex #RRGGBB (default #FFC0CB).
+    #[arg(long = "glb-color-tunnelpart", value_parser = hex_color, display_order = 30)]
+    pub glb_color_tunnel_part: Option<String>,
+    /// GLB color for TunnelInstallation features, hex #RRGGBB (default #FFC0CB).
+    #[arg(long = "glb-color-tunnelinstallation", value_parser = hex_color, display_order = 30)]
+    pub glb_color_tunnel_installation: Option<String>,
+    /// GLB color for GenericCityObject features, hex #RRGGBB (default #FFC0CB).
+    #[arg(long = "glb-color-genericcityobject", value_parser = hex_color, display_order = 30)]
+    pub glb_color_generic_city_object: Option<String>,
+}
+
+use std::collections::HashMap;
+use crate::parser::CityObjectType;
+
+/// Default GLB color (pink) used when no per-type color is specified.
+const DEFAULT_GLB_COLOR: &str = "#FFC0CB";
+
+impl Cli {
+    /// Build a map from CityObjectType to RGBA [f32; 4] (alpha = 1.0).
+    /// Types without a CLI-specified color get the default pink.
+    pub fn build_color_map(&self) -> HashMap<CityObjectType, [f32; 4]> {
+        let pairs: &[(CityObjectType, &Option<String>)] = &[
+            (CityObjectType::Building, &self.glb_color_building),
+            (CityObjectType::BuildingPart, &self.glb_color_building_part),
+            (CityObjectType::BuildingInstallation, &self.glb_color_building_installation),
+            (CityObjectType::TINRelief, &self.glb_color_tin_relief),
+            (CityObjectType::Road, &self.glb_color_road),
+            (CityObjectType::Railway, &self.glb_color_railway),
+            (CityObjectType::TransportSquare, &self.glb_color_transport_square),
+            (CityObjectType::WaterBody, &self.glb_color_water_body),
+            (CityObjectType::PlantCover, &self.glb_color_plant_cover),
+            (CityObjectType::SolitaryVegetationObject, &self.glb_color_solitary_vegetation_object),
+            (CityObjectType::LandUse, &self.glb_color_land_use),
+            (CityObjectType::CityFurniture, &self.glb_color_city_furniture),
+            (CityObjectType::Bridge, &self.glb_color_bridge),
+            (CityObjectType::BridgePart, &self.glb_color_bridge_part),
+            (CityObjectType::BridgeInstallation, &self.glb_color_bridge_installation),
+            (CityObjectType::BridgeConstructiveElement, &self.glb_color_bridge_construction_element),
+            (CityObjectType::Tunnel, &self.glb_color_tunnel),
+            (CityObjectType::TunnelPart, &self.glb_color_tunnel_part),
+            (CityObjectType::TunnelInstallation, &self.glb_color_tunnel_installation),
+            (CityObjectType::GenericCityObject, &self.glb_color_generic_city_object),
+        ];
+        let default_rgba = hex_to_rgba(DEFAULT_GLB_COLOR);
+        pairs
+            .iter()
+            .map(|(cotype, opt)| {
+                let rgba = match opt {
+                    Some(hex) => hex_to_rgba(hex),
+                    None => default_rgba,
+                };
+                (*cotype, rgba)
+            })
+            .collect()
+    }
+}
+
+/// Convert a validated hex color string (#RRGGBB) to [f32; 4] RGBA with alpha = 1.0.
+pub fn hex_to_rgba(hex: &str) -> [f32; 4] {
+    let r = u8::from_str_radix(&hex[1..3], 16).unwrap() as f32 / 255.0;
+    let g = u8::from_str_radix(&hex[3..5], 16).unwrap() as f32 / 255.0;
+    let b = u8::from_str_radix(&hex[5..7], 16).unwrap() as f32 / 255.0;
+    [r, g, b, 1.0]
 }
 
 fn existing_canonical_path(s: &str) -> Result<PathBuf, String> {
@@ -271,19 +227,6 @@ fn existing_canonical_path(s: &str) -> Result<PathBuf, String> {
         }
     } else {
         Err(format!("could not resolve the path {:?}", s))
-    }
-}
-
-/// We don't want to canonicalize paths to executables, especially a python exe from a
-/// virtualenv, because the symlink would get resolved and we would end up with a path
-/// to the python interpreter that was used for creating the virtualenv, and not the
-/// interpreter that links to the virtualenv.
-fn existing_path(s: &str) -> Result<PathBuf, String> {
-    let p = Path::new(s).to_path_buf();
-    if p.exists() {
-        Ok(p)
-    } else {
-        Err(format!("path {:?} does not exist", &p))
     }
 }
 
@@ -310,15 +253,10 @@ mod tests {
 
     fn required_args() -> Vec<&'static str> {
         vec![
-            "tyler",
-            "-m",
-            "metadata.city.json",
-            "-f",
-            env!("CARGO_MANIFEST_DIR"),
+            "tyler-glb",
+            "--buildings", env!("CARGO_MANIFEST_DIR"),
             "-o",
             env!("CARGO_MANIFEST_DIR"),
-            "--format",
-            "3dtiles",
         ]
     }
 
@@ -338,5 +276,19 @@ mod tests {
         let otypes = &cli.object_type.unwrap();
         assert!(otypes.contains(&crate::parser::CityObjectType::Building));
         assert!(otypes.contains(&crate::parser::CityObjectType::PlantCover));
+    }
+
+    #[test]
+    fn verify_per_type_color() {
+        let mut args = required_args();
+        args.extend(&["--glb-color-building", "#FF0000", "--glb-color-solitaryvegetationobject", "#00FF00"]);
+        let cli = Cli::try_parse_from(args).unwrap();
+        let color_map = cli.build_color_map();
+        let building_color = color_map[&crate::parser::CityObjectType::Building];
+        assert!((building_color[0] - 1.0).abs() < 0.01); // red = 1.0
+        assert!(building_color[1] < 0.01); // green = 0.0
+        let tree_color = color_map[&crate::parser::CityObjectType::SolitaryVegetationObject];
+        assert!(tree_color[0] < 0.01); // red = 0.0
+        assert!((tree_color[1] - 1.0).abs() < 0.01); // green = 1.0
     }
 }

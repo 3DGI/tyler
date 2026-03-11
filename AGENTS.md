@@ -1,0 +1,18 @@
+- Compile or `cargo check` until there are no warnings
+- Don't Grow `Vec` One Element at a Time; use Vec::with_capacity(input.len()) before pushing elements in a vec if you can
+- Prefer Iterators Over Indexing but avoid intermediate collect in hot paths; rather chain iterator adapters and consume lazily or use extend when necessary.
+- Replace iter() with par_iter() and use Rayon for large data-parallel work 
+- Use Vec Over HashMap Until You Cannot; If your keys are dense or small, start with Vec.
+- The default hasher is secure and slow; use AHasher except for sensitive data
+- Avoid Cloning Collections in the Hot Path; Borrow. Do not duplicate.
+- Reuse Collections Instead of Recreating Them
+- Store Owned Data Only When Necessary; Sometimes a reference is enough.
+
+- Use Region-Based Allocation for groups of objects that will all be allocated during the same program phase e.g. parsing a large JSON document; bumpalo for heterogeneous content; typed-arena for objects of a single type
+- Allocate memory for small collections on the stack: use smallvec or arrayvec; spill to heap only when needed.  Use fixed-size arrays [T; N] when possible, which keeps data on the stack
+- Inside loops, replace per-iteration allocations with reusable buffers; e.g. Reuse a Vec<u8> or String across iterations and clear() it.
+- Use slices and references: zero-copy when parsing; Parse into &str slices against the original buffer whenever possible
+- Error Handling: Use anyhow with Bail!, Not Result<T, String>
+- If you need to create macros, use Declarative Macros 2.0
+- Save plans to /home/yvm001/.cursor/plans
+- If you have certificate issues, see /mnt/c/Users/ymoisan/cert

@@ -87,7 +87,6 @@ impl World {
             "Computing extent from the features of type {:?}",
             cityobject_types
         );
-        // FIXME: if cityobject_types is None, then all cityobject are ignored, instead of included
         // Compute the extent of the features and the number of features.
         // We don't store the computed extent explicitly, because the grid contains that info.
         let feature_dirs_files = Self::find_feature_dirs_and_files(&path_features_root);
@@ -517,26 +516,37 @@ impl World {
         featurevertices: &CityJSONFeatureVertices,
         cell_vtx_cnt: HashMap<CellId, usize>,
     ) -> Option<FeatureInGridCells> {
-        // TODO: what other cityobject types need to have 1-1 cell assignment?
-        if let Some(ref cotypes) = self.cityobject_types {
-            let feature = featurevertices.to_feature(feature_path);
-            let mut cells: Vec<(CellId, Cell)> = Vec::with_capacity(cell_vtx_cnt.len());
-            if cotypes.contains(&CityObjectType::Building)
-                || cotypes.contains(&CityObjectType::BuildingPart)
-            {
-                // In this case we have a 1-1 feature-to-cell assignment, we only retain the vertex
-                // count in the cell that gets the feature.
-                // The cell that receives the feature is the one with the highest vertex count
-                // of the feature.
-                // However, with this method it is not possible to combine cityobject types that
-                // require different cell-assignment methods into the same tileset.
-                // E.g. terrain features need to be duplicated across cells, buildings need to
-                // unique. The tileset for them must be generated separately.
-                let (cellid, nr_vertices) = cell_vtx_cnt
-                    .iter()
-                    .max_by(|a, b| a.1.cmp(b.1))
-                    .map(|(k, v)| (k, v))
-                    .unwrap();
+        let feature = featurevertices.to_feature(feature_path);
+        let mut cells: Vec<(CellId, Cell)> = Vec::with_capacity(cell_vtx_cnt.len());
+
+        // Determine if we should use 1-1 cell assignment (buildings) or
+        // multi-cell assignment (terrain, etc.).
+        // When cityobject_types is None (all types), default to 1-1 assignment.
+        let use_single_cell = match &self.cityobject_types {
+            None => true,
+            Some(cotypes) => {
+                cotypes.contains(&CityObjectType::Building)
+                    || cotypes.contains(&CityObjectType::BuildingPart)
+            }
+        };
+
+        if use_single_cell {
+            // 1-1 feature-to-cell assignment: assign feature to the cell with the
+            // highest vertex count.
+            let (cellid, nr_vertices) = cell_vtx_cnt
+                .iter()
+                .max_by(|a, b| a.1.cmp(b.1))
+                .map(|(k, v)| (k, v))
+                .unwrap();
+            cells.push((
+                *cellid,
+                Cell {
+                    feature_ids: Vec::new(),
+                    nr_vertices: *nr_vertices,
+                },
+            ));
+        } else {
+            for (cellid, nr_vertices) in cell_vtx_cnt.iter() {
                 cells.push((
                     *cellid,
                     Cell {
@@ -544,21 +554,9 @@ impl World {
                         nr_vertices: *nr_vertices,
                     },
                 ));
-            } else {
-                for (cellid, nr_vertices) in cell_vtx_cnt.iter() {
-                    cells.push((
-                        *cellid,
-                        Cell {
-                            feature_ids: Vec::new(),
-                            nr_vertices: *nr_vertices,
-                        },
-                    ));
-                }
             }
-            Some(FeatureInGridCells { feature, cells })
-        } else {
-            None
         }
+        Some(FeatureInGridCells { feature, cells })
     }
 
     /// Export the grid of the World into the working directory.
@@ -598,7 +596,7 @@ pub struct CityJSONMetadata {
     pub metadata: Metadata,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Transform {
     pub scale: [f64; 3],
     pub translate: [f64; 3],
@@ -659,6 +657,9 @@ impl Crs {
 /// from the zerovec crate, and I didn't investigate further.
 #[derive(Deserialize, Debug)]
 pub struct CityJSONFeatureVertices {
+    /// Top-level feature id (Building id in roofer-rs output). Used as the single identifier per GLB feature.
+    #[serde(default)]
+    pub id: Option<String>,
     #[serde(rename = "CityObjects")]
     pub cityobjects: HashMap<String, CityObject>,
     pub vertices: Vec<[i64; 3]>,
@@ -749,8 +750,10 @@ impl CityJSONFeatureVertices {
     /// Compute the 3D bounding box of only the provided CityObject types in the feature.
     /// Returns quantized coordinates.
     pub fn bbox_of_types(&self, cityobject_types: Option<&Vec<CityObjectType>>) -> Option<BboxQc> {
-        let [mut x_min, mut y_min, mut z_min] = self.vertices[0];
-        let [mut x_max, mut y_max, mut z_max] = self.vertices[0];
+        if self.vertices.is_empty() {
+            return None;
+        }
+        let mut bbox: Option<[i64; 6]> = None;
         let mut found_co_geometry = false;
         for (_, co) in self.cityobjects.iter() {
             // If the object_type argument was not passed, that means that we need all
@@ -769,22 +772,20 @@ impl CityJSONFeatureVertices {
                                 for srf in boundaries {
                                     for ring in srf {
                                         for vtx in ring {
-                                            let [x, y, z] = &self.vertices[*vtx];
-                                            if *x < x_min {
-                                                x_min = *x
-                                            } else if *x > x_max {
-                                                x_max = *x
-                                            }
-                                            if *y < y_min {
-                                                y_min = *y
-                                            } else if *y > y_max {
-                                                y_max = *y
-                                            }
-                                            if *z < z_min {
-                                                z_min = *z
-                                            } else if *z > z_max {
-                                                z_max = *z
-                                            }
+                                            let [x, y, z] = self.vertices[*vtx];
+                                            bbox = Some(match bbox {
+                                                None => [x, y, z, x, y, z],
+                                                Some([xm, ym, zm, x_m, y_m, z_m]) => {
+                                                    [
+                                                        xm.min(x),
+                                                        ym.min(y),
+                                                        zm.min(z),
+                                                        x_m.max(x),
+                                                        y_m.max(y),
+                                                        z_m.max(z),
+                                                    ]
+                                                }
+                                            });
                                         }
                                     }
                                 }
@@ -795,22 +796,20 @@ impl CityJSONFeatureVertices {
                                     for srf in shell {
                                         for ring in srf {
                                             for vtx in ring {
-                                                let [x, y, z] = &self.vertices[*vtx];
-                                                if *x < x_min {
-                                                    x_min = *x
-                                                } else if *x > x_max {
-                                                    x_max = *x
-                                                }
-                                                if *y < y_min {
-                                                    y_min = *y
-                                                } else if *y > y_max {
-                                                    y_max = *y
-                                                }
-                                                if *z < z_min {
-                                                    z_min = *z
-                                                } else if *z > z_max {
-                                                    z_max = *z
-                                                }
+                                                let [x, y, z] = self.vertices[*vtx];
+                                                bbox = Some(match bbox {
+                                                    None => [x, y, z, x, y, z],
+                                                    Some([xm, ym, zm, x_m, y_m, z_m]) => {
+                                                        [
+                                                            xm.min(x),
+                                                            ym.min(y),
+                                                            zm.min(z),
+                                                            x_m.max(x),
+                                                            y_m.max(y),
+                                                            z_m.max(z),
+                                                        ]
+                                                    }
+                                                });
                                             }
                                         }
                                     }
@@ -823,7 +822,7 @@ impl CityJSONFeatureVertices {
             }
         }
         if found_co_geometry {
-            Some(BboxQc([x_min, y_min, z_min, x_max, y_max, z_max]))
+            bbox.map(BboxQc)
         } else {
             None
         }
@@ -902,7 +901,7 @@ impl Feature {
 }
 
 #[derive(
-    Debug, Serialize, Deserialize, clap::ValueEnum, Clone, Copy, Ord, PartialOrd, Eq, PartialEq,
+    Debug, Serialize, Deserialize, clap::ValueEnum, Clone, Copy, Hash, Ord, PartialOrd, Eq, PartialEq,
 )]
 #[clap(rename_all = "PascalCase")]
 pub enum CityObjectType {
@@ -926,6 +925,9 @@ pub enum CityObjectType {
     PlantCover,
     SolitaryVegetationObject,
     TINRelief,
+    Tunnel,
+    TunnelPart,
+    TunnelInstallation,
     WaterBody,
     Road,
     Railway,

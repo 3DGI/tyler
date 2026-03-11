@@ -12,26 +12,36 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 mod cli;
+mod cityjsonl_source;
 mod formats;
+mod geoparquet_source;
 mod gltf_writer;
 mod parser;
 mod proj;
 mod spatial_structs;
+mod transform_align;
 
+#[cfg(feature = "geoflow")]
 use core::time::Duration;
 use std::env;
 use std::fs;
 use std::fs::File;
-use std::io::{BufWriter, Write};
-use std::path::{Path, PathBuf};
+use std::io::Write;
+#[cfg(feature = "geoflow")]
+use std::io::BufWriter;
+#[cfg(feature = "geoflow")]
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::formats::cesium3dtiles::{Tile, TileId};
 use clap::Parser;
 use log::{debug, log_enabled, warn, Level};
 use rayon::prelude::*;
+#[cfg(feature = "geoflow")]
 use subprocess::{Exec, Redirection};
 
+#[cfg(feature = "geoflow")]
 #[derive(Debug, Default, Clone)]
 struct SubprocessConfig {
     output_extension: String,
@@ -41,6 +51,7 @@ struct SubprocessConfig {
     verbose: bool,
 }
 
+#[cfg(feature = "geoflow")]
 #[derive(Debug, Clone, clap::ValueEnum, Eq, PartialEq)]
 #[clap(rename_all = "lower")]
 pub enum Formats {
@@ -48,6 +59,7 @@ pub enum Formats {
     CityJSON,
 }
 
+#[cfg(feature = "geoflow")]
 impl ToString for Formats {
     fn to_string(&self) -> String {
         match self {
@@ -64,6 +76,7 @@ struct DebugData {
     tiles_results: Option<PathBuf>,
 }
 
+#[cfg(feature = "geoflow")]
 /// Write the list of feature paths for a tile into a text file, instead of passing
 /// super long paths-string to the subprocess, because with very long arguments we can
 /// get an 'Argument list too long' error.
@@ -106,6 +119,7 @@ fn write_inputs(
     path_features_input_file
 }
 
+#[cfg(feature = "geoflow")]
 fn run_subprocess(
     subprocess_config: &SubprocessConfig,
     tile: Tile,
@@ -171,6 +185,18 @@ fn run_subprocess(
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
 
+    // --- Embed proj.db: extract from binary into a temp file and set PROJ_DATA
+    static PROJ_DB_BYTES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/proj.db"));
+    let proj_db_dir = tempfile::tempdir()?;
+    let proj_db_path = proj_db_dir.path().join("proj.db");
+    fs::write(&proj_db_path, PROJ_DB_BYTES)?;
+    env::set_var("PROJ_DATA", proj_db_dir.path());
+    debug!(
+        "Embedded proj.db ({} bytes) extracted to {:?}",
+        PROJ_DB_BYTES.len(),
+        proj_db_dir.path()
+    );
+
     // --- Begin argument parsing
     let cli = crate::cli::Cli::parse();
     debug!("{:?}", &cli);
@@ -182,98 +208,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Since we have a default value, we can safely unwrap.
     let grid_cellsize = cli.grid_cellsize.unwrap();
     let geometric_error_above_leaf = cli.geometric_error_above_leaf.unwrap();
-    let format = Formats::_3DTiles; // override --format
-    let mut use_geoflow = !cli.native_glb;
-    let geof_subprocess = if use_geoflow {
-        let exe = if let Some(exe_g) = cli.exe_geof.clone() {
-                assert!(exe_g.exists() && exe_g.is_file(), "geoflow executable must be an existing file for generating 3D Tiles, exe_geof: {:?}", &exe_g);
-            exe_g
-            } else {
-                debug!(
-                    "exe_geof is not set for generating 3D Tiles, defaulting to 'geof' in the filesystem PATH"
-                );
-            PathBuf::from("geof")
-        };
-            let res = Exec::cmd(&exe)
-                .arg("--version")
-                .arg("--verbose")
-                .stdout(Redirection::Pipe)
-                .stderr(Redirection::Merge)
-                .capture();
-            let res_plugins = Exec::cmd(&exe)
-                .arg("--list-plugins")
-                .arg("--verbose")
-                .stdout(Redirection::Pipe)
-                .stderr(Redirection::Merge)
-                .capture();
-            if let Ok(capture_data) = res {
-                let plugins_stdout_str = res_plugins.unwrap().stdout_str();
-                debug!(
-                    "geof version:\n{}{}",
-                    capture_data.stdout_str(),
-                    plugins_stdout_str
-                );
-            } else if let Err(popen_error) = res {
-                panic!("Could not execute geof ({:?}):\n{}", &exe, popen_error)
-            }
-            let geof_flowchart_path = match env::var("TYLER_RESOURCES_DIR") {
-                Ok(val) => PathBuf::from(val).join("geof").join("createGLB.json"),
-                Err(_) => PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("resources")
-                    .join("geof")
-                    .join("createGLB.json"),
-            };
-            let timeout = cli.timeout.map(|t| Duration::new(t, 0));
-        Some(SubprocessConfig {
-                output_extension: "glb".to_string(),
-                exe,
-                script: geof_flowchart_path,
-                timeout,
-                verbose: cli.verbose_geof,
-        })
-    } else {
-        None
-    };
-    if geof_subprocess.is_none() {
-        debug!("Using native glTF writer (--native-glb flag set)");
-    } else {
-        debug!("Using geoflow subprocess for glTF generation");
-        debug!("{:?}", geof_subprocess.as_ref().unwrap());
-    }
-    use_geoflow = geof_subprocess.is_some();
-    debug!("use_geoflow = {}", use_geoflow);
+    debug!("Using native glTF writer");
     
-    // Validate PROJ availability for native glTF generation
-    if !use_geoflow {
-        debug!("Validating PROJ library availability for coordinate transformations...");
-        // Test with a simple, common transformation to verify PROJ data is available
-        match crate::proj::Proj::new_known_crs("EPSG:4326", "EPSG:3857", None) {
-            Ok(test_proj) => {
-                // Try a simple transformation to verify PROJ data is actually usable
-                match test_proj.convert((0.0, 0.0, 0.0)) {
-                    Ok(_) => {
-                        debug!("PROJ library validated successfully");
-                    }
-                    Err(e) => {
-                        return Err(format!(
-                            "PROJ library data files not found or invalid. \
-                             Coordinate transformations are required for 3D Tiles generation. \
-                             PROJ transformation test failed: {}. \
-                             Please ensure PROJ data files are installed and accessible.",
-                            e
-                        ).into());
-                    }
+    // Build per-CityObjectType color map from CLI args
+    let color_map = cli.build_color_map();
+    
+    // Validate PROJ availability for coordinate transformations
+    debug!("Validating PROJ library availability for coordinate transformations...");
+    match crate::proj::Proj::new_known_crs("EPSG:4326", "EPSG:3857", None) {
+        Ok(test_proj) => {
+            match test_proj.convert((0.0, 0.0, 0.0)) {
+                Ok(_) => {
+                    debug!("PROJ library validated successfully");
+                }
+                Err(e) => {
+                    return Err(format!(
+                        "PROJ library data files not found or invalid. \
+                         Coordinate transformations are required for 3D Tiles generation. \
+                         PROJ transformation test failed: {}. \
+                         Please ensure PROJ data files are installed and accessible.",
+                        e
+                    ).into());
                 }
             }
-            Err(e) => {
-                return Err(format!(
-                    "PROJ library data files not found or invalid. \
-                     Coordinate transformations are required for 3D Tiles generation. \
-                     Failed to create PROJ transformer: {}. \
-                     Please ensure PROJ data files are installed and accessible.",
-                    e
-                ).into());
-            }
+        }
+        Err(e) => {
+            return Err(format!(
+                "PROJ library data files not found or invalid. \
+                 Coordinate transformations are required for 3D Tiles generation. \
+                 Failed to create PROJ transformer: {}. \
+                 Please ensure PROJ data files are installed and accessible.",
+                e
+            ).into());
         }
     }
     // Since we have a default value, it is safe to unwrap
@@ -287,30 +253,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             spatial_structs::QuadTreeCapacity::Vertices(cli.qtree_capacity.unwrap())
         }
     };
-    let metadata_class: String = if use_geoflow {
-        if cli.cesium3dtiles_metadata_class.is_none() {
-            panic!("--3dtiles-metadata-class must be set when using geoflow for writing 3D Tiles")
-        } else {
-            cli.cesium3dtiles_metadata_class.clone().unwrap()
-        }
-    } else {
-        // For native glb generation, metadata_class is optional
-        cli.cesium3dtiles_metadata_class.clone().unwrap_or_default()
-    };
     if cli.cesium3dtiles_content_bv_from_tile && !cli.cesium3dtiles_content_add_bv {
         warn!("cesium3dtiles_content_bv_from_tile is true, but cesium3dtiles_content_add_bv is false. The tile content bounding volumes are not going to be added, unless you set --3dtiles-content-add-bv");
     }
-    let proj_data = match env::var("PROJ_DATA") {
-        Ok(val) => {
-            debug!("PROJ_DATA: {}", &val);
-            Some(val)
-        }
-        Err(_val) => {
-            // PROJ_DATA warning only relevant for native-glb path (already validated above)
-            // For geoflow path, geoflow handles PROJ internally
-            None
-        }
-    };
     let debug_data = match cli.debug_load_data {
         None => DebugData::default(),
         Some(dir_path) => {
@@ -339,6 +284,64 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // --- end of argument parsing
 
+    // --- Begin preprocessing pipeline
+    let prep_dir = cli.output.join("_prep");
+    fs::create_dir_all(&prep_dir)?;
+
+    let (path_metadata, path_features) = match (&cli.buildings, &cli.trees) {
+        // Buildings (optionally with trees)
+        (Some(buildings_path), trees_opt) => {
+            let (meta_path, feat_dir, cityjsonl_meta) =
+                cityjsonl_source::process_cityjsonl(buildings_path, &prep_dir)?;
+
+            if let Some(trees_path) = trees_opt {
+                let src_epsg = cityjsonl_meta
+                    .reference_system
+                    .split('/')
+                    .last()
+                    .and_then(|s| s.parse::<u16>().ok())
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "Could not extract EPSG code from reference system: {}",
+                            cityjsonl_meta.reference_system
+                        )
+                    });
+
+                let tree_count = geoparquet_source::process_geoparquet(
+                    trees_path,
+                    &feat_dir,
+                    cityjsonl_meta.transform.clone(),
+                    src_epsg,
+                    "SolitaryVegetationObject",
+                    cli.tree_id_column.as_deref(),
+                )?;
+                debug!("Wrote {} tree features to {:?}", tree_count, &feat_dir);
+
+                let overlaps = geoparquet_source::check_overlap(&feat_dir, trees_path)?;
+                if overlaps > 0 {
+                    warn!(
+                        "{} tree(s) overlap building bounding boxes — check positioning",
+                        overlaps
+                    );
+                }
+            }
+
+            (meta_path, feat_dir)
+        }
+        // Trees only (no buildings)
+        (None, Some(trees_path)) => {
+            geoparquet_source::process_geoparquet_standalone(
+                trees_path,
+                &prep_dir,
+                "SolitaryVegetationObject",
+                cli.tree_id_column.as_deref(),
+            )?
+        }
+        // Unreachable: clap ArgGroup guarantees at least one
+        (None, None) => unreachable!("clap ArgGroup requires --buildings or --trees"),
+    };
+    // --- End preprocessing pipeline
+
     // Populate the World with features
     // Primitive types that implement Copy are efficiently copied into the function and
     // and it is cleaner to avoid the indirection. However, heap-allocated container
@@ -348,8 +351,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let world: parser::World = match debug_data.world {
         None => {
             let mut world = parser::World::new(
-                &cli.metadata,
-                &cli.features,
+                &path_metadata,
+                &path_features,
                 grid_cellsize,
                 cli.object_type,
                 cli.grid_minz,
@@ -512,405 +515,56 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    // Export by calling a subprocess to merge the .jsonl files and convert them to the
-    // target format
-    let cotypes_str: Vec<String> = match &world.cityobject_types {
-        None => Vec::new(),
-        Some(cotypes) => cotypes.iter().map(|co| co.to_string()).collect(),
-    };
-    let cotypes_arg = cotypes_str.join(",");
-
-    let attribute_spec: String = match &cli.object_attribute {
-        None => "".to_string(),
-        Some(attributes) => attributes.join(","),
-    };
-
     let path_output_tiles = cli.output.join("t");
-    let path_features_input_dir = cli.output.join("inputs");
-    // TODO: need to refactor this parallel loop somehow that it does not only read the
-    //  3d tiles tiles, but also works with cityjson output
     if !cli.cesium3dtiles_tileset_only {
         fs::create_dir_all(&path_output_tiles)?;
         debug!("Created output directory {:#?}", &path_output_tiles);
-        if use_geoflow {
-        fs::create_dir_all(&path_features_input_dir)?;
-        debug!("Created output directory {:#?}", &path_features_input_dir);
-        }
 
         let tiles_len = tiles.len();
-        let processed_count = if !use_geoflow {
-            debug!("Starting to process {} tiles with native glTF generation...", tiles_len);
-            Some(AtomicUsize::new(0))
-        } else {
-            None
-        };
+        debug!("Starting to process {} tiles with native glTF generation...", tiles_len);
+        let processed_count = AtomicUsize::new(0);
         let tiles_failed_iter = tiles.into_par_iter().map(|(tile, tileid)| {
-            #[allow(unused)]
-            let mut tile_failed: Option<Tile> = None;
             let tileid_grid = &tile.id;
             let qtree_nodeid: spatial_structs::QuadTreeNodeId = tileid_grid.into();
             let qtree_node = quadtree
                 .node(&qtree_nodeid)
                 .unwrap_or_else(|| panic!("did not find tile {} in quadtree", tileid_grid));
             if qtree_node.nr_items == 0 {
-                // The Tileset.prune() method removes the empty tiles from the tileset,
-                //  so skipping the tile conversion without failure is ok if it's empty.
-                if let Some(ref counter) = processed_count {
-                    let count = counter.fetch_add(1, Ordering::Relaxed) + 1;
-                    if count % 10 == 0 || count == tiles_len {
-                        debug!("Progress: {}/{} tiles processed ({}%)", count, tiles_len, (count * 100) / tiles_len);
-                    }
+                let count = processed_count.fetch_add(1, Ordering::Relaxed) + 1;
+                if count % 10 == 0 || count == tiles_len {
+                    debug!("Progress: {}/{} tiles processed ({}%)", count, tiles_len, (count * 100) / tiles_len);
                 }
-                // Only log empty tiles if debug level is enabled
                 if log_enabled!(Level::Debug) {
                     debug!("Tile is empty ({}), skipping conversion", tileid_grid);
                 }
-                return tile_failed;
+                return None;
             }
             let tileid_string = tileid.to_string();
             let file_name = tileid_string;
-            if !use_geoflow {
-                let output_file = path_output_tiles.join(&file_name).with_extension("glb");
-                // Only log per-tile writes if debug level is enabled
-                if log_enabled!(Level::Debug) {
-                    debug!("Writing native GLB for tile {} to {:?}", tile.id, output_file);
-                }
-                match gltf_writer::write_tile_glb(&world, &quadtree, qtree_nodeid, &output_file, &cli.native_glb_color) {
-                    Ok(_) => {
-                        if let Some(ref counter) = processed_count {
-                            let count = counter.fetch_add(1, Ordering::Relaxed) + 1;
-                            if count % 10 == 0 || count == tiles_len {
-                                debug!("Progress: {}/{} tiles processed ({}%)", count, tiles_len, (count * 100) / tiles_len);
-                            }
-                        }
-                        // Only log success if debug level is enabled
-                        if log_enabled!(Level::Debug) {
-                            debug!("Successfully wrote GLB for tile {}", tile.id);
-                        }
-                        return tile_failed;
+            let output_file = path_output_tiles.join(&file_name).with_extension("glb");
+            if log_enabled!(Level::Debug) {
+                debug!("Writing native GLB for tile {} to {:?}", tile.id, output_file);
+            }
+            match gltf_writer::write_tile_glb(&world, &quadtree, qtree_nodeid, &output_file, &color_map) {
+                Ok(_) => {
+                    let count = processed_count.fetch_add(1, Ordering::Relaxed) + 1;
+                    if count % 10 == 0 || count == tiles_len {
+                        debug!("Progress: {}/{} tiles processed ({}%)", count, tiles_len, (count * 100) / tiles_len);
                     }
-                    Err(err) => {
-                        if let Some(ref counter) = processed_count {
-                            let count = counter.fetch_add(1, Ordering::Relaxed) + 1;
-                            if count % 10 == 0 || count == tiles_len {
-                                debug!("Progress: {}/{} tiles processed ({}%)", count, tiles_len, (count * 100) / tiles_len);
-                            }
-                        }
-                        warn!("Tile {} conversion failed: {}", tile.id, err);
-                        return Some(tile);
+                    if log_enabled!(Level::Debug) {
+                        debug!("Successfully wrote GLB for tile {}", tile.id);
                     }
+                    None
                 }
-            }
-            let subprocess_config = geof_subprocess
-                .as_ref()
-                .expect("geoflow configuration expected when --use-geoflow is enabled");
-            let output_file = path_output_tiles
-                .join(&file_name)
-                .with_extension(&subprocess_config.output_extension);
-            let path_features_input_file = write_inputs(
-                &world,
-                &path_features_input_dir,
-                qtree_node,
-                file_name.as_str(),
-            );
-
-            // We use the quadtree node bbox here instead of the Tileset.Tile bounding
-            // volume, because the Tile is in EPSG:4979 and we need the input data CRS
-            let b = qtree_node.bbox(&world.grid);
-            // We need to string-format all the arguments with an = separator, because that's what
-            // geof can accept.
-            // TODO: maybe replace the subprocess carte with std::process to remove the dependency
-            let mut cmd = Exec::cmd(&subprocess_config.exe)
-                .arg(&subprocess_config.script)
-                .arg(format!(
-                    "--output_format={}",
-                    &format.to_string().to_lowercase()
-                ))
-                .arg(format!("--output_file={}", &output_file.to_str().unwrap()))
-                .arg(format!(
-                    "--path_metadata={}",
-                    &world.path_metadata.to_str().unwrap()
-                ))
-                .arg(format!(
-                    "--path_features_input_file={}",
-                    &path_features_input_file.to_str().unwrap()
-                ))
-                .arg(format!("--min_x={}", b[0]))
-                .arg(format!("--min_y={}", b[1]))
-                .arg(format!("--min_z={}", b[2]))
-                .arg(format!("--max_x={}", b[3]))
-                .arg(format!("--max_y={}", b[4]))
-                .arg(format!("--max_z={}", b[5]))
-                .arg(format!("--cotypes={}", &cotypes_arg))
-                .arg(format!("--metadata_class={}", &metadata_class))
-                .arg(format!("--attribute_spec={}", &attribute_spec))
-                .arg(format!("--geometric_error={}", &tile.geometric_error))
-                .arg(format!("--bag3dBuildingsMode={}", cli.bag3d_buildings_mode))
-                .arg(format!(
-                    "--bag3dAttributesPerPart={}",
-                    cli.bag3d_attributes_per_part
-                ));
-
-            if cli.verbose_geof {
-                cmd = cmd.arg("--verbose".to_string())
-            }
-
-            if format == Formats::_3DTiles {
-                // geof specific args
-                // colors
-                if cli.color_building.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--colorBuilding={}",
-                        cli.color_building.as_ref().unwrap()
-                    ));
-                }
-                if cli.color_building_part.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--colorBuildingPart={}",
-                        cli.color_building_part.as_ref().unwrap()
-                    ));
-                }
-                if cli.color_building_installation.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--colorBuildingInstallation={}",
-                        cli.color_building_installation.as_ref().unwrap()
-                    ));
-                }
-                if cli.color_tin_relief.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--colorTINRelief={}",
-                        cli.color_tin_relief.as_ref().unwrap()
-                    ));
-                }
-                if cli.color_road.is_some() {
-                    cmd = cmd.arg(format!("--colorRoad={}", cli.color_road.as_ref().unwrap()));
-                }
-                if cli.color_railway.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--colorRailway={}",
-                        cli.color_railway.as_ref().unwrap()
-                    ));
-                }
-                if cli.color_transport_square.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--colorTransportSquare={}",
-                        cli.color_transport_square.as_ref().unwrap()
-                    ));
-                }
-                if cli.color_water_body.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--colorWaterBody={}",
-                        cli.color_water_body.as_ref().unwrap()
-                    ));
-                }
-                if cli.color_plant_cover.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--colorPlantCover={}",
-                        cli.color_plant_cover.as_ref().unwrap()
-                    ));
-                }
-                if cli.color_solitary_vegetation_object.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--colorSolitaryVegetationObject={}",
-                        cli.color_solitary_vegetation_object.as_ref().unwrap()
-                    ));
-                }
-                if cli.color_land_use.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--colorLandUse={}",
-                        cli.color_land_use.as_ref().unwrap()
-                    ));
-                }
-                if cli.color_city_furniture.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--colorCityFurniture={}",
-                        cli.color_city_furniture.as_ref().unwrap()
-                    ));
-                }
-                if cli.color_bridge.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--colorBridge={}",
-                        cli.color_bridge.as_ref().unwrap()
-                    ));
-                }
-                if cli.color_bridge_part.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--colorBridgePart={}",
-                        cli.color_bridge_part.as_ref().unwrap()
-                    ));
-                }
-                if cli.color_bridge_installation.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--colorBridgeInstallation={}",
-                        cli.color_bridge_installation.as_ref().unwrap()
-                    ));
-                }
-                if cli.color_bridge_construction_element.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--colorBridgeConstructionElement={}",
-                        cli.color_bridge_construction_element.as_ref().unwrap()
-                    ));
-                }
-                if cli.color_tunnel.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--colorTunnel={}",
-                        cli.color_tunnel.as_ref().unwrap()
-                    ));
-                }
-                if cli.color_tunnel_part.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--colorTunnelPart={}",
-                        cli.color_tunnel_part.as_ref().unwrap()
-                    ));
-                }
-                if cli.color_tunnel_installation.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--colorTunnelInstallation={}",
-                        cli.color_tunnel_installation.as_ref().unwrap()
-                    ));
-                }
-                if cli.color_generic_city_object.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--colorGenericCityObject={}",
-                        cli.color_generic_city_object.as_ref().unwrap()
-                    ));
-                }
-
-                // lod filter
-                if cli.lod_building.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--lodBuilding={}",
-                        cli.lod_building.as_ref().unwrap()
-                    ));
-                }
-                if cli.lod_building_part.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--lodBuildingPart={}",
-                        cli.lod_building_part.as_ref().unwrap()
-                    ));
-                }
-                if cli.lod_building_installation.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--lodBuildingInstallation={}",
-                        cli.lod_building_installation.as_ref().unwrap()
-                    ));
-                }
-                if cli.lod_tin_relief.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--lodTINRelief={}",
-                        cli.lod_tin_relief.as_ref().unwrap()
-                    ));
-                }
-                if cli.lod_road.is_some() {
-                    cmd = cmd.arg(format!("--lodRoad={}", cli.lod_road.as_ref().unwrap()));
-                }
-                if cli.lod_railway.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--lodRailway={}",
-                        cli.lod_railway.as_ref().unwrap()
-                    ));
-                }
-                if cli.lod_transport_square.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--lodTransportSquare={}",
-                        cli.lod_transport_square.as_ref().unwrap()
-                    ));
-                }
-                if cli.lod_water_body.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--lodWaterBody={}",
-                        cli.lod_water_body.as_ref().unwrap()
-                    ));
-                }
-                if cli.lod_plant_cover.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--lodPlantCover={}",
-                        cli.lod_plant_cover.as_ref().unwrap()
-                    ));
-                }
-                if cli.lod_solitary_vegetation_object.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--lodSolitaryVegetationObject={}",
-                        cli.lod_solitary_vegetation_object.as_ref().unwrap()
-                    ));
-                }
-                if cli.lod_land_use.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--lodLandUse={}",
-                        cli.lod_land_use.as_ref().unwrap()
-                    ));
-                }
-                if cli.lod_city_furniture.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--lodCityFurniture={}",
-                        cli.lod_city_furniture.as_ref().unwrap()
-                    ));
-                }
-                if cli.lod_bridge.is_some() {
-                    cmd = cmd.arg(format!("--lodBridge={}", cli.lod_bridge.as_ref().unwrap()));
-                }
-                if cli.lod_bridge_part.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--lodBridgePart={}",
-                        cli.lod_bridge_part.as_ref().unwrap()
-                    ));
-                }
-                if cli.lod_bridge_installation.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--lodBridgeInstallation={}",
-                        cli.lod_bridge_installation.as_ref().unwrap()
-                    ));
-                }
-                if cli.lod_bridge_construction_element.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--lodBridgeConstructionElement={}",
-                        cli.lod_bridge_construction_element.as_ref().unwrap()
-                    ));
-                }
-                if cli.lod_tunnel.is_some() {
-                    cmd = cmd.arg(format!("--lodTunnel={}", cli.lod_tunnel.as_ref().unwrap()));
-                }
-                if cli.lod_tunnel_part.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--lodTunnelPart={}",
-                        cli.lod_tunnel_part.as_ref().unwrap()
-                    ));
-                }
-                if cli.lod_tunnel_installation.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--lodTunnelInstallation={}",
-                        cli.lod_tunnel_installation.as_ref().unwrap()
-                    ));
-                }
-                if cli.lod_generic_city_object.is_some() {
-                    cmd = cmd.arg(format!(
-                        "--lodGenericCityObject={}",
-                        cli.lod_generic_city_object.as_ref().unwrap()
-                    ));
-                }
-
-                if let Some(ref cotypes) = world.cityobject_types {
-                    if cotypes.contains(&parser::CityObjectType::Building)
-                        || cotypes.contains(&parser::CityObjectType::BuildingPart)
-                    {
-                        cmd = cmd.arg("--simplify_error=0.0").arg("--skip_clip=true");
-                    } else if cli.simplification_max_error.is_some() {
-                        cmd = cmd.arg(format!(
-                            "--simplify_error={}",
-                            cli.simplification_max_error.as_ref().unwrap()
-                        ));
+                Err(err) => {
+                    let count = processed_count.fetch_add(1, Ordering::Relaxed) + 1;
+                    if count % 10 == 0 || count == tiles_len {
+                        debug!("Progress: {}/{} tiles processed ({}%)", count, tiles_len, (count * 100) / tiles_len);
                     }
+                    warn!("Tile {} conversion failed: {}", tile.id, err);
+                    Some(tile)
                 }
-
-                cmd = cmd.arg(format!("--smooth_normals={}", cli.smooth_normals));
             }
-
-            if let Some(pd) = &proj_data {
-                cmd = cmd.env("PROJ_DATA", pd);
-            }
-
-            tile_failed = run_subprocess(&subprocess_config, tile, output_file, cmd);
-            tile_failed
         });
 
         let mut tiles_results: Vec<Option<Tile>> = Vec::with_capacity(tiles_len + 2);
@@ -933,10 +587,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let tiles_failed: Vec<Tile> = tiles_results.into_iter().flatten().collect();
         debug!("Done");
-
-        if use_geoflow && !log_enabled!(Level::Debug) {
-            fs::remove_dir_all(path_features_input_dir)?;
-        }
 
         debug!("Pruning tileset of {} failed tiles", tiles_failed.len());
         for (i, failed) in tiles_failed.iter().enumerate() {

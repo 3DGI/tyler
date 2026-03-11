@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -7,7 +7,7 @@ use anyhow::{bail, Context, Result};
 use earcutr::earcut;
 use gltf::json as json;
 
-use crate::parser::{CityJSONFeatureVertices, Geometry, Transform, World};
+use crate::parser::{CityJSONFeatureVertices, CityObjectType, Geometry, Transform, World};
 use crate::proj::Proj;
 use crate::spatial_structs::{QuadTree, QuadTreeNodeId};
 
@@ -68,7 +68,7 @@ pub fn write_tile_glb<P: AsRef<Path>>(
     quadtree: &QuadTree,
     qtree_node_id: QuadTreeNodeId,
     output_path: P,
-    default_color: &str,
+    color_map: &HashMap<CityObjectType, [f32; 4]>,
 ) -> Result<()> {
     let qtree_node = quadtree
         .node(&qtree_node_id)
@@ -128,23 +128,35 @@ pub fn write_tile_glb<P: AsRef<Path>>(
         vertical_geoid_n
     );
 
+    // Deduplicate by feature id: a building can be referenced by multiple cells (e.g. bbox
+    // intersection), so we add each feature at most once per tile to avoid duplicate geometry
+    // and the same BuildingId appearing on multiple meshes.
+    let mut seen_fids: HashSet<usize> = HashSet::new();
     for cellid in qtree_node.cells() {
         let cell = world.grid.cell(cellid);
         for fid in cell.feature_ids.iter() {
+            if !seen_fids.insert(*fid) {
+                continue; // already added this feature to this tile
+            }
             let feature = &world.features[*fid];
             let cf = CityJSONFeatureVertices::from_file(&feature.path_jsonl)
                 .map_err(|e| anyhow::anyhow!("Failed to read {:?}: {}", feature.path_jsonl, e))?;
-            builder.add_feature(&cf, &world.transform)?;
+            builder.add_feature(&cf, &world.transform, color_map)?;
         }
     }
 
-    builder.write_glb(output_path, default_color)
+    builder.write_glb(output_path)
 }
 
 struct MeshBuilder {
     positions: Vec<[f32; 3]>,
     normals: Vec<[f32; 3]>,
+    colors: Vec<[f32; 4]>,
+    batch_ids: Vec<u32>,
     indices: Vec<u32>,
+    next_batch_index: u32,
+    /// CityJSON object id per batch index (batch_id_to_cityobject_id[i] = id for batch index i)
+    batch_id_to_cityobject_id: Vec<String>,
     transformer_to_ecef: Proj,
     root_center_ecef: (f64, f64, f64),
     vertical_bias: f64,
@@ -159,29 +171,64 @@ impl MeshBuilder {
         Self {
             positions: Vec::new(),
             normals: Vec::new(),
+            colors: Vec::new(),
+            batch_ids: Vec::new(),
             indices: Vec::new(),
+            next_batch_index: 0,
+            batch_id_to_cityobject_id: Vec::new(),
             transformer_to_ecef,
             root_center_ecef,
             vertical_bias,
         }
     }
 
-    fn add_feature(&mut self, feature: &CityJSONFeatureVertices, transform: &Transform) -> Result<()> {
-        let mut vertex_cache: HashMap<usize, u32> = HashMap::new();
+    /// Add one feature (one CityJSON feature = one building). Uses a single batch index and the
+    /// Building id (feature id or Building CityObject key), not BuildingPart ids.
+    fn add_feature(
+        &mut self,
+        feature: &CityJSONFeatureVertices,
+        transform: &Transform,
+        color_map: &HashMap<CityObjectType, [f32; 4]>,
+    ) -> Result<()> {
+        let building_id = feature
+            .id
+            .clone()
+            .or_else(|| {
+                feature
+                    .cityobjects
+                    .iter()
+                    .find(|(_, co)| co.cotype == CityObjectType::Building)
+                    .map(|(k, _)| k.clone())
+            })
+            .or_else(|| {
+                feature
+                    .cityobjects
+                    .iter()
+                    .find(|(_, co)| co.cotype == CityObjectType::BuildingPart)
+                    .and_then(|(k, _)| k.strip_suffix("-0").map(|s| s.to_string()))
+            })
+            .unwrap_or_else(|| "unknown".to_string());
 
-        for (_id, co) in feature.cityobjects.iter() {
+        let batch_index = self.next_batch_index;
+        self.next_batch_index += 1;
+        self.batch_id_to_cityobject_id.push(building_id);
+
+        let default_color = [1.0_f32, 0.753, 0.796, 1.0]; // #FFC0CB pink
+        let mut vertex_cache: HashMap<usize, u32> = HashMap::new();
+        for (_, co) in feature.cityobjects.iter() {
+            let color = color_map.get(&co.cotype).copied().unwrap_or(default_color);
             if let Some(geoms) = &co.geometry {
                 for geometry in geoms {
                     match geometry {
                         Geometry::MultiSurface { boundaries } => {
                             for surface in boundaries {
-                                self.add_surface(surface, &feature.vertices, transform, &mut vertex_cache)?;
+                                self.add_surface(surface, &feature.vertices, transform, &mut vertex_cache, batch_index, color)?;
                             }
                         }
                         Geometry::Solid { boundaries } => {
                             for shell in boundaries {
                                 for surface in shell {
-                                    self.add_surface(surface, &feature.vertices, transform, &mut vertex_cache)?;
+                                    self.add_surface(surface, &feature.vertices, transform, &mut vertex_cache, batch_index, color)?;
                                 }
                             }
                         }
@@ -199,6 +246,8 @@ impl MeshBuilder {
         vertices_qc: &[[i64; 3]],
         transform: &Transform,
         cache: &mut HashMap<usize, u32>,
+        batch_index: u32,
+        color: [f32; 4],
     ) -> Result<()> {
         if surface.is_empty() {
             return Ok(());
@@ -210,7 +259,6 @@ impl MeshBuilder {
 
         let mut local_positions: Vec<[f32; 3]> = Vec::new();
         let mut glb_indices: Vec<u32> = Vec::new();
-        let mut flat_coords: Vec<f64> = Vec::new();
         let mut hole_indices: Vec<usize> = Vec::new();
         let mut vertex_count = 0usize;
 
@@ -224,7 +272,7 @@ impl MeshBuilder {
 
             for &vertex_id in ring {
                 let position = self.compute_local_position(vertex_id, vertices_qc, transform)?;
-                let glb_index = self.vertex_index(vertex_id, position, cache);
+                let glb_index = self.vertex_index(vertex_id, position, cache, batch_index, color);
                 local_positions.push(position);
                 glb_indices.push(glb_index);
                 vertex_count += 1;
@@ -233,6 +281,28 @@ impl MeshBuilder {
 
         if glb_indices.len() < 3 {
             return Ok(());
+        }
+
+        // Fast path: single ring with 3 or 4 vertices (triangles and quads, e.g. tree
+        // crown sides and trunk sides). Triangulate in 3D so vertical faces are not
+        // collapsed by the drop-axis projection.
+        if surface.len() == 1 && hole_indices.is_empty() {
+            let n = exterior.len();
+            if n == 3 {
+                self.emit_triangles(vec![glb_indices[0], glb_indices[1], glb_indices[2]]);
+                return Ok(());
+            }
+            if n == 4 {
+                self.emit_triangles(vec![
+                    glb_indices[0],
+                    glb_indices[1],
+                    glb_indices[2],
+                    glb_indices[0],
+                    glb_indices[2],
+                    glb_indices[3],
+                ]);
+                return Ok(());
+            }
         }
 
         let mut min = [f32::MAX; 3];
@@ -259,6 +329,7 @@ impl MeshBuilder {
             .map(|(idx, _)| idx)
             .unwrap_or(2);
 
+        let mut flat_coords: Vec<f64> = Vec::with_capacity(local_positions.len() * 2);
         for pos in &local_positions {
             match drop_axis {
                 0 => {
@@ -295,12 +366,16 @@ impl MeshBuilder {
         idx: usize,
         position: [f32; 3],
         cache: &mut HashMap<usize, u32>,
+        batch_index: u32,
+        color: [f32; 4],
     ) -> u32 {
         if let Some(&existing) = cache.get(&idx) {
             return existing;
         }
         self.positions.push(position);
         self.normals.push([0.0, 0.0, 0.0]);
+        self.colors.push(color);
+        self.batch_ids.push(batch_index);
         let index = (self.positions.len() - 1) as u32;
         cache.insert(idx, index);
         index
@@ -365,7 +440,7 @@ impl MeshBuilder {
         Ok([x_local, y_local, z_local])
     }
 
-    fn write_glb<P: AsRef<Path>>(&mut self, output_path: P, default_color: &str) -> Result<()> {
+    fn write_glb<P: AsRef<Path>>(&mut self, output_path: P) -> Result<()> {
         self.normalize_normals();
 
         if self.positions.is_empty() {
@@ -394,9 +469,47 @@ impl MeshBuilder {
             }
         }
 
+        // Per-vertex RGBA colors (COLOR_0)
+        let colors_offset = bin_buffer.len();
+        for c in &self.colors {
+            for component in c {
+                bin_buffer.extend_from_slice(&component.to_le_bytes());
+            }
+        }
+
+        // Use U16 for _FEATURE_ID_0 so validators accept it (glTF 2.0 mesh attributes cannot use UNSIGNED_INT).
+        let feature_count = self.next_batch_index as usize;
+        if feature_count > 65535 {
+            bail!(
+                "Tile has {} features; glTF mesh attribute _FEATURE_ID_0 uses UNSIGNED_SHORT (max 65535)",
+                feature_count
+            );
+        }
+        let batch_ids_offset = bin_buffer.len();
+        for &bid in &self.batch_ids {
+            bin_buffer.extend_from_slice(&(bid as u16).to_le_bytes());
+        }
+
         let indices_offset = bin_buffer.len();
         for index in &self.indices {
             bin_buffer.extend_from_slice(&index.to_le_bytes());
+        }
+
+        // EXT_structural_metadata: string buffer (CityJSON ids) + offsets for property table "id"
+        let string_data_offset = bin_buffer.len();
+        let mut string_offsets: Vec<u32> = Vec::with_capacity(self.batch_id_to_cityobject_id.len() + 1);
+        let mut offset_acc: u32 = 0;
+        for id in &self.batch_id_to_cityobject_id {
+            string_offsets.push(offset_acc);
+            let bytes = id.as_bytes();
+            bin_buffer.extend_from_slice(bytes);
+            bin_buffer.push(0); // null terminator
+            offset_acc += (bytes.len() + 1) as u32;
+        }
+        string_offsets.push(offset_acc);
+        let string_offsets_offset = bin_buffer.len();
+        for &o in &string_offsets {
+            bin_buffer.extend_from_slice(&o.to_le_bytes());
         }
 
         let accessor_positions = json::Accessor {
@@ -447,8 +560,42 @@ impl MeshBuilder {
             sparse: None,
         };
 
-        let accessor_indices = json::Accessor {
+        let accessor_colors = json::Accessor {
             buffer_view: Some(json::Index::new(2)),
+            byte_offset: Some(json::validation::USize64(0)),
+            count: json::validation::USize64(self.colors.len() as u64),
+            component_type: json::validation::Checked::Valid(json::accessor::GenericComponentType(
+                json::accessor::ComponentType::F32,
+            )),
+            normalized: false,
+            type_: json::validation::Checked::Valid(json::accessor::Type::Vec4),
+            extensions: Default::default(),
+            extras: Default::default(),
+            min: None,
+            max: None,
+            name: None,
+            sparse: None,
+        };
+
+        let accessor_batch_ids = json::Accessor {
+            buffer_view: Some(json::Index::new(3)),
+            byte_offset: Some(json::validation::USize64(0)),
+            count: json::validation::USize64(self.batch_ids.len() as u64),
+            component_type: json::validation::Checked::Valid(json::accessor::GenericComponentType(
+                json::accessor::ComponentType::U16,
+            )),
+            normalized: false,
+            min: Some(json::Value::from(vec![*self.batch_ids.iter().min().unwrap_or(&0)])),
+            max: Some(json::Value::from(vec![*self.batch_ids.iter().max().unwrap_or(&0)])),
+            type_: json::validation::Checked::Valid(json::accessor::Type::Scalar),
+            extensions: Default::default(),
+            extras: Default::default(),
+            name: None,
+            sparse: None,
+        };
+
+        let accessor_indices = json::Accessor {
+            buffer_view: Some(json::Index::new(4)),
             byte_offset: Some(json::validation::USize64(0)),
             count: json::validation::USize64(self.indices.len() as u64),
             component_type: json::validation::Checked::Valid(json::accessor::GenericComponentType(
@@ -465,6 +612,7 @@ impl MeshBuilder {
         };
 
         let buffer_views = vec![
+            // BV 0: POSITION
             json::buffer::View {
                 buffer: json::Index::new(0),
                 byte_length: json::validation::USize64((self.positions.len() * 12) as u64),
@@ -475,6 +623,7 @@ impl MeshBuilder {
                 extras: Default::default(),
                 name: None,
             },
+            // BV 1: NORMAL
             json::buffer::View {
                 buffer: json::Index::new(0),
                 byte_length: json::validation::USize64((self.normals.len() * 12) as u64),
@@ -485,12 +634,57 @@ impl MeshBuilder {
                 extras: Default::default(),
                 name: None,
             },
+            // BV 2: COLOR_0 (Vec4 F32 = 16 bytes/vertex)
+            json::buffer::View {
+                buffer: json::Index::new(0),
+                byte_length: json::validation::USize64((self.colors.len() * 16) as u64),
+                byte_offset: Some(json::validation::USize64(colors_offset as u64)),
+                byte_stride: Some(json::buffer::Stride(16)),
+                target: Some(json::validation::Checked::Valid(json::buffer::Target::ArrayBuffer)),
+                extensions: Default::default(),
+                extras: Default::default(),
+                name: None,
+            },
+            // BV 3: _FEATURE_ID_0
+            json::buffer::View {
+                buffer: json::Index::new(0),
+                byte_length: json::validation::USize64((self.batch_ids.len() * 2) as u64),
+                byte_offset: Some(json::validation::USize64(batch_ids_offset as u64)),
+                byte_stride: Some(json::buffer::Stride(2)),
+                target: Some(json::validation::Checked::Valid(json::buffer::Target::ArrayBuffer)),
+                extensions: Default::default(),
+                extras: Default::default(),
+                name: None,
+            },
+            // BV 4: indices
             json::buffer::View {
                 buffer: json::Index::new(0),
                 byte_length: json::validation::USize64((self.indices.len() * 4) as u64),
                 byte_offset: Some(json::validation::USize64(indices_offset as u64)),
                 byte_stride: None,
                 target: Some(json::validation::Checked::Valid(json::buffer::Target::ElementArrayBuffer)),
+                extensions: Default::default(),
+                extras: Default::default(),
+                name: None,
+            },
+            // BV 5: string data
+            json::buffer::View {
+                buffer: json::Index::new(0),
+                byte_length: json::validation::USize64((string_offsets.last().copied().unwrap_or(0)) as u64),
+                byte_offset: Some(json::validation::USize64(string_data_offset as u64)),
+                byte_stride: None,
+                target: None,
+                extensions: Default::default(),
+                extras: Default::default(),
+                name: None,
+            },
+            // BV 6: string offsets
+            json::buffer::View {
+                buffer: json::Index::new(0),
+                byte_length: json::validation::USize64((string_offsets.len() * 4) as u64),
+                byte_offset: Some(json::validation::USize64(string_offsets_offset as u64)),
+                byte_stride: None,
+                target: None,
                 extensions: Default::default(),
                 extras: Default::default(),
                 name: None,
@@ -506,17 +700,44 @@ impl MeshBuilder {
             json::validation::Checked::Valid(json::mesh::Semantic::Normals),
             json::Index::new(1),
         );
+        // Per-vertex RGBA color
+        attributes.insert(
+            json::validation::Checked::Valid(json::mesh::Semantic::Colors(0)),
+            json::Index::new(2),
+        );
+        // EXT_mesh_features: per-vertex feature ID (batch index) for 3D Tiles / iTowns picking
+        attributes.insert(
+            json::validation::Checked::Valid(json::mesh::Semantic::Extras("FEATURE_ID_0".into())),
+            json::Index::new(3),
+        );
 
-        // Create default PBR material matching pg2b3dm's structure
-        let material = create_default_material(default_color)?;
-        
+        // White base material — vertex colors provide the actual per-type coloring
+        let material = create_default_material("#FFFFFF")?;
+
+        let feature_count = self.next_batch_index;
+        let mut primitive_ext_others = serde_json::Map::new();
+        primitive_ext_others.insert(
+            "EXT_mesh_features".to_string(),
+            serde_json::json!({
+                "featureIds": [{
+                    "attribute": 3,
+                    "featureCount": feature_count,
+                    "propertyTable": 0
+                }]
+            }),
+        );
+        let primitive_ext = json::extensions::mesh::Primitive {
+            others: primitive_ext_others,
+            ..Default::default()
+        };
+
         let primitive = json::mesh::Primitive {
             attributes,
-            indices: Some(json::Index::new(2)),
+            indices: Some(json::Index::new(4)),
             material: Some(json::Index::new(0)),
             mode: json::validation::Checked::Valid(json::mesh::Mode::Triangles),
             targets: None,
-            extensions: Default::default(),
+            extensions: Some(primitive_ext),
             extras: Default::default(),
         };
 
@@ -562,8 +783,43 @@ impl MeshBuilder {
             name: None,
         };
 
+        // EXT_structural_metadata: property table mapping batch index -> BuildingId (for tooltip)
+        let n_features = self.batch_id_to_cityobject_id.len();
+        let structural_metadata_ext = serde_json::json!({
+            "schema": {
+                "classes": {
+                    "Feature": {
+                        "properties": {
+                            "BuildingId": {
+                                "type": "STRING",
+                                "stringOffsetType": "UINT32"
+                            }
+                        }
+                    }
+                }
+            },
+            "propertyTables": [{
+                "class": "Feature",
+                "count": n_features,
+                "properties": {
+                    "BuildingId": {
+                        "values": 5,
+                        "stringOffsets": 6
+                    }
+                }
+            }]
+        });
+        let mut root_ext_others = serde_json::Map::new();
+        root_ext_others.insert("EXT_structural_metadata".to_string(), structural_metadata_ext);
+        let root_extensions = json::extensions::root::Root {
+            others: root_ext_others,
+            ..Default::default()
+        };
+
         let root = json::Root {
-            accessors: vec![accessor_positions, accessor_normals, accessor_indices],
+            accessors: vec![accessor_positions, accessor_normals, accessor_colors, accessor_batch_ids, accessor_indices],
+            extensions_used: vec!["EXT_mesh_features".into(), "EXT_structural_metadata".into()],
+            extensions: Some(root_extensions),
             buffers: vec![json::Buffer {
                 byte_length: json::validation::USize64(bin_buffer.len() as u64),
                 uri: None,
