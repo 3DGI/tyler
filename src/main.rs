@@ -16,6 +16,7 @@ mod cityjsonl_source;
 mod formats;
 mod geoparquet_source;
 mod gltf_writer;
+mod material;
 mod parser;
 mod proj;
 mod spatial_structs;
@@ -210,8 +211,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let geometric_error_above_leaf = cli.geometric_error_above_leaf.unwrap();
     debug!("Using native glTF writer");
     
-    // Build per-CityObjectType color map from CLI args
-    let color_map = cli.build_color_map();
+    // Build per-CityObjectType material config from TOML file and/or CLI args
+    let material_config = cli.build_material_config()
+        .map_err(|e| format!("Failed to build material config: {}", e))?;
     
     // Validate PROJ availability for coordinate transformations
     debug!("Validating PROJ library availability for coordinate transformations...");
@@ -545,7 +547,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if log_enabled!(Level::Debug) {
                 debug!("Writing native GLB for tile {} to {:?}", tile.id, output_file);
             }
-            match gltf_writer::write_tile_glb(&world, &quadtree, qtree_nodeid, &output_file, &color_map) {
+            match gltf_writer::write_tile_glb(&world, &quadtree, qtree_nodeid, &output_file, &material_config) {
                 Ok(_) => {
                     let count = processed_count.fetch_add(1, Ordering::Relaxed) + 1;
                     if count % 10 == 0 || count == tiles_len {

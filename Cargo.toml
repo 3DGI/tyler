@@ -43,6 +43,7 @@ bincode = "1.3.3"
 gltf = { version = "1.4", features = ["extras", "extensions"] }
 earcutr = "0.2"
 anyhow = "1.0"
+toml = "0.8"
 # GeoParquet reading
 parquet = "53"
 arrow = { version = "53", features = ["prettyprint"] }

@@ -13,7 +13,10 @@
 // limitations under the License.
 use std::path::{Path, PathBuf};
 
+use anyhow::Result;
 use clap::Parser;
+
+use crate::material::MaterialConfig;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
@@ -98,6 +101,12 @@ pub struct Cli {
     #[arg(long, default_value = "42000", display_order = 19)]
     pub qtree_capacity: Option<usize>,
 
+    /// Path to a TOML file with per-CityObjectType PBR material configuration.
+    /// Defines base_color, metallic_factor, and roughness_factor per type.
+    /// CLI --glb-color-* flags override base_color from this file.
+    #[arg(long = "material-config", value_parser = existing_canonical_path, display_order = 29)]
+    pub material_config: Option<PathBuf>,
+
     // --- Per-CityObjectType GLB colors ---
     // Each is a hex color (#RRGGBB). The type name in the flag is case-insensitive.
     // If not specified for a type, the default pink (#FFC0CB) is used.
@@ -164,17 +173,17 @@ pub struct Cli {
     pub glb_color_generic_city_object: Option<String>,
 }
 
-use std::collections::HashMap;
 use crate::parser::CityObjectType;
 
-/// Default GLB color (pink) used when no per-type color is specified.
-const DEFAULT_GLB_COLOR: &str = "#FFC0CB";
-
 impl Cli {
-    /// Build a map from CityObjectType to RGBA [f32; 4] (alpha = 1.0).
-    /// Types without a CLI-specified color get the default pink.
-    pub fn build_color_map(&self) -> HashMap<CityObjectType, [f32; 4]> {
-        let pairs: &[(CityObjectType, &Option<String>)] = &[
+    /// Build a MaterialConfig from the TOML file (if provided) and CLI color overrides.
+    pub fn build_material_config(&self) -> Result<MaterialConfig> {
+        let mut config = match &self.material_config {
+            Some(path) => MaterialConfig::from_toml(path)?,
+            None => MaterialConfig::default_config(),
+        };
+
+        let cli_colors: Vec<(CityObjectType, &Option<String>)> = vec![
             (CityObjectType::Building, &self.glb_color_building),
             (CityObjectType::BuildingPart, &self.glb_color_building_part),
             (CityObjectType::BuildingInstallation, &self.glb_color_building_installation),
@@ -196,26 +205,10 @@ impl Cli {
             (CityObjectType::TunnelInstallation, &self.glb_color_tunnel_installation),
             (CityObjectType::GenericCityObject, &self.glb_color_generic_city_object),
         ];
-        let default_rgba = hex_to_rgba(DEFAULT_GLB_COLOR);
-        pairs
-            .iter()
-            .map(|(cotype, opt)| {
-                let rgba = match opt {
-                    Some(hex) => hex_to_rgba(hex),
-                    None => default_rgba,
-                };
-                (*cotype, rgba)
-            })
-            .collect()
-    }
-}
+        config.apply_cli_color_overrides(&cli_colors);
 
-/// Convert a validated hex color string (#RRGGBB) to [f32; 4] RGBA with alpha = 1.0.
-pub fn hex_to_rgba(hex: &str) -> [f32; 4] {
-    let r = u8::from_str_radix(&hex[1..3], 16).unwrap() as f32 / 255.0;
-    let g = u8::from_str_radix(&hex[3..5], 16).unwrap() as f32 / 255.0;
-    let b = u8::from_str_radix(&hex[5..7], 16).unwrap() as f32 / 255.0;
-    [r, g, b, 1.0]
+        Ok(config)
+    }
 }
 
 fn existing_canonical_path(s: &str) -> Result<PathBuf, String> {
@@ -283,11 +276,11 @@ mod tests {
         let mut args = required_args();
         args.extend(&["--glb-color-building", "#FF0000", "--glb-color-solitaryvegetationobject", "#00FF00"]);
         let cli = Cli::try_parse_from(args).unwrap();
-        let color_map = cli.build_color_map();
-        let building_color = color_map[&crate::parser::CityObjectType::Building];
+        let config = cli.build_material_config().unwrap();
+        let building_color = config.color_map[&crate::parser::CityObjectType::Building];
         assert!((building_color[0] - 1.0).abs() < 0.01); // red = 1.0
         assert!(building_color[1] < 0.01); // green = 0.0
-        let tree_color = color_map[&crate::parser::CityObjectType::SolitaryVegetationObject];
+        let tree_color = config.color_map[&crate::parser::CityObjectType::SolitaryVegetationObject];
         assert!(tree_color[0] < 0.01); // red = 0.0
         assert!((tree_color[1] - 1.0).abs() < 0.01); // green = 1.0
     }

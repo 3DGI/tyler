@@ -7,38 +7,17 @@ use anyhow::{bail, Context, Result};
 use earcutr::earcut;
 use gltf::json as json;
 
+use crate::material::MaterialConfig;
 use crate::parser::{CityJSONFeatureVertices, CityObjectType, Geometry, Transform, World};
 use crate::proj::Proj;
 use crate::spatial_structs::{QuadTree, QuadTreeNodeId};
 
 const GLTF_VERSION: &str = "2.0";
 
-/// Parse hex color string (#RRGGBB) to RGBA f32 array [R, G, B, A]
-fn hex_to_rgba(hex: &str) -> Result<[f32; 4], anyhow::Error> {
-    if hex.len() != 7 || !hex.starts_with('#') {
-        bail!("Invalid hex color format: expected #RRGGBB");
-    }
-    let hex_digits = &hex[1..];
-    let r = u8::from_str_radix(&hex_digits[0..2], 16)?;
-    let g = u8::from_str_radix(&hex_digits[2..4], 16)?;
-    let b = u8::from_str_radix(&hex_digits[4..6], 16)?;
-    Ok([
-        r as f32 / 255.0,
-        g as f32 / 255.0,
-        b as f32 / 255.0,
-        1.0, // Alpha, always opaque
-    ])
-}
-
-/// Create default PBR material matching pg2b3dm's structure
-fn create_default_material(base_color: &str) -> Result<json::Material, anyhow::Error> {
-    let base_color_rgba = hex_to_rgba(base_color)?;
-    
-    // Metallic roughness factor from pg2b3dm default: #008000
-    // Green channel = 128/255 = 0.501960... (roughness)
-    // Red channel = 0/255 = 0.0 (metallic)
-    let roughness_factor = 128.0 / 255.0;
-    let metallic_factor = 0.0;
+/// Create PBR material with specified metallic and roughness parameters.
+/// Base color is white so per-vertex COLOR_0 provides the actual coloring.
+fn create_material(base_color: &str, metallic: f32, roughness: f32) -> Result<json::Material, anyhow::Error> {
+    let base_color_rgba = crate::material::hex_to_rgba(base_color)?;
     
     Ok(json::Material {
         name: None,
@@ -46,8 +25,8 @@ fn create_default_material(base_color: &str) -> Result<json::Material, anyhow::E
         extras: Default::default(),
         pbr_metallic_roughness: json::material::PbrMetallicRoughness {
             base_color_factor: json::material::PbrBaseColorFactor(base_color_rgba),
-            metallic_factor: json::material::StrengthFactor(metallic_factor),
-            roughness_factor: json::material::StrengthFactor(roughness_factor),
+            metallic_factor: json::material::StrengthFactor(metallic),
+            roughness_factor: json::material::StrengthFactor(roughness),
             base_color_texture: None,
             metallic_roughness_texture: None,
             extensions: Default::default(),
@@ -68,7 +47,7 @@ pub fn write_tile_glb<P: AsRef<Path>>(
     quadtree: &QuadTree,
     qtree_node_id: QuadTreeNodeId,
     output_path: P,
-    color_map: &HashMap<CityObjectType, [f32; 4]>,
+    material_config: &MaterialConfig,
 ) -> Result<()> {
     let qtree_node = quadtree
         .node(&qtree_node_id)
@@ -125,7 +104,9 @@ pub fn write_tile_glb<P: AsRef<Path>>(
     let mut builder = MeshBuilder::new(
         transformer_to_ecef,
         root_center_ecef,
-        vertical_geoid_n
+        vertical_geoid_n,
+        material_config.metallic_factor,
+        material_config.roughness_factor,
     );
 
     // Deduplicate by feature id: a building can be referenced by multiple cells (e.g. bbox
@@ -141,7 +122,7 @@ pub fn write_tile_glb<P: AsRef<Path>>(
             let feature = &world.features[*fid];
             let cf = CityJSONFeatureVertices::from_file(&feature.path_jsonl)
                 .map_err(|e| anyhow::anyhow!("Failed to read {:?}: {}", feature.path_jsonl, e))?;
-            builder.add_feature(&cf, &world.transform, color_map)?;
+            builder.add_feature(&cf, &world.transform, &material_config.color_map)?;
         }
     }
 
@@ -157,9 +138,13 @@ struct MeshBuilder {
     next_batch_index: u32,
     /// CityJSON object id per batch index (batch_id_to_cityobject_id[i] = id for batch index i)
     batch_id_to_cityobject_id: Vec<String>,
+    /// CityObjectType per batch index (e.g. "Building", "WaterBody")
+    batch_id_to_cityobject_type: Vec<String>,
     transformer_to_ecef: Proj,
     root_center_ecef: (f64, f64, f64),
     vertical_bias: f64,
+    metallic_factor: f32,
+    roughness_factor: f32,
 }
 
 impl MeshBuilder {
@@ -167,6 +152,8 @@ impl MeshBuilder {
         transformer_to_ecef: Proj,
         root_center_ecef: (f64, f64, f64),
         vertical_bias: f64,
+        metallic_factor: f32,
+        roughness_factor: f32,
     ) -> Self {
         Self {
             positions: Vec::new(),
@@ -176,9 +163,12 @@ impl MeshBuilder {
             indices: Vec::new(),
             next_batch_index: 0,
             batch_id_to_cityobject_id: Vec::new(),
+            batch_id_to_cityobject_type: Vec::new(),
             transformer_to_ecef,
             root_center_ecef,
             vertical_bias,
+            metallic_factor,
+            roughness_factor,
         }
     }
 
@@ -212,6 +202,21 @@ impl MeshBuilder {
         let batch_index = self.next_batch_index;
         self.next_batch_index += 1;
         self.batch_id_to_cityobject_id.push(building_id);
+
+        // Resolve primary CityObjectType: Building > BuildingPart > first type
+        let primary_type = feature
+            .cityobjects
+            .values()
+            .find(|co| co.cotype == CityObjectType::Building)
+            .or_else(|| {
+                feature
+                    .cityobjects
+                    .values()
+                    .find(|co| co.cotype == CityObjectType::BuildingPart)
+            })
+            .unwrap_or_else(|| feature.cityobjects.values().next().unwrap());
+        self.batch_id_to_cityobject_type
+            .push(format!("{:?}", primary_type.cotype));
 
         let default_color = [1.0_f32, 0.753, 0.796, 1.0]; // #FFC0CB pink
         let mut vertex_cache: HashMap<usize, u32> = HashMap::new();
@@ -512,6 +517,24 @@ impl MeshBuilder {
             bin_buffer.extend_from_slice(&o.to_le_bytes());
         }
 
+        // EXT_structural_metadata: CityObjectType string buffer + offsets (BV 7, BV 8)
+        let type_string_data_offset = bin_buffer.len();
+        let mut type_string_offsets: Vec<u32> =
+            Vec::with_capacity(self.batch_id_to_cityobject_type.len() + 1);
+        let mut type_offset_acc: u32 = 0;
+        for type_name in &self.batch_id_to_cityobject_type {
+            type_string_offsets.push(type_offset_acc);
+            let bytes = type_name.as_bytes();
+            bin_buffer.extend_from_slice(bytes);
+            bin_buffer.push(0); // null terminator
+            type_offset_acc += (bytes.len() + 1) as u32;
+        }
+        type_string_offsets.push(type_offset_acc);
+        let type_string_offsets_offset = bin_buffer.len();
+        for &o in &type_string_offsets {
+            bin_buffer.extend_from_slice(&o.to_le_bytes());
+        }
+
         let accessor_positions = json::Accessor {
             buffer_view: Some(json::Index::new(0)),
             byte_offset: Some(json::validation::USize64(0)),
@@ -689,6 +712,30 @@ impl MeshBuilder {
                 extras: Default::default(),
                 name: None,
             },
+            // BV 7: CityObjectType string data
+            json::buffer::View {
+                buffer: json::Index::new(0),
+                byte_length: json::validation::USize64(
+                    type_string_offsets.last().copied().unwrap_or(0) as u64,
+                ),
+                byte_offset: Some(json::validation::USize64(type_string_data_offset as u64)),
+                byte_stride: None,
+                target: None,
+                extensions: Default::default(),
+                extras: Default::default(),
+                name: None,
+            },
+            // BV 8: CityObjectType string offsets
+            json::buffer::View {
+                buffer: json::Index::new(0),
+                byte_length: json::validation::USize64((type_string_offsets.len() * 4) as u64),
+                byte_offset: Some(json::validation::USize64(type_string_offsets_offset as u64)),
+                byte_stride: None,
+                target: None,
+                extensions: Default::default(),
+                extras: Default::default(),
+                name: None,
+            },
         ];
 
         let mut attributes = std::collections::BTreeMap::new();
@@ -712,7 +759,7 @@ impl MeshBuilder {
         );
 
         // White base material — vertex colors provide the actual per-type coloring
-        let material = create_default_material("#FFFFFF")?;
+        let material = create_material("#FFFFFF", self.metallic_factor, self.roughness_factor)?;
 
         let feature_count = self.next_batch_index;
         let mut primitive_ext_others = serde_json::Map::new();
@@ -783,7 +830,7 @@ impl MeshBuilder {
             name: None,
         };
 
-        // EXT_structural_metadata: property table mapping batch index -> BuildingId (for tooltip)
+        // EXT_structural_metadata: property table mapping batch index -> BuildingId + CityObjectType
         let n_features = self.batch_id_to_cityobject_id.len();
         let structural_metadata_ext = serde_json::json!({
             "schema": {
@@ -791,6 +838,10 @@ impl MeshBuilder {
                     "Feature": {
                         "properties": {
                             "BuildingId": {
+                                "type": "STRING",
+                                "stringOffsetType": "UINT32"
+                            },
+                            "CityObjectType": {
                                 "type": "STRING",
                                 "stringOffsetType": "UINT32"
                             }
@@ -805,6 +856,10 @@ impl MeshBuilder {
                     "BuildingId": {
                         "values": 5,
                         "stringOffsets": 6
+                    },
+                    "CityObjectType": {
+                        "values": 7,
+                        "stringOffsets": 8
                     }
                 }
             }]
