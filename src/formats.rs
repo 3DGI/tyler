@@ -16,7 +16,7 @@
 
 pub mod cesium3dtiles {
     //! Cesium [3D Tiles](https://github.com/CesiumGS/3d-tiles).
-    //! Supported version: 1.1.
+    //! Supported versions: 1.1 (default) and 1.0.
     //! Not supported: `extras`.
     use std::collections::HashMap;
     use std::collections::VecDeque;
@@ -31,6 +31,7 @@ pub mod cesium3dtiles {
     use serde::{Deserialize, Serialize};
     use serde_repr::{Deserialize_repr, Serialize_repr};
 
+    use crate::cli::TilesVersion;
     use crate::proj::Proj;
     use crate::spatial_structs::{Bbox, CellId, QuadTree, QuadTreeNodeId, SquareGrid};
 
@@ -51,6 +52,8 @@ pub mod cesium3dtiles {
         extensions_required: Option<Vec<ExtensionName>>,
         #[serde(skip_serializing_if = "Option::is_none")]
         extensions: Option<Extensions>,
+        #[serde(skip)]
+        tiles_version: TilesVersion,
     }
 
     impl Tileset {
@@ -159,13 +162,14 @@ pub mod cesium3dtiles {
             arg_maxz: Option<i32>,
             content_bv_from_tile: bool,
             content_add_bv: bool,
+            tiles_version: TilesVersion,
         ) -> Self {
             let crs_from = format!("EPSG:{}", world.crs.to_epsg().unwrap());
             // Use EPSG:4979 (geographic 3D) for boundingVolume.region, matching pg2b3dm 2.0.0+ approach
             // This is more compatible with viewers and matches the 3D Tiles spec better
             let crs_to = "EPSG:4979";
             let transformer = Proj::new_known_crs(&crs_from, crs_to, None).unwrap();
-            
+
             // Transform to ECEF for root transform - pg2b3dm still uses ECEF for root transform
             // GLB content is in input CRS, but root transform is in ECEF
             let transformer_to_ecef = Proj::new_known_crs(&crs_from, "EPSG:4978", None).unwrap();
@@ -180,8 +184,9 @@ pub mod cesium3dtiles {
                 arg_maxz,
                 content_bv_from_tile,
                 content_add_bv,
+                tiles_version,
             );
-            
+
             // Add root transform to translate to ECEF center - matches pg2b3dm 2.0.0+ approach
             // GLB content is in ECEF (relative to root center in ECEF) to match root transform coordinate system
             // Root transform translates to ECEF center to position the content correctly
@@ -196,11 +201,11 @@ pub mod cesium3dtiles {
             let root_center_ecef = transformer_to_ecef
                 .convert((root_center_original[0], root_center_original[1], root_center_original[2]))
                 .unwrap();
-            
+
             log::debug!("Root center for tileset transform - input CRS: [{:.2}, {:.2}, {:.2}], ECEF: [{:.2}, {:.2}, {:.2}]",
                 root_center_original[0], root_center_original[1], root_center_original[2],
                 root_center_ecef.0, root_center_ecef.1, root_center_ecef.2);
-            
+
             // Create identity transform with translation to ECEF center
             let root_transform = Transform([
                 1.0, 0.0, 0.0, 0.0,
@@ -212,26 +217,37 @@ pub mod cesium3dtiles {
                 1.0,
             ]);
 
-            // Using gltf tile content
-            let mut extensions: Extensions = HashMap::new();
-            let e1 = Extension::ContentGtlf {
-                extensions_used: None,
-                extensions_required: None,
+            // Conditional asset version and extensions based on 3D Tiles version
+            let asset = match tiles_version {
+                TilesVersion::V1_1 => Asset { version: String::from("1.1"), tileset_version: None },
+                TilesVersion::V1_0 => Asset { version: String::from("1.0"), tileset_version: None },
             };
-            extensions.insert(ExtensionName::ContentGltf, e1);
+
+            let (extensions_used, extensions_required, extensions) = match tiles_version {
+                TilesVersion::V1_1 => {
+                    let mut exts: Extensions = HashMap::new();
+                    exts.insert(ExtensionName::ContentGltf, Extension::ContentGtlf {
+                        extensions_used: None,
+                        extensions_required: None,
+                    });
+                    (Some(vec![ExtensionName::ContentGltf]), Some(vec![ExtensionName::ContentGltf]), Some(exts))
+                }
+                TilesVersion::V1_0 => (None, None, None),
+            };
 
             // Apply root transform to root tile
             let mut root_with_transform = root;
             root_with_transform.transform = Some(root_transform);
-            
+
             Self {
-                asset: Default::default(),
+                asset,
                 geometric_error: geometric_error_above_leaf + root_with_transform.geometric_error * 1.5,
                 root: root_with_transform,
                 properties: None,
-                extensions_used: Some(vec![ExtensionName::ContentGltf]),
-                extensions_required: Some(vec![ExtensionName::ContentGltf]),
-                extensions: Some(extensions),
+                extensions_used,
+                extensions_required,
+                extensions,
+                tiles_version,
             }
         }
 
@@ -249,6 +265,7 @@ pub mod cesium3dtiles {
             arg_maxz: Option<i32>,
             content_bv_from_tile: bool,
             content_add_bv: bool,
+            tiles_version: TilesVersion,
         ) -> Tile {
             if !quadtree.children.is_empty() {
                 let tile_id = TileId::from(&quadtree.id);
@@ -295,6 +312,7 @@ pub mod cesium3dtiles {
                         arg_maxz,
                         content_bv_from_tile,
                         content_add_bv,
+                        tiles_version,
                     ));
                 }
                 Tile {
@@ -363,7 +381,7 @@ pub mod cesium3dtiles {
                         } else {
                             None
                         },
-                        uri: format!("t/{}.glb", quadtree.id),
+                        uri: format!("t/{}.{}", quadtree.id, tiles_version.extension()),
                     });
                 }
 
@@ -531,6 +549,7 @@ pub mod cesium3dtiles {
                 extensions_used: Some(vec![ExtensionName::ContentGltf]),
                 extensions_required: Some(vec![ExtensionName::ContentGltf]),
                 extensions: Some(extensions),
+                tiles_version: TilesVersion::V1_1, // from_grid only supports 1.1
             }
         }
 
@@ -905,7 +924,7 @@ pub mod cesium3dtiles {
 
             self.root.content = Some(Content {
                 bounding_volume: None,
-                uri: "t/{level}/{x}/{y}.glb".to_string(),
+                uri: format!("t/{{level}}/{{x}}/{{y}}.{}", self.tiles_version.extension()),
             });
             self.root.children = None;
             (flat_tiles_with_content, subtrees_vec)
@@ -1077,6 +1096,7 @@ pub mod cesium3dtiles {
                             extensions_used: None,
                             extensions_required: None,
                             extensions: None,
+                            tiles_version: Default::default(),
                         },
                     ));
                     // Update the current tile to point to the new tileset

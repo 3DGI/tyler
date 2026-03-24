@@ -7,6 +7,7 @@ use anyhow::{bail, Context, Result};
 use earcutr::earcut;
 use gltf::json as json;
 
+use crate::cli::TilesVersion;
 use crate::material::MaterialConfig;
 use crate::parser::{CityJSONFeatureVertices, CityObjectType, Geometry, Transform, World};
 use crate::proj::Proj;
@@ -48,6 +49,7 @@ pub fn write_tile_glb<P: AsRef<Path>>(
     qtree_node_id: QuadTreeNodeId,
     output_path: P,
     material_config: &MaterialConfig,
+    tiles_version: TilesVersion,
 ) -> Result<()> {
     let qtree_node = quadtree
         .node(&qtree_node_id)
@@ -126,7 +128,7 @@ pub fn write_tile_glb<P: AsRef<Path>>(
         }
     }
 
-    builder.write_glb(output_path)
+    builder.write_glb(output_path, tiles_version)
 }
 
 struct MeshBuilder {
@@ -445,7 +447,7 @@ impl MeshBuilder {
         Ok([x_local, y_local, z_local])
     }
 
-    fn write_glb<P: AsRef<Path>>(&mut self, output_path: P) -> Result<()> {
+    fn write_glb<P: AsRef<Path>>(&mut self, output_path: P, tiles_version: TilesVersion) -> Result<()> {
         self.normalize_normals();
 
         if self.positions.is_empty() {
@@ -454,7 +456,7 @@ impl MeshBuilder {
                 std::fs::create_dir_all(parent)
                     .with_context(|| format!("Failed to create parent directory for {:?}", output_path.as_ref()))?;
             }
-            File::create(output_path.as_ref()).context("Create empty GLB file")?;
+            File::create(output_path.as_ref()).context("Create empty tile file")?;
             return Ok(());
         }
 
@@ -482,11 +484,11 @@ impl MeshBuilder {
             }
         }
 
-        // Use U16 for _FEATURE_ID_0 so validators accept it (glTF 2.0 mesh attributes cannot use UNSIGNED_INT).
+        // Use U16 for batch/feature IDs so validators accept it (glTF 2.0 mesh attributes cannot use UNSIGNED_INT).
         let feature_count = self.next_batch_index as usize;
         if feature_count > 65535 {
             bail!(
-                "Tile has {} features; glTF mesh attribute _FEATURE_ID_0 uses UNSIGNED_SHORT (max 65535)",
+                "Tile has {} features; glTF mesh attribute uses UNSIGNED_SHORT (max 65535)",
                 feature_count
             );
         }
@@ -500,39 +502,49 @@ impl MeshBuilder {
             bin_buffer.extend_from_slice(&index.to_le_bytes());
         }
 
-        // EXT_structural_metadata: string buffer (CityJSON ids) + offsets for property table "id"
-        let string_data_offset = bin_buffer.len();
-        let mut string_offsets: Vec<u32> = Vec::with_capacity(self.batch_id_to_cityobject_id.len() + 1);
-        let mut offset_acc: u32 = 0;
-        for id in &self.batch_id_to_cityobject_id {
-            string_offsets.push(offset_acc);
-            let bytes = id.as_bytes();
-            bin_buffer.extend_from_slice(bytes);
-            bin_buffer.push(0); // null terminator
-            offset_acc += (bytes.len() + 1) as u32;
-        }
-        string_offsets.push(offset_acc);
-        let string_offsets_offset = bin_buffer.len();
-        for &o in &string_offsets {
-            bin_buffer.extend_from_slice(&o.to_le_bytes());
-        }
+        // EXT_structural_metadata string property tables (1.1 only)
+        let mut string_data_offset = 0;
+        let mut string_offsets_offset = 0;
+        let mut string_offsets_len = 0;
+        let mut type_string_data_offset = 0;
+        let mut type_string_offsets_offset = 0;
+        let mut type_string_offsets_len = 0;
 
-        // EXT_structural_metadata: CityObjectType string buffer + offsets (BV 7, BV 8)
-        let type_string_data_offset = bin_buffer.len();
-        let mut type_string_offsets: Vec<u32> =
-            Vec::with_capacity(self.batch_id_to_cityobject_type.len() + 1);
-        let mut type_offset_acc: u32 = 0;
-        for type_name in &self.batch_id_to_cityobject_type {
+        if tiles_version == TilesVersion::V1_1 {
+            string_data_offset = bin_buffer.len();
+            let mut string_offsets: Vec<u32> = Vec::with_capacity(self.batch_id_to_cityobject_id.len() + 1);
+            let mut offset_acc: u32 = 0;
+            for id in &self.batch_id_to_cityobject_id {
+                string_offsets.push(offset_acc);
+                let bytes = id.as_bytes();
+                bin_buffer.extend_from_slice(bytes);
+                bin_buffer.push(0); // null terminator
+                offset_acc += (bytes.len() + 1) as u32;
+            }
+            string_offsets.push(offset_acc);
+            string_offsets_offset = bin_buffer.len();
+            string_offsets_len = string_offsets.len();
+            for &o in &string_offsets {
+                bin_buffer.extend_from_slice(&o.to_le_bytes());
+            }
+
+            type_string_data_offset = bin_buffer.len();
+            let mut type_string_offsets: Vec<u32> =
+                Vec::with_capacity(self.batch_id_to_cityobject_type.len() + 1);
+            let mut type_offset_acc: u32 = 0;
+            for type_name in &self.batch_id_to_cityobject_type {
+                type_string_offsets.push(type_offset_acc);
+                let bytes = type_name.as_bytes();
+                bin_buffer.extend_from_slice(bytes);
+                bin_buffer.push(0); // null terminator
+                type_offset_acc += (bytes.len() + 1) as u32;
+            }
             type_string_offsets.push(type_offset_acc);
-            let bytes = type_name.as_bytes();
-            bin_buffer.extend_from_slice(bytes);
-            bin_buffer.push(0); // null terminator
-            type_offset_acc += (bytes.len() + 1) as u32;
-        }
-        type_string_offsets.push(type_offset_acc);
-        let type_string_offsets_offset = bin_buffer.len();
-        for &o in &type_string_offsets {
-            bin_buffer.extend_from_slice(&o.to_le_bytes());
+            type_string_offsets_offset = bin_buffer.len();
+            type_string_offsets_len = type_string_offsets.len();
+            for &o in &type_string_offsets {
+                bin_buffer.extend_from_slice(&o.to_le_bytes());
+            }
         }
 
         let accessor_positions = json::Accessor {
@@ -634,7 +646,8 @@ impl MeshBuilder {
             sparse: None,
         };
 
-        let buffer_views = vec![
+        // BV 0-4: common to both 1.0 and 1.1
+        let mut buffer_views = vec![
             // BV 0: POSITION
             json::buffer::View {
                 buffer: json::Index::new(0),
@@ -668,7 +681,7 @@ impl MeshBuilder {
                 extras: Default::default(),
                 name: None,
             },
-            // BV 3: _FEATURE_ID_0
+            // BV 3: _BATCHID (1.0) or _FEATURE_ID_0 (1.1)
             json::buffer::View {
                 buffer: json::Index::new(0),
                 byte_length: json::validation::USize64((self.batch_ids.len() * 2) as u64),
@@ -690,53 +703,61 @@ impl MeshBuilder {
                 extras: Default::default(),
                 name: None,
             },
-            // BV 5: string data
-            json::buffer::View {
-                buffer: json::Index::new(0),
-                byte_length: json::validation::USize64((string_offsets.last().copied().unwrap_or(0)) as u64),
-                byte_offset: Some(json::validation::USize64(string_data_offset as u64)),
-                byte_stride: None,
-                target: None,
-                extensions: Default::default(),
-                extras: Default::default(),
-                name: None,
-            },
-            // BV 6: string offsets
-            json::buffer::View {
-                buffer: json::Index::new(0),
-                byte_length: json::validation::USize64((string_offsets.len() * 4) as u64),
-                byte_offset: Some(json::validation::USize64(string_offsets_offset as u64)),
-                byte_stride: None,
-                target: None,
-                extensions: Default::default(),
-                extras: Default::default(),
-                name: None,
-            },
-            // BV 7: CityObjectType string data
-            json::buffer::View {
-                buffer: json::Index::new(0),
-                byte_length: json::validation::USize64(
-                    type_string_offsets.last().copied().unwrap_or(0) as u64,
-                ),
-                byte_offset: Some(json::validation::USize64(type_string_data_offset as u64)),
-                byte_stride: None,
-                target: None,
-                extensions: Default::default(),
-                extras: Default::default(),
-                name: None,
-            },
-            // BV 8: CityObjectType string offsets
-            json::buffer::View {
-                buffer: json::Index::new(0),
-                byte_length: json::validation::USize64((type_string_offsets.len() * 4) as u64),
-                byte_offset: Some(json::validation::USize64(type_string_offsets_offset as u64)),
-                byte_stride: None,
-                target: None,
-                extensions: Default::default(),
-                extras: Default::default(),
-                name: None,
-            },
         ];
+
+        // BV 5-8: EXT_structural_metadata string property tables (1.1 only)
+        if tiles_version == TilesVersion::V1_1 {
+            buffer_views.extend([
+                // BV 5: BuildingId string data
+                json::buffer::View {
+                    buffer: json::Index::new(0),
+                    byte_length: json::validation::USize64(
+                        (string_offsets_offset - string_data_offset) as u64,
+                    ),
+                    byte_offset: Some(json::validation::USize64(string_data_offset as u64)),
+                    byte_stride: None,
+                    target: None,
+                    extensions: Default::default(),
+                    extras: Default::default(),
+                    name: None,
+                },
+                // BV 6: BuildingId string offsets
+                json::buffer::View {
+                    buffer: json::Index::new(0),
+                    byte_length: json::validation::USize64((string_offsets_len * 4) as u64),
+                    byte_offset: Some(json::validation::USize64(string_offsets_offset as u64)),
+                    byte_stride: None,
+                    target: None,
+                    extensions: Default::default(),
+                    extras: Default::default(),
+                    name: None,
+                },
+                // BV 7: CityObjectType string data
+                json::buffer::View {
+                    buffer: json::Index::new(0),
+                    byte_length: json::validation::USize64(
+                        (type_string_offsets_offset - type_string_data_offset) as u64,
+                    ),
+                    byte_offset: Some(json::validation::USize64(type_string_data_offset as u64)),
+                    byte_stride: None,
+                    target: None,
+                    extensions: Default::default(),
+                    extras: Default::default(),
+                    name: None,
+                },
+                // BV 8: CityObjectType string offsets
+                json::buffer::View {
+                    buffer: json::Index::new(0),
+                    byte_length: json::validation::USize64((type_string_offsets_len * 4) as u64),
+                    byte_offset: Some(json::validation::USize64(type_string_offsets_offset as u64)),
+                    byte_stride: None,
+                    target: None,
+                    extensions: Default::default(),
+                    extras: Default::default(),
+                    name: None,
+                },
+            ]);
+        }
 
         let mut attributes = std::collections::BTreeMap::new();
         attributes.insert(
@@ -752,9 +773,13 @@ impl MeshBuilder {
             json::validation::Checked::Valid(json::mesh::Semantic::Colors(0)),
             json::Index::new(2),
         );
-        // EXT_mesh_features: per-vertex feature ID (batch index) for 3D Tiles / iTowns picking
+        // 1.1: _FEATURE_ID_0 for EXT_mesh_features; 1.0: _BATCHID for batch table
+        let batch_attr_name = match tiles_version {
+            TilesVersion::V1_1 => "FEATURE_ID_0",
+            TilesVersion::V1_0 => "BATCHID",
+        };
         attributes.insert(
-            json::validation::Checked::Valid(json::mesh::Semantic::Extras("FEATURE_ID_0".into())),
+            json::validation::Checked::Valid(json::mesh::Semantic::Extras(batch_attr_name.into())),
             json::Index::new(3),
         );
 
@@ -762,20 +787,27 @@ impl MeshBuilder {
         let material = create_material("#FFFFFF", self.metallic_factor, self.roughness_factor)?;
 
         let feature_count = self.next_batch_index;
-        let mut primitive_ext_others = serde_json::Map::new();
-        primitive_ext_others.insert(
-            "EXT_mesh_features".to_string(),
-            serde_json::json!({
-                "featureIds": [{
-                    "attribute": 3,
-                    "featureCount": feature_count,
-                    "propertyTable": 0
-                }]
-            }),
-        );
-        let primitive_ext = json::extensions::mesh::Primitive {
-            others: primitive_ext_others,
-            ..Default::default()
+
+        // EXT_mesh_features primitive extension (1.1 only)
+        let primitive_extensions = match tiles_version {
+            TilesVersion::V1_1 => {
+                let mut ext_others = serde_json::Map::new();
+                ext_others.insert(
+                    "EXT_mesh_features".to_string(),
+                    serde_json::json!({
+                        "featureIds": [{
+                            "attribute": 3,
+                            "featureCount": feature_count,
+                            "propertyTable": 0
+                        }]
+                    }),
+                );
+                Some(json::extensions::mesh::Primitive {
+                    others: ext_others,
+                    ..Default::default()
+                })
+            }
+            TilesVersion::V1_0 => None,
         };
 
         let primitive = json::mesh::Primitive {
@@ -784,7 +816,7 @@ impl MeshBuilder {
             material: Some(json::Index::new(0)),
             mode: json::validation::Checked::Valid(json::mesh::Mode::Triangles),
             targets: None,
-            extensions: Some(primitive_ext),
+            extensions: primitive_extensions,
             extras: Default::default(),
         };
 
@@ -830,51 +862,59 @@ impl MeshBuilder {
             name: None,
         };
 
-        // EXT_structural_metadata: property table mapping batch index -> BuildingId + CityObjectType
-        let n_features = self.batch_id_to_cityobject_id.len();
-        let structural_metadata_ext = serde_json::json!({
-            "schema": {
-                "classes": {
-                    "Feature": {
-                        "properties": {
-                            "BuildingId": {
-                                "type": "STRING",
-                                "stringOffsetType": "UINT32"
-                            },
-                            "CityObjectType": {
-                                "type": "STRING",
-                                "stringOffsetType": "UINT32"
+        // EXT_structural_metadata + extensions_used (1.1 only)
+        let (root_extensions, extensions_used) = match tiles_version {
+            TilesVersion::V1_1 => {
+                let n_features = self.batch_id_to_cityobject_id.len();
+                let structural_metadata_ext = serde_json::json!({
+                    "schema": {
+                        "classes": {
+                            "Feature": {
+                                "properties": {
+                                    "BuildingId": {
+                                        "type": "STRING",
+                                        "stringOffsetType": "UINT32"
+                                    },
+                                    "CityObjectType": {
+                                        "type": "STRING",
+                                        "stringOffsetType": "UINT32"
+                                    }
+                                }
                             }
                         }
-                    }
-                }
-            },
-            "propertyTables": [{
-                "class": "Feature",
-                "count": n_features,
-                "properties": {
-                    "BuildingId": {
-                        "values": 5,
-                        "stringOffsets": 6
                     },
-                    "CityObjectType": {
-                        "values": 7,
-                        "stringOffsets": 8
-                    }
-                }
-            }]
-        });
-        let mut root_ext_others = serde_json::Map::new();
-        root_ext_others.insert("EXT_structural_metadata".to_string(), structural_metadata_ext);
-        let root_extensions = json::extensions::root::Root {
-            others: root_ext_others,
-            ..Default::default()
+                    "propertyTables": [{
+                        "class": "Feature",
+                        "count": n_features,
+                        "properties": {
+                            "BuildingId": {
+                                "values": 5,
+                                "stringOffsets": 6
+                            },
+                            "CityObjectType": {
+                                "values": 7,
+                                "stringOffsets": 8
+                            }
+                        }
+                    }]
+                });
+                let mut root_ext_others = serde_json::Map::new();
+                root_ext_others.insert("EXT_structural_metadata".to_string(), structural_metadata_ext);
+                (
+                    Some(json::extensions::root::Root {
+                        others: root_ext_others,
+                        ..Default::default()
+                    }),
+                    vec!["EXT_mesh_features".into(), "EXT_structural_metadata".into()],
+                )
+            }
+            TilesVersion::V1_0 => (None, vec![]),
         };
 
         let root = json::Root {
             accessors: vec![accessor_positions, accessor_normals, accessor_colors, accessor_batch_ids, accessor_indices],
-            extensions_used: vec!["EXT_mesh_features".into(), "EXT_structural_metadata".into()],
-            extensions: Some(root_extensions),
+            extensions_used,
+            extensions: root_extensions,
             buffers: vec![json::Buffer {
                 byte_length: json::validation::USize64(bin_buffer.len() as u64),
                 uri: None,
@@ -918,15 +958,25 @@ impl MeshBuilder {
         glb_bytes.extend_from_slice(b"BIN\0");
         glb_bytes.extend_from_slice(&bin_buffer);
 
+        // For 1.0: wrap GLB in B3DM container with feature table + batch table
+        let final_bytes = match tiles_version {
+            TilesVersion::V1_1 => glb_bytes,
+            TilesVersion::V1_0 => wrap_b3dm(
+                &glb_bytes,
+                &self.batch_id_to_cityobject_id,
+                &self.batch_id_to_cityobject_type,
+            ),
+        };
+
         // Create parent directories if they don't exist
         if let Some(parent) = output_path.as_ref().parent() {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("Failed to create parent directory for {:?}", output_path.as_ref()))?;
         }
-        
+
         let mut file = File::create(output_path)?;
-        file.write_all(&glb_bytes)?;
-        
+        file.write_all(&final_bytes)?;
+
         Ok(())
     }
 
@@ -948,3 +998,42 @@ impl MeshBuilder {
     }
 }
 
+/// Wrap a GLB binary in a B3DM container with feature table and batch table.
+/// B3DM format: 28-byte header + feature table JSON + batch table JSON + GLB body.
+fn wrap_b3dm(glb_bytes: &[u8], building_ids: &[String], city_object_types: &[String]) -> Vec<u8> {
+    let batch_length = building_ids.len();
+
+    // Feature table JSON: {"BATCH_LENGTH": n}
+    let mut ft_json_bytes = serde_json::to_vec(&serde_json::json!({ "BATCH_LENGTH": batch_length })).unwrap();
+    // Pad feature table JSON to 8-byte alignment (header is 28 bytes)
+    let ft_padding = (8 - ((28 + ft_json_bytes.len()) % 8)) % 8;
+    ft_json_bytes.extend(std::iter::repeat(b' ').take(ft_padding));
+
+    // Batch table JSON: {"BuildingId": [...], "CityObjectType": [...]}
+    let mut bt_json_bytes = serde_json::to_vec(&serde_json::json!({
+        "BuildingId": building_ids,
+        "CityObjectType": city_object_types,
+    })).unwrap();
+    // Pad batch table JSON to 8-byte alignment
+    let bt_padding = (8 - ((28 + ft_json_bytes.len() + bt_json_bytes.len()) % 8)) % 8;
+    bt_json_bytes.extend(std::iter::repeat(b' ').take(bt_padding));
+
+    let total = 28 + ft_json_bytes.len() + bt_json_bytes.len() + glb_bytes.len();
+    let mut b3dm = Vec::with_capacity(total);
+
+    // 28-byte header
+    b3dm.extend_from_slice(b"b3dm");                                       // magic
+    b3dm.extend_from_slice(&1u32.to_le_bytes());                           // version
+    b3dm.extend_from_slice(&(total as u32).to_le_bytes());                 // byteLength
+    b3dm.extend_from_slice(&(ft_json_bytes.len() as u32).to_le_bytes());   // featureTableJSONByteLength
+    b3dm.extend_from_slice(&0u32.to_le_bytes());                           // featureTableBinaryByteLength
+    b3dm.extend_from_slice(&(bt_json_bytes.len() as u32).to_le_bytes());   // batchTableJSONByteLength
+    b3dm.extend_from_slice(&0u32.to_le_bytes());                           // batchTableBinaryByteLength
+
+    // Body
+    b3dm.extend_from_slice(&ft_json_bytes);
+    b3dm.extend_from_slice(&bt_json_bytes);
+    b3dm.extend_from_slice(glb_bytes);
+
+    b3dm
+}

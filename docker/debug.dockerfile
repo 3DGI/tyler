@@ -4,7 +4,12 @@ USER root
 
 ARG GF_PLUGIN_FOLDER="/usr/local/lib/geoflow-plugins"
 
-RUN apt-get update && apt-get install -y unzip curl
+RUN apt-get update && apt-get install -y unzip curl ca-certificates
+
+# Add corporate CA certificate
+COPY docker/ca-bundle.pem /usr/local/share/ca-certificates/corporate-ca.crt
+RUN update-ca-certificates
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 # Download Dutch transformation grids
 RUN wget https://cdn.proj.org/nl_nsgi_nlgeo2018.tif -O /usr/local/share/proj/nl_nsgi_nlgeo2018.tif && \

@@ -18,6 +18,28 @@ use clap::Parser;
 
 use crate::material::MaterialConfig;
 
+/// 3D Tiles specification version for tile output.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, clap::ValueEnum)]
+pub enum TilesVersion {
+    /// 3D Tiles 1.1 — GLB content with EXT_mesh_features + EXT_structural_metadata (default)
+    #[default]
+    #[value(name = "1.1")]
+    V1_1,
+    /// 3D Tiles 1.0 — B3DM content with batch table
+    #[value(name = "1.0")]
+    V1_0,
+}
+
+impl TilesVersion {
+    /// File extension for tile content files.
+    pub fn extension(&self) -> &'static str {
+        match self {
+            TilesVersion::V1_1 => "glb",
+            TilesVersion::V1_0 => "b3dm",
+        }
+    }
+}
+
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
 #[command(group(
@@ -64,6 +86,9 @@ pub struct Cli {
     /// Add the boundingVolume of the content for the the tiles that have content.
     #[arg(long = "3dtiles-content-add-bv", display_order = 14)]
     pub cesium3dtiles_content_add_bv: bool,
+    /// 3D Tiles version: "1.1" (default, GLB with EXT_mesh_features) or "1.0" (B3DM with batch table).
+    #[arg(long = "3dtiles-version", value_enum, default_value_t = TilesVersion::V1_1, display_order = 9)]
+    pub tiles_version: TilesVersion,
     /// Set the geometric error (see 3D Tiles specification) on the parent nodes of leafs. This controls at what
     /// camera distance leaf nodes become visible. Higher values make content visible earlier when zooming in.
     #[arg(long, short = 'e', default_value = "12", display_order = 15)]
@@ -283,5 +308,20 @@ mod tests {
         let tree_color = config.color_map[&crate::parser::CityObjectType::SolitaryVegetationObject];
         assert!(tree_color[0] < 0.01); // red = 0.0
         assert!((tree_color[1] - 1.0).abs() < 0.01); // green = 1.0
+    }
+
+    #[test]
+    fn verify_tiles_version_default() {
+        let args = required_args();
+        let cli = Cli::try_parse_from(args).unwrap();
+        assert_eq!(cli.tiles_version, crate::cli::TilesVersion::V1_1);
+    }
+
+    #[test]
+    fn verify_tiles_version_1_0() {
+        let mut args = required_args();
+        args.extend(&["--3dtiles-version", "1.0"]);
+        let cli = Cli::try_parse_from(args).unwrap();
+        assert_eq!(cli.tiles_version, crate::cli::TilesVersion::V1_0);
     }
 }

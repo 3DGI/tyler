@@ -442,6 +442,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         cli.grid_maxz,
         cli.cesium3dtiles_content_bv_from_tile,
         cli.cesium3dtiles_content_add_bv,
+        cli.tiles_version,
     );
     debug!("[Progress] Completed tileset generation");
 
@@ -543,11 +544,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             let tileid_string = tileid.to_string();
             let file_name = tileid_string;
-            let output_file = path_output_tiles.join(&file_name).with_extension("glb");
+            let output_file = path_output_tiles.join(&file_name).with_extension(cli.tiles_version.extension());
             if log_enabled!(Level::Debug) {
                 debug!("Writing native GLB for tile {} to {:?}", tile.id, output_file);
             }
-            match gltf_writer::write_tile_glb(&world, &quadtree, qtree_nodeid, &output_file, &material_config) {
+            match gltf_writer::write_tile_glb(&world, &quadtree, qtree_nodeid, &output_file, &material_config, cli.tiles_version) {
                 Ok(_) => {
                     let count = processed_count.fetch_add(1, Ordering::Relaxed) + 1;
                     if count % 10 == 0 || count == tiles_len {
