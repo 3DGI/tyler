@@ -497,6 +497,11 @@ impl MeshBuilder {
             bin_buffer.extend_from_slice(&(bid as u16).to_le_bytes());
         }
 
+        // Align to 4 bytes before u32 indices (batch_ids are u16, so when vertex
+        // count is odd the buffer length is not a multiple of 4).
+        let pad = (4 - (bin_buffer.len() % 4)) % 4;
+        bin_buffer.extend(std::iter::repeat(0u8).take(pad));
+
         let indices_offset = bin_buffer.len();
         for index in &self.indices {
             bin_buffer.extend_from_slice(&index.to_le_bytes());
@@ -506,9 +511,11 @@ impl MeshBuilder {
         let mut string_data_offset = 0;
         let mut string_offsets_offset = 0;
         let mut string_offsets_len = 0;
+        let mut id_string_data_len = 0usize;
         let mut type_string_data_offset = 0;
         let mut type_string_offsets_offset = 0;
         let mut type_string_offsets_len = 0;
+        let mut type_string_data_len = 0usize;
 
         if tiles_version == TilesVersion::V1_1 {
             string_data_offset = bin_buffer.len();
@@ -522,6 +529,10 @@ impl MeshBuilder {
                 offset_acc += (bytes.len() + 1) as u32;
             }
             string_offsets.push(offset_acc);
+            id_string_data_len = bin_buffer.len() - string_data_offset;
+            // Align to 4 bytes before u32 string offset array
+            let pad = (4 - (bin_buffer.len() % 4)) % 4;
+            bin_buffer.extend(std::iter::repeat(0u8).take(pad));
             string_offsets_offset = bin_buffer.len();
             string_offsets_len = string_offsets.len();
             for &o in &string_offsets {
@@ -540,6 +551,10 @@ impl MeshBuilder {
                 type_offset_acc += (bytes.len() + 1) as u32;
             }
             type_string_offsets.push(type_offset_acc);
+            type_string_data_len = bin_buffer.len() - type_string_data_offset;
+            // Align to 4 bytes before u32 type string offset array
+            let pad = (4 - (bin_buffer.len() % 4)) % 4;
+            bin_buffer.extend(std::iter::repeat(0u8).take(pad));
             type_string_offsets_offset = bin_buffer.len();
             type_string_offsets_len = type_string_offsets.len();
             for &o in &type_string_offsets {
@@ -653,7 +668,7 @@ impl MeshBuilder {
                 buffer: json::Index::new(0),
                 byte_length: json::validation::USize64((self.positions.len() * 12) as u64),
                 byte_offset: Some(json::validation::USize64(positions_offset as u64)),
-                byte_stride: Some(json::buffer::Stride(12)),
+                byte_stride: None,
                 target: Some(json::validation::Checked::Valid(json::buffer::Target::ArrayBuffer)),
                 extensions: Default::default(),
                 extras: Default::default(),
@@ -664,7 +679,7 @@ impl MeshBuilder {
                 buffer: json::Index::new(0),
                 byte_length: json::validation::USize64((self.normals.len() * 12) as u64),
                 byte_offset: Some(json::validation::USize64(normals_offset as u64)),
-                byte_stride: Some(json::buffer::Stride(12)),
+                byte_stride: None,
                 target: Some(json::validation::Checked::Valid(json::buffer::Target::ArrayBuffer)),
                 extensions: Default::default(),
                 extras: Default::default(),
@@ -675,7 +690,7 @@ impl MeshBuilder {
                 buffer: json::Index::new(0),
                 byte_length: json::validation::USize64((self.colors.len() * 16) as u64),
                 byte_offset: Some(json::validation::USize64(colors_offset as u64)),
-                byte_stride: Some(json::buffer::Stride(16)),
+                byte_stride: None,
                 target: Some(json::validation::Checked::Valid(json::buffer::Target::ArrayBuffer)),
                 extensions: Default::default(),
                 extras: Default::default(),
@@ -686,7 +701,7 @@ impl MeshBuilder {
                 buffer: json::Index::new(0),
                 byte_length: json::validation::USize64((self.batch_ids.len() * 2) as u64),
                 byte_offset: Some(json::validation::USize64(batch_ids_offset as u64)),
-                byte_stride: Some(json::buffer::Stride(2)),
+                byte_stride: None,
                 target: Some(json::validation::Checked::Valid(json::buffer::Target::ArrayBuffer)),
                 extensions: Default::default(),
                 extras: Default::default(),
@@ -711,9 +726,7 @@ impl MeshBuilder {
                 // BV 5: BuildingId string data
                 json::buffer::View {
                     buffer: json::Index::new(0),
-                    byte_length: json::validation::USize64(
-                        (string_offsets_offset - string_data_offset) as u64,
-                    ),
+                    byte_length: json::validation::USize64(id_string_data_len as u64),
                     byte_offset: Some(json::validation::USize64(string_data_offset as u64)),
                     byte_stride: None,
                     target: None,
@@ -735,9 +748,7 @@ impl MeshBuilder {
                 // BV 7: CityObjectType string data
                 json::buffer::View {
                     buffer: json::Index::new(0),
-                    byte_length: json::validation::USize64(
-                        (type_string_offsets_offset - type_string_data_offset) as u64,
-                    ),
+                    byte_length: json::validation::USize64(type_string_data_len as u64),
                     byte_offset: Some(json::validation::USize64(type_string_data_offset as u64)),
                     byte_stride: None,
                     target: None,
@@ -1036,4 +1047,288 @@ fn wrap_b3dm(glb_bytes: &[u8], building_ids: &[String], city_object_types: &[Str
     b3dm.extend_from_slice(glb_bytes);
 
     b3dm
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build a MeshBuilder with synthetic data and write to a GLB file.
+    /// Returns (raw_glb_bytes, raw_file_bytes) — for V1_0, raw_file_bytes is
+    /// the B3DM wrapper and raw_glb_bytes is the embedded GLB extracted from it.
+    /// For V1_1, both are identical.
+    fn build_test_glb(
+        n_vertices: usize,
+        n_features: usize,
+        tiles_version: TilesVersion,
+    ) -> (Vec<u8>, Vec<u8>) {
+        assert!(n_vertices % 3 == 0, "n_vertices must be a multiple of 3");
+        assert!(n_features >= 1, "need at least 1 feature");
+
+        let transformer = Proj::new_known_crs("EPSG:7415", "EPSG:4978", None)
+            .expect("PROJ transformer");
+        let mut builder = MeshBuilder::new(transformer, (0.0, 0.0, 0.0), 0.0, 0.0, 1.0);
+
+        // Populate synthetic vertex data
+        for i in 0..n_vertices {
+            let f = i as f32;
+            builder.positions.push([f, f + 1.0, f + 2.0]);
+            builder.normals.push([0.0, 1.0, 0.0]);
+            builder.colors.push([1.0, 0.0, 0.0, 1.0]);
+            builder.batch_ids.push((i % n_features) as u32);
+        }
+        for i in 0..n_vertices as u32 {
+            builder.indices.push(i);
+        }
+        builder.next_batch_index = n_features as u32;
+
+        // Varying string lengths to exercise alignment edge cases
+        let id_patterns = ["A", "AB", "ABC"];
+        let type_patterns = ["Building", "WaterBody", "Bridge"];
+        for i in 0..n_features {
+            builder
+                .batch_id_to_cityobject_id
+                .push(id_patterns[i % id_patterns.len()].to_string());
+            builder
+                .batch_id_to_cityobject_type
+                .push(type_patterns[i % type_patterns.len()].to_string());
+        }
+
+        let tmp = tempfile::NamedTempFile::new().expect("tempfile");
+        let path = tmp.path().to_path_buf();
+        builder
+            .write_glb(&path, tiles_version)
+            .expect("write_glb failed");
+
+        let file_bytes = std::fs::read(&path).expect("read GLB file");
+
+        let glb_bytes = match tiles_version {
+            TilesVersion::V1_1 => file_bytes.clone(),
+            TilesVersion::V1_0 => {
+                // Extract embedded GLB from B3DM: skip 28-byte header + feature/batch table JSON
+                let ft_json_len =
+                    u32::from_le_bytes(file_bytes[12..16].try_into().unwrap()) as usize;
+                let bt_json_len =
+                    u32::from_le_bytes(file_bytes[20..24].try_into().unwrap()) as usize;
+                let glb_start = 28 + ft_json_len + bt_json_len;
+                file_bytes[glb_start..].to_vec()
+            }
+        };
+
+        (glb_bytes, file_bytes)
+    }
+
+    #[test]
+    fn glb_no_invalid_byte_stride() {
+        for &n in &[3, 5, 6, 7, 100, 101] {
+            for &version in &[TilesVersion::V1_0, TilesVersion::V1_1] {
+                let (glb_bytes, _) = build_test_glb(n, 2, version);
+                let gltf = gltf::Gltf::from_slice(&glb_bytes)
+                    .unwrap_or_else(|e| panic!("Failed to parse GLB (n={n}, v={version:?}): {e}"));
+
+                for bv in gltf.document.views() {
+                    if let Some(stride) = bv.stride() {
+                        assert!(
+                            stride >= 4,
+                            "byteStride {} < 4 on BV {} (n={n}, v={version:?})",
+                            stride,
+                            bv.index()
+                        );
+                        assert!(
+                            stride % 4 == 0,
+                            "byteStride {} not multiple of 4 on BV {} (n={n}, v={version:?})",
+                            stride,
+                            bv.index()
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn glb_buffer_view_offsets_aligned() {
+        for &n in &[3, 5, 7, 9, 101] {
+            for &version in &[TilesVersion::V1_0, TilesVersion::V1_1] {
+                let (glb_bytes, _) = build_test_glb(n, 2, version);
+                let gltf = gltf::Gltf::from_slice(&glb_bytes)
+                    .unwrap_or_else(|e| panic!("Failed to parse GLB (n={n}, v={version:?}): {e}"));
+
+                for accessor in gltf.document.accessors() {
+                    let bv = accessor.view().unwrap();
+                    let comp_size = match accessor.data_type() {
+                        gltf::accessor::DataType::U8 | gltf::accessor::DataType::I8 => 1,
+                        gltf::accessor::DataType::U16 | gltf::accessor::DataType::I16 => 2,
+                        gltf::accessor::DataType::U32 | gltf::accessor::DataType::F32 => 4,
+                    };
+                    let total_offset = accessor.offset() + bv.offset();
+                    assert!(
+                        total_offset % comp_size == 0,
+                        "Accessor {} (BV {}): offset {} not aligned to component size {} (n={n}, v={version:?})",
+                        accessor.index(),
+                        bv.index(),
+                        total_offset,
+                        comp_size
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn glb_buffer_view_bounds_valid() {
+        for &n in &[3, 6, 99, 100] {
+            for &version in &[TilesVersion::V1_0, TilesVersion::V1_1] {
+                let n_features = if n >= 6 { 3 } else { 1 };
+                let (glb_bytes, _) = build_test_glb(n, n_features, version);
+                let gltf = gltf::Gltf::from_slice(&glb_bytes)
+                    .unwrap_or_else(|e| panic!("Failed to parse GLB (n={n}, v={version:?}): {e}"));
+
+                let buffer_len = gltf.document.buffers().next().unwrap().length();
+                for bv in gltf.document.views() {
+                    assert!(
+                        bv.offset() + bv.length() <= buffer_len,
+                        "BV {} exceeds buffer: offset {} + length {} > {} (n={n}, v={version:?})",
+                        bv.index(),
+                        bv.offset(),
+                        bv.length(),
+                        buffer_len
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn glb_valid_structure() {
+        for &version in &[TilesVersion::V1_0, TilesVersion::V1_1] {
+            let (glb_bytes, _) = build_test_glb(6, 2, version);
+            let gltf = gltf::Gltf::from_slice(&glb_bytes)
+                .unwrap_or_else(|e| panic!("Failed to parse GLB (v={version:?}): {e}"));
+
+            assert_eq!(gltf.document.meshes().count(), 1);
+            assert_eq!(gltf.document.nodes().count(), 1);
+            assert_eq!(gltf.document.scenes().count(), 1);
+            assert_eq!(gltf.document.buffers().count(), 1);
+            assert_eq!(gltf.document.accessors().count(), 5);
+
+            let expected_bvs = match version {
+                TilesVersion::V1_1 => 9,
+                TilesVersion::V1_0 => 5,
+            };
+            assert_eq!(
+                gltf.document.views().count(),
+                expected_bvs,
+                "Wrong BV count for {version:?}"
+            );
+
+            // Verify asset info by parsing JSON chunk directly
+            let json_chunk_len =
+                u32::from_le_bytes(glb_bytes[12..16].try_into().unwrap()) as usize;
+            let json_bytes = &glb_bytes[20..20 + json_chunk_len];
+            let root: serde_json::Value = serde_json::from_slice(json_bytes).unwrap();
+            assert_eq!(root["asset"]["version"], "2.0");
+            assert_eq!(root["asset"]["generator"], "tyler");
+
+            // Verify accessor types and counts
+            let accessors: Vec<_> = gltf.document.accessors().collect();
+            // Accessor 0: POSITION (Vec3/F32, count=6)
+            assert_eq!(accessors[0].count(), 6);
+            assert_eq!(accessors[0].data_type(), gltf::accessor::DataType::F32);
+            assert_eq!(accessors[0].dimensions(), gltf::accessor::Dimensions::Vec3);
+            // Accessor 1: NORMAL (Vec3/F32)
+            assert_eq!(accessors[1].data_type(), gltf::accessor::DataType::F32);
+            assert_eq!(accessors[1].dimensions(), gltf::accessor::Dimensions::Vec3);
+            // Accessor 2: COLOR_0 (Vec4/F32)
+            assert_eq!(accessors[2].data_type(), gltf::accessor::DataType::F32);
+            assert_eq!(accessors[2].dimensions(), gltf::accessor::Dimensions::Vec4);
+            // Accessor 3: BATCHID/FEATURE_ID (Scalar/U16)
+            assert_eq!(accessors[3].data_type(), gltf::accessor::DataType::U16);
+            assert_eq!(
+                accessors[3].dimensions(),
+                gltf::accessor::Dimensions::Scalar
+            );
+            // Accessor 4: indices (Scalar/U32)
+            assert_eq!(accessors[4].data_type(), gltf::accessor::DataType::U32);
+            assert_eq!(
+                accessors[4].dimensions(),
+                gltf::accessor::Dimensions::Scalar
+            );
+            assert_eq!(accessors[4].count(), 6);
+        }
+    }
+
+    #[test]
+    fn glb_chunk_alignment() {
+        for &n in &[3, 5] {
+            let (glb_bytes, _) = build_test_glb(n, 1, TilesVersion::V1_1);
+
+            // GLB header
+            assert_eq!(&glb_bytes[0..4], b"glTF");
+            let version = u32::from_le_bytes(glb_bytes[4..8].try_into().unwrap());
+            assert_eq!(version, 2);
+            let total_len = u32::from_le_bytes(glb_bytes[8..12].try_into().unwrap()) as usize;
+            assert_eq!(total_len, glb_bytes.len());
+
+            // JSON chunk alignment
+            let json_chunk_len =
+                u32::from_le_bytes(glb_bytes[12..16].try_into().unwrap()) as usize;
+            assert!(
+                json_chunk_len % 4 == 0,
+                "JSON chunk length {} not 4-byte aligned (n={n})",
+                json_chunk_len
+            );
+
+            // BIN chunk alignment
+            let bin_chunk_start = 12 + 8 + json_chunk_len;
+            let bin_chunk_len =
+                u32::from_le_bytes(glb_bytes[bin_chunk_start..bin_chunk_start + 4].try_into().unwrap())
+                    as usize;
+            assert!(
+                bin_chunk_len % 4 == 0,
+                "BIN chunk length {} not 4-byte aligned (n={n})",
+                bin_chunk_len
+            );
+        }
+    }
+
+    #[test]
+    fn b3dm_wrapping_preserves_valid_glb() {
+        let (glb_bytes, file_bytes) = build_test_glb(6, 2, TilesVersion::V1_0);
+
+        // Verify B3DM header
+        assert_eq!(&file_bytes[0..4], b"b3dm");
+        let b3dm_version = u32::from_le_bytes(file_bytes[4..8].try_into().unwrap());
+        assert_eq!(b3dm_version, 1);
+        let b3dm_total = u32::from_le_bytes(file_bytes[8..12].try_into().unwrap()) as usize;
+        assert_eq!(b3dm_total, file_bytes.len());
+
+        // Verify the embedded GLB is valid and passes alignment checks
+        let gltf = gltf::Gltf::from_slice(&glb_bytes)
+            .expect("B3DM embedded GLB should be valid glTF 2.0");
+
+        for bv in gltf.document.views() {
+            if let Some(stride) = bv.stride() {
+                assert!(stride >= 4, "byteStride {} < 4 in B3DM GLB", stride);
+                assert!(stride % 4 == 0, "byteStride {} not multiple of 4 in B3DM GLB", stride);
+            }
+        }
+
+        for accessor in gltf.document.accessors() {
+            let bv = accessor.view().unwrap();
+            let comp_size = match accessor.data_type() {
+                gltf::accessor::DataType::U8 | gltf::accessor::DataType::I8 => 1,
+                gltf::accessor::DataType::U16 | gltf::accessor::DataType::I16 => 2,
+                gltf::accessor::DataType::U32 | gltf::accessor::DataType::F32 => 4,
+            };
+            let total_offset = accessor.offset() + bv.offset();
+            assert!(
+                total_offset % comp_size == 0,
+                "B3DM GLB: accessor {} offset {} not aligned to {}",
+                accessor.index(),
+                total_offset,
+                comp_size
+            );
+        }
+    }
 }
