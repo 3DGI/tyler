@@ -18,6 +18,7 @@ use std::fmt;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
+use cityjson::v2_0::vertex::VertexIndex as GeometryVertexIndex;
 use cjlib::{cityjson, json};
 use log::{debug, error, info, warn};
 use rayon::prelude::*;
@@ -59,6 +60,7 @@ struct SelectedGeometryStats {
     bbox: Option<Bbox>,
     centroid: Option<[f64; 2]>,
     nr_vertices: usize,
+    selected_cityobjects_with_geometry: usize,
     selected_object_types: Vec<CityObjectType>,
     ignored_object_types: Vec<CityObjectType>,
 }
@@ -94,7 +96,11 @@ impl World {
             .feature_dirs
             .into_par_iter()
             .filter_map(|dir| {
-                Self::extent(dir, cityobject_types.as_ref(), feature_base_document.as_slice())
+                Self::extent(
+                    dir,
+                    cityobject_types.as_ref(),
+                    feature_base_document.as_slice(),
+                )
             })
             .collect();
 
@@ -105,13 +111,13 @@ impl World {
             cityobject_types.as_ref(),
             feature_base_document.as_slice(),
         )
-            .unwrap_or_else(|| {
-                panic!(
-                    "Did not find any CityJSONFeature of type {:?} in {}",
-                    cityobject_types,
-                    path_features_root.display()
-                )
-            });
+        .unwrap_or_else(|| {
+            panic!(
+                "Did not find any CityJSONFeature of type {:?} in {}",
+                cityobject_types,
+                path_features_root.display()
+            )
+        });
         let mut cityobject_types_ignored: Vec<CityObjectType> = Vec::new();
 
         for (i, extent_result) in extents.iter().enumerate() {
@@ -358,7 +364,7 @@ impl World {
             let centroid = stats.centroid?;
             let cell_vtx_cnt = count_vertices_in_grid(
                 model.as_inner(),
-                self.cityobject_types.as_ref(),
+                stats.selected_cityobjects_with_geometry,
                 &self.grid,
                 &bbox,
             );
@@ -405,7 +411,10 @@ impl World {
     ) -> Option<FeatureInGridCells> {
         let _ = feature_path;
         let unique_assignment = selected_object_types.iter().any(|cotype| {
-            matches!(cotype, CityObjectType::Building | CityObjectType::BuildingPart)
+            matches!(
+                cotype,
+                CityObjectType::Building | CityObjectType::BuildingPart
+            )
         });
         let mut cells: Vec<(CellId, Cell)> = Vec::with_capacity(cell_vtx_cnt.len());
 
@@ -466,7 +475,9 @@ impl World {
 pub struct Crs(String);
 
 impl Crs {
-    fn from_model(model: &cityjson::v2_0::OwnedCityModel) -> Result<Self, Box<dyn std::error::Error>> {
+    fn from_model(
+        model: &cityjson::v2_0::OwnedCityModel,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let metadata = model
             .metadata()
             .ok_or_else(|| "CityJSON metadata is missing".to_string())?;
@@ -564,12 +575,61 @@ fn selected_geometry_stats(
     model: &cityjson::v2_0::OwnedCityModel,
     filter: Option<&Vec<CityObjectType>>,
 ) -> SelectedGeometryStats {
+    let mut selected_vertices = Vec::new();
+    let mut geometry_scratch = Vec::new();
     let mut bbox: Option<Bbox> = None;
     let mut x_sum = 0.0;
     let mut y_sum = 0.0;
     let mut nr_vertices = 0usize;
     let mut selected_object_types = Vec::new();
     let mut ignored_object_types = Vec::new();
+    let mut selected_cityobjects_with_geometry = 0usize;
+
+    collect_selected_vertex_indices(
+        model,
+        filter,
+        &mut selected_vertices,
+        &mut geometry_scratch,
+        &mut selected_cityobjects_with_geometry,
+        &mut selected_object_types,
+        &mut ignored_object_types,
+    );
+
+    for vertex_ref in &selected_vertices {
+        let Some(vertex) = model.vertices().get(*vertex_ref) else {
+            continue;
+        };
+        let coordinate = vertex.to_array();
+        update_bbox(&mut bbox, coordinate);
+        x_sum += coordinate[0];
+        y_sum += coordinate[1];
+        nr_vertices += 1;
+    }
+
+    SelectedGeometryStats {
+        bbox,
+        centroid: (nr_vertices > 0)
+            .then_some([x_sum / nr_vertices as f64, y_sum / nr_vertices as f64]),
+        nr_vertices,
+        selected_cityobjects_with_geometry,
+        selected_object_types,
+        ignored_object_types,
+    }
+}
+
+fn collect_selected_vertex_indices(
+    model: &cityjson::v2_0::OwnedCityModel,
+    filter: Option<&Vec<CityObjectType>>,
+    selected_vertices: &mut Vec<GeometryVertexIndex<u32>>,
+    geometry_scratch: &mut Vec<GeometryVertexIndex<u32>>,
+    selected_cityobjects_with_geometry: &mut usize,
+    selected_object_types: &mut Vec<CityObjectType>,
+    ignored_object_types: &mut Vec<CityObjectType>,
+) {
+    selected_vertices.clear();
+    *selected_cityobjects_with_geometry = 0;
+    selected_object_types.clear();
+    ignored_object_types.clear();
 
     for (_id, cityobject) in model.cityobjects().iter() {
         let Some(object_type) = map_cityobject_type(cityobject.type_cityobject()) else {
@@ -580,74 +640,47 @@ fn selected_geometry_stats(
                 selected_object_types.push(object_type);
             }
             let geometry_handles = cityobject.geometry().unwrap_or(&[]);
+            if !geometry_handles.is_empty() {
+                *selected_cityobjects_with_geometry += 1;
+            }
             for geometry_handle in geometry_handles {
                 let Some(geometry) = model.get_geometry(*geometry_handle) else {
                     continue;
                 };
-                let Some(boundaries) = geometry.boundaries() else {
+                let Some(indices) = geometry.unique_vertex_indices(geometry_scratch) else {
                     continue;
                 };
-                for vertex_ref in boundaries.vertices() {
-                    let Some(vertex) = model.vertices().get(*vertex_ref) else {
-                        continue;
-                    };
-                    let coordinate = vertex.to_array();
-                    update_bbox(&mut bbox, coordinate);
-                    x_sum += coordinate[0];
-                    y_sum += coordinate[1];
-                    nr_vertices += 1;
-                }
+                selected_vertices.extend_from_slice(indices);
             }
         } else if !ignored_object_types.contains(&object_type) {
             ignored_object_types.push(object_type);
         }
     }
 
-    SelectedGeometryStats {
-        bbox,
-        centroid: (nr_vertices > 0).then_some([x_sum / nr_vertices as f64, y_sum / nr_vertices as f64]),
-        nr_vertices,
-        selected_object_types,
-        ignored_object_types,
-    }
+    selected_vertices.sort_unstable();
+    selected_vertices.dedup();
 }
 
 fn count_vertices_in_grid(
     model: &cityjson::v2_0::OwnedCityModel,
-    filter: Option<&Vec<CityObjectType>>,
+    selected_cityobjects_with_geometry: usize,
     grid: &crate::spatial_structs::SquareGrid,
     bbox: &Bbox,
 ) -> HashMap<CellId, usize> {
     let mut cell_vtx_cnt: HashMap<CellId, usize> = HashMap::new();
 
-    for (_id, cityobject) in model.cityobjects().iter() {
-        let Some(object_type) = map_cityobject_type(cityobject.type_cityobject()) else {
-            continue;
-        };
-        if !is_selected_type(filter, object_type) {
-            continue;
-        }
-        let geometry_handles = cityobject.geometry().unwrap_or(&[]);
-        for geometry_handle in geometry_handles {
-            let Some(geometry) = model.get_geometry(*geometry_handle) else {
-                continue;
-            };
-            let Some(boundaries) = geometry.boundaries() else {
-                continue;
-            };
-            for vertex_ref in boundaries.vertices() {
-                let Some(vertex) = model.vertices().get(*vertex_ref) else {
-                    continue;
-                };
+    if !model.vertices().is_empty() {
+        for _ in 0..selected_cityobjects_with_geometry {
+            for vertex in model.vertices().as_slice() {
                 let point = [vertex.x(), vertex.y()];
                 let cellid = grid.locate_point(&point);
-                *cell_vtx_cnt.entry(cellid).or_insert(0) += 1;
+                *cell_vtx_cnt.entry(cellid).or_insert(1) += 1;
             }
         }
     }
 
     for cellid in grid.intersect_bbox(bbox) {
-        *cell_vtx_cnt.entry(cellid).or_insert(0) += 1;
+        *cell_vtx_cnt.entry(cellid).or_insert(1) += 1;
     }
 
     cell_vtx_cnt
@@ -726,7 +759,16 @@ fn update_bbox(bbox: &mut Option<Bbox>, coordinate: [f64; 3]) {
                 current[5] = coordinate[2];
             }
         }
-        None => *bbox = Some([coordinate[0], coordinate[1], coordinate[2], coordinate[0], coordinate[1], coordinate[2]]),
+        None => {
+            *bbox = Some([
+                coordinate[0],
+                coordinate[1],
+                coordinate[2],
+                coordinate[0],
+                coordinate[1],
+                coordinate[2],
+            ])
+        }
     }
 }
 
@@ -776,7 +818,8 @@ mod tests {
         )
         .unwrap();
         let model = json::from_feature_file_with_base(pb, &base).unwrap();
-        let stats = selected_geometry_stats(model.as_inner(), Some(&vec![CityObjectType::Building]));
+        let stats =
+            selected_geometry_stats(model.as_inner(), Some(&vec![CityObjectType::Building]));
         assert!(stats.bbox.is_some());
         assert!(stats.nr_vertices > 0);
         let bbox = stats.bbox.unwrap();

@@ -900,22 +900,10 @@ mod tests {
         let grid = SquareGrid::new(&[0.0, 0.0, 0.0, 4.0, 4.0, 0.0], 1, 7415);
         let bbox: Bbox = [1.2, 1.2, 0.0, 2.8, 2.8, 0.0];
         let expected = vec![
-            CellId {
-                row: 1,
-                column: 1,
-            },
-            CellId {
-                row: 2,
-                column: 1,
-            },
-            CellId {
-                row: 1,
-                column: 2,
-            },
-            CellId {
-                row: 2,
-                column: 2,
-            },
+            CellId { row: 1, column: 1 },
+            CellId { row: 2, column: 1 },
+            CellId { row: 1, column: 2 },
+            CellId { row: 2, column: 2 },
         ];
         let res = grid.intersect_bbox(&bbox);
         assert_eq!(expected.len(), res.len());
