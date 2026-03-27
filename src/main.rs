@@ -91,8 +91,9 @@ fn write_inputs(
     for cellid in qtree_node.cells() {
         let cell = world.grid.cell(cellid);
         for fid in cell.feature_ids.iter() {
-            let fp = world.features[*fid]
-                .path_jsonl
+            let fp = world
+                .path_features_root
+                .join(&world.features[*fid].path_jsonl)
                 .clone()
                 .into_os_string()
                 .into_string()
@@ -193,27 +194,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 );
                 exe = PathBuf::from("geof");
             }
-            let res = Exec::cmd(&exe)
-                .arg("--version")
-                .arg("--verbose")
-                .stdout(Redirection::Pipe)
-                .stderr(Redirection::Merge)
-                .capture();
-            let res_plugins = Exec::cmd(&exe)
-                .arg("--list-plugins")
-                .arg("--verbose")
-                .stdout(Redirection::Pipe)
-                .stderr(Redirection::Merge)
-                .capture();
-            if let Ok(capture_data) = res {
-                let plugins_stdout_str = res_plugins.unwrap().stdout_str();
-                info!(
-                    "geof version:\n{}{}",
-                    capture_data.stdout_str(),
-                    plugins_stdout_str
-                );
-            } else if let Err(popen_error) = res {
-                panic!("Could not execute geof ({:?}):\n{}", &exe, popen_error)
+            if !cli.cesium3dtiles_tileset_only {
+                let res = Exec::cmd(&exe)
+                    .arg("--version")
+                    .arg("--verbose")
+                    .stdout(Redirection::Pipe)
+                    .stderr(Redirection::Merge)
+                    .capture();
+                let res_plugins = Exec::cmd(&exe)
+                    .arg("--list-plugins")
+                    .arg("--verbose")
+                    .stdout(Redirection::Pipe)
+                    .stderr(Redirection::Merge)
+                    .capture();
+                if let Ok(capture_data) = res {
+                    let plugins_stdout_str = res_plugins.unwrap().stdout_str();
+                    info!(
+                        "geof version:\n{}{}",
+                        capture_data.stdout_str(),
+                        plugins_stdout_str
+                    );
+                } else if let Err(popen_error) = res {
+                    panic!("Could not execute geof ({:?}):\n{}", &exe, popen_error)
+                }
             }
             let geof_flowchart_path = match env::var("TYLER_RESOURCES_DIR") {
                 Ok(val) => PathBuf::from(val).join("geof").join("createGLB.json"),
@@ -262,7 +265,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let metadata_class: String = match format {
         Formats::_3DTiles => {
-            if cli.cesium3dtiles_metadata_class.is_none() {
+            if cli.cesium3dtiles_tileset_only {
+                String::new()
+            } else if cli.cesium3dtiles_metadata_class.is_none() {
                 panic!("metadata_class must be set for writing 3D Tiles")
             } else {
                 cli.cesium3dtiles_metadata_class.unwrap()

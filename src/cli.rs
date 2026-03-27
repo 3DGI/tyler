@@ -304,13 +304,17 @@ mod tests {
         vec![
             "tyler",
             "-m",
-            "metadata.city.json",
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/resources/data/features_3dbag_5909/metadata.city.json"
+            ),
             "-f",
-            env!("CARGO_MANIFEST_DIR"),
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/resources/data/features_3dbag_5909/3dbag_v21031_7425c21b_5909_subset"
+            ),
             "-o",
             env!("CARGO_MANIFEST_DIR"),
-            "--format",
-            "3dtiles",
         ]
     }
 
