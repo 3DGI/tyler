@@ -1588,7 +1588,7 @@ pub mod cesium3dtiles {
                 None,
             )
             .unwrap();
-            world.index_with_grid();
+            world.index_with_grid().unwrap();
 
             world.export_grid(false, None).unwrap();
 

@@ -20,10 +20,13 @@ use clap::Parser;
 pub struct Cli {
     /// Main CityJSON file (.city.json), containing the coordinate reference system and
     /// transformation properties.
+    /// Required for legacy feature-file input. Ignored when --features points at a
+    /// cjindex-compatible dataset root.
     #[arg(short, long, value_parser = existing_canonical_path)]
-    pub metadata: PathBuf,
-    /// Directory of CityJSONFeatures (.city.jsonl). The directory and all its
-    /// subdirectories are searched recursively for feature files.
+    pub metadata: Option<PathBuf>,
+    /// Input feature source. This can be either:
+    /// - a directory tree of legacy CityJSONFeatures (.city.jsonl), searched recursively
+    /// - a cjindex-compatible dataset root for NDJSON, CityJSON, or feature-files input
     #[arg(short, long, value_parser = existing_canonical_path)]
     pub features: PathBuf,
     /// Directory for the output.
@@ -318,6 +321,16 @@ mod tests {
         ]
     }
 
+    fn dataset_args() -> Vec<&'static str> {
+        vec![
+            "tyler",
+            "-f",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/resources/data"),
+            "-o",
+            env!("CARGO_MANIFEST_DIR"),
+        ]
+    }
+
     #[test]
     fn verify_cli() {
         Cli::command().debug_assert()
@@ -334,5 +347,11 @@ mod tests {
         let otypes = &cli.object_type.unwrap();
         assert!(otypes.contains(&crate::parser::CityObjectType::Building));
         assert!(otypes.contains(&crate::parser::CityObjectType::PlantCover));
+    }
+
+    #[test]
+    fn verify_metadata_is_optional() {
+        let cli = Cli::try_parse_from(dataset_args()).unwrap();
+        assert!(cli.metadata.is_none());
     }
 }

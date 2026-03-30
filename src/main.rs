@@ -18,6 +18,7 @@ mod proj;
 mod spatial_structs;
 
 use core::time::Duration;
+use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::fs::File;
@@ -62,25 +63,159 @@ struct DebugData {
     tiles_results: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone)]
+struct PreparedInput {
+    source: parser::InputSource,
+    metadata_path: PathBuf,
+    feature_base_document: Option<Vec<u8>>,
+}
+
+fn prepare_input(
+    cli: &crate::cli::Cli,
+    output_dir: &Path,
+) -> Result<PreparedInput, Box<dyn std::error::Error>> {
+    match cjindex::resolve_dataset(&cli.features, None) {
+        Ok(resolved) => {
+            if cli.metadata.is_some() {
+                info!(
+                    "Ignoring --metadata for cjindex dataset input; using the dataset metadata from {}",
+                    resolved.dataset_root.display()
+                );
+            }
+            let inspection = resolved.inspect()?;
+            let mut city_index =
+                cjindex::CityIndex::open(resolved.storage_layout(), &resolved.index_path)?;
+            if !inspection.index.exists || inspection.index.fresh != Some(true) {
+                info!(
+                    "Rebuilding cjindex sidecar at {}",
+                    resolved.index_path.display()
+                );
+                city_index.reindex()?;
+            }
+            let feature_base_document = derive_base_document(&city_index)?;
+            let metadata_dir = output_dir.join("metadata");
+            fs::create_dir_all(&metadata_dir)?;
+            let metadata_path = metadata_dir.join("cjindex-metadata.city.json");
+            fs::write(&metadata_path, &feature_base_document)?;
+            Ok(PreparedInput {
+                source: parser::InputSource::from_cjindex_resolved(&resolved),
+                metadata_path,
+                feature_base_document: Some(feature_base_document),
+            })
+        }
+        Err(_error) => {
+            let metadata_path = cli.metadata.clone().ok_or_else(|| {
+                "--metadata is required when --features points at a legacy feature-file tree"
+                    .to_string()
+            })?;
+            Ok(PreparedInput {
+                source: parser::InputSource::LegacyFeatureFiles {
+                    features_root: cli.features.clone(),
+                },
+                metadata_path,
+                feature_base_document: None,
+            })
+        }
+    }
+}
+
+fn derive_base_document(
+    city_index: &cjindex::CityIndex,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let metadata = city_index.metadata()?;
+    let Some(base_document) = metadata.first() else {
+        return Err("cjindex dataset does not contain any source metadata".into());
+    };
+    if metadata
+        .iter()
+        .skip(1)
+        .any(|candidate| candidate.as_ref() != base_document.as_ref())
+    {
+        return Err(
+            "cjindex dataset contains multiple metadata documents; tyler requires one shared base document".into(),
+        );
+    }
+    Ok(serde_json::to_vec(base_document.as_ref())?)
+}
+
+fn collect_tile_feature_ids(
+    world: &parser::World,
+    qtree_node: &spatial_structs::QuadTree,
+) -> Vec<usize> {
+    let mut seen = HashSet::new();
+    let mut feature_ids = Vec::new();
+    for cellid in qtree_node.cells() {
+        let cell = world.grid.cell(cellid);
+        for fid in &cell.feature_ids {
+            if seen.insert(*fid) {
+                feature_ids.push(*fid);
+            }
+        }
+    }
+    feature_ids
+}
+
 /// Write the list of feature paths for a tile into a text file, instead of passing
 /// super long paths-string to the subprocess, because with very long arguments we can
 /// get an 'Argument list too long' error.
-// todo input: collect features from files and write them to a single newline-delimited file
 fn write_inputs(
     world: &parser::World,
     path_features_input_dir: &Path,
     qtree_node: &spatial_structs::QuadTree,
     file_name: &str,
-) -> PathBuf {
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let path_features_input_file = path_features_input_dir
         .join(file_name)
         .with_extension("input");
+    let path_tile_ndjson = path_features_input_dir
+        .join(file_name)
+        .with_extension("city.jsonl");
     fs::create_dir_all(path_features_input_file.parent().unwrap()).unwrap_or_else(|_| {
         panic!(
             "should be able to create the directory {:?}",
             path_features_input_file.parent().unwrap()
         )
     });
+    let ndjson_file = File::create(&path_tile_ndjson)
+        .unwrap_or_else(|_| panic!("should be able to create a file {:?}", &path_tile_ndjson));
+    let mut feature_output = BufWriter::new(ndjson_file);
+    let feature_ids = collect_tile_feature_ids(world, qtree_node);
+
+    match &world.input_source {
+        parser::InputSource::LegacyFeatureFiles { features_root } => {
+            for fid in feature_ids {
+                let parser::FeatureReference::LegacyPath(relative_path) =
+                    &world.features[fid].reference
+                else {
+                    return Err("legacy input unexpectedly referenced a cjindex feature".into());
+                };
+                let feature_path = features_root.join(relative_path);
+                let bytes = fs::read(&feature_path)?;
+                feature_output.write_all(&bytes)?;
+                if !bytes.ends_with(b"\n") {
+                    feature_output.write_all(b"\n")?;
+                }
+            }
+        }
+        parser::InputSource::CjIndexDataset { .. } => {
+            let city_index = world.input_source.open_index()?;
+            for fid in feature_ids {
+                let parser::FeatureReference::CjIndexId(feature_id) =
+                    &world.features[fid].reference
+                else {
+                    return Err(
+                        "cjindex input unexpectedly referenced a legacy feature path".into(),
+                    );
+                };
+                let model = city_index.get(feature_id)?.ok_or_else(|| {
+                    format!("feature {feature_id} could not be resolved from cjindex")
+                })?;
+                cjlib::json::to_feature_writer(&mut feature_output, &model)?;
+                feature_output.write_all(b"\n")?;
+            }
+        }
+    }
+
     let _fi_file = File::create(&path_features_input_file).unwrap_or_else(|_| {
         panic!(
             "should be able to create a file {:?}",
@@ -88,21 +223,8 @@ fn write_inputs(
         )
     });
     let mut feature_input = BufWriter::new(_fi_file);
-    for cellid in qtree_node.cells() {
-        let cell = world.grid.cell(cellid);
-        for fid in cell.feature_ids.iter() {
-            let fp = world
-                .path_features_root
-                .join(&world.features[*fid].path_jsonl)
-                .clone()
-                .into_os_string()
-                .into_string()
-                .unwrap();
-            writeln!(feature_input, "{}", fp)
-                .expect("should be able to write feature path to the input file");
-        }
-    }
-    path_features_input_file
+    writeln!(feature_input, "{}", path_tile_ndjson.display())?;
+    Ok(path_features_input_file)
 }
 
 fn run_subprocess(
@@ -185,9 +307,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Formats::_3DTiles => {
             #[allow(unused)]
             let mut exe = PathBuf::new();
-            if let Some(exe_g) = cli.exe_geof {
+            if let Some(ref exe_g) = cli.exe_geof {
                 assert!(exe_g.exists() && exe_g.is_file(), "geoflow executable must be an existing file for generating 3D Tiles, exe_geof: {:?}", &exe_g);
-                exe = exe_g;
+                exe = exe_g.clone();
             } else {
                 debug!(
                     "exe_geof is not set for generating 3D Tiles, defaulting to 'geof' in the filesystem PATH"
@@ -270,7 +392,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else if cli.cesium3dtiles_metadata_class.is_none() {
                 panic!("metadata_class must be set for writing 3D Tiles")
             } else {
-                cli.cesium3dtiles_metadata_class.unwrap()
+                cli.cesium3dtiles_metadata_class.clone().unwrap()
             }
         }
         Formats::CityJSON => "".to_string(),
@@ -290,7 +412,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let debug_data = match cli.debug_load_data {
         None => DebugData::default(),
-        Some(dir_path) => {
+        Some(ref dir_path) => {
             if dir_path.is_dir() {
                 let world_path = dir_path.join("world.bincode");
                 let quadtree_path = dir_path.join("quadtree.bincode");
@@ -322,17 +444,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // types are best passed by reference, because it is "expensive" to Clone them
     // (they don't implement Copy). When we move a value, we explicitly transfer
     // ownership of the value (eg cli.object_type).
+    let prepared_input = if debug_data.world.is_none() {
+        Some(prepare_input(&cli, &cli.output)?)
+    } else {
+        None
+    };
+    let cityobject_types = cli.object_type.clone();
+
     let world: parser::World = match debug_data.world {
         None => {
-            let mut world = parser::World::new(
-                &cli.metadata,
-                &cli.features,
-                grid_cellsize,
-                cli.object_type,
-                cli.grid_minz,
-                cli.grid_maxz,
-            )?;
-            world.index_with_grid(); // todo input: in general, build a line index
+            let prepared_input = prepared_input
+                .as_ref()
+                .expect("prepared input must exist when world is built from source");
+            let mut world = match &prepared_input.feature_base_document {
+                Some(feature_base_document) => parser::World::from_cjindex(
+                    prepared_input.source.clone(),
+                    prepared_input.metadata_path.clone(),
+                    feature_base_document.clone(),
+                    grid_cellsize,
+                    cityobject_types,
+                    cli.grid_minz,
+                    cli.grid_maxz,
+                )?,
+                None => parser::World::new(
+                    &prepared_input.metadata_path,
+                    &cli.features,
+                    grid_cellsize,
+                    cityobject_types,
+                    cli.grid_minz,
+                    cli.grid_maxz,
+                )?,
+            };
+            world.index_with_grid()?; // todo input: in general, build a line index
             world
         }
         Some(world_path) => {
@@ -518,12 +661,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let output_file = path_output_tiles
                 .join(&file_name)
                 .with_extension(&subprocess_config.output_extension);
-            let path_features_input_file = write_inputs(
+            let path_features_input_file = match write_inputs(
                 &world,
                 &path_features_input_dir,
                 qtree_node,
                 file_name.as_str(),
-            );
+            ) {
+                Ok(path) => path,
+                Err(error) => {
+                    warn!(
+                        "Failed to write NDJSON input for tile {}: {}",
+                        tileid_grid, error
+                    );
+                    return Some(tile);
+                }
+            };
 
             // We use the quadtree node bbox here instead of the Tileset.Tile bounding
             // volume, because the Tile is in EPSG:4979 and we need the input data CRS
@@ -925,4 +1077,168 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Value;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_test_dir(prefix: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("tyler-{prefix}-{unique}"));
+        fs::create_dir_all(&path).expect("create test dir");
+        path
+    }
+
+    fn resource_path(name: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("resources")
+            .join("data")
+            .join(name)
+    }
+
+    fn build_quadtree(world: &parser::World) -> spatial_structs::QuadTree {
+        spatial_structs::QuadTree::from_world(world, spatial_structs::QuadTreeCapacity::Objects(1))
+    }
+
+    fn exported_ndjson_path(input_file: &Path) -> PathBuf {
+        fs::read_to_string(input_file)
+            .expect("read input file")
+            .trim()
+            .into()
+    }
+
+    #[test]
+    fn write_inputs_exports_legacy_features_as_ndjson() {
+        let dataset_dir = unique_test_dir("legacy");
+        let features_dir = dataset_dir.join("features");
+        fs::create_dir_all(&features_dir).expect("create features dir");
+        let metadata_path = dataset_dir.join("metadata.city.json");
+        let feature_path = features_dir.join("sample.city.jsonl");
+        fs::copy(resource_path("3dbag_x00.city.json"), &metadata_path).expect("copy metadata");
+        fs::copy(resource_path("3dbag_feature_x71.city.jsonl"), &feature_path)
+            .expect("copy feature");
+
+        let mut world = parser::World::new(
+            &metadata_path,
+            &features_dir,
+            200,
+            Some(vec![parser::CityObjectType::Building]),
+            None,
+            None,
+        )
+        .expect("build legacy world");
+        world.index_with_grid().expect("index legacy world");
+        let quadtree = build_quadtree(&world);
+        let inputs_dir = dataset_dir.join("inputs");
+        let input_file =
+            write_inputs(&world, &inputs_dir, &quadtree, "tile").expect("write inputs");
+        let ndjson_path = exported_ndjson_path(&input_file);
+        let ndjson = fs::read_to_string(ndjson_path).expect("read exported ndjson");
+
+        assert!(ndjson.contains("\"type\":\"CityJSONFeature\""));
+        assert_eq!(ndjson.lines().count(), 1);
+    }
+
+    #[test]
+    fn write_inputs_exports_cjindex_ndjson_as_ndjson() {
+        let dataset_dir = unique_test_dir("cjindex-ndjson");
+        let metadata =
+            fs::read_to_string(resource_path("3dbag_x00.city.json")).expect("read metadata");
+        let feature = fs::read_to_string(resource_path("3dbag_feature_x71.city.jsonl"))
+            .expect("read feature");
+        let ndjson_source = dataset_dir.join("source.city.jsonl");
+        fs::write(&ndjson_source, format!("{metadata}\n{feature}\n")).expect("write ndjson source");
+
+        let resolved =
+            cjindex::resolve_dataset(&dataset_dir, None).expect("resolve ndjson dataset");
+        let mut city_index =
+            cjindex::CityIndex::open(resolved.storage_layout(), &resolved.index_path)
+                .expect("open index");
+        city_index.reindex().expect("reindex ndjson dataset");
+        let feature_base_document = derive_base_document(&city_index).expect("derive base doc");
+        let metadata_path = dataset_dir.join("metadata.city.json");
+        fs::write(&metadata_path, &feature_base_document).expect("write metadata");
+
+        let mut world = parser::World::from_cjindex(
+            parser::InputSource::from_cjindex_resolved(&resolved),
+            metadata_path,
+            feature_base_document,
+            200,
+            Some(vec![parser::CityObjectType::Building]),
+            None,
+            None,
+        )
+        .expect("build cjindex ndjson world");
+        world.index_with_grid().expect("index cjindex ndjson world");
+        let quadtree = build_quadtree(&world);
+        let inputs_dir = dataset_dir.join("inputs");
+        let input_file =
+            write_inputs(&world, &inputs_dir, &quadtree, "tile").expect("write inputs");
+        let ndjson_path = exported_ndjson_path(&input_file);
+        let ndjson = fs::read_to_string(ndjson_path).expect("read exported ndjson");
+
+        assert!(ndjson.contains("\"type\":\"CityJSONFeature\""));
+        assert_eq!(ndjson.lines().count(), 1);
+    }
+
+    #[test]
+    fn write_inputs_exports_cjindex_cityjson_as_ndjson() {
+        let dataset_dir = unique_test_dir("cjindex-cityjson");
+        let metadata: Value = serde_json::from_slice(
+            &fs::read(resource_path("3dbag_x00.city.json")).expect("read metadata"),
+        )
+        .expect("parse metadata");
+        let feature: Value = serde_json::from_slice(
+            &fs::read(resource_path("3dbag_feature_x71.city.jsonl")).expect("read feature"),
+        )
+        .expect("parse feature");
+        let mut cityjson = metadata;
+        cityjson["CityObjects"] = feature["CityObjects"].clone();
+        cityjson["vertices"] = feature["vertices"].clone();
+        let cityjson_path = dataset_dir.join("source.city.json");
+        fs::write(
+            &cityjson_path,
+            serde_json::to_vec(&cityjson).expect("serialize cityjson"),
+        )
+        .expect("write cityjson source");
+
+        let resolved =
+            cjindex::resolve_dataset(&dataset_dir, None).expect("resolve cityjson dataset");
+        let mut city_index =
+            cjindex::CityIndex::open(resolved.storage_layout(), &resolved.index_path)
+                .expect("open index");
+        city_index.reindex().expect("reindex cityjson dataset");
+        let feature_base_document = derive_base_document(&city_index).expect("derive base doc");
+        let metadata_path = dataset_dir.join("metadata.city.json");
+        fs::write(&metadata_path, &feature_base_document).expect("write metadata");
+
+        let mut world = parser::World::from_cjindex(
+            parser::InputSource::from_cjindex_resolved(&resolved),
+            metadata_path,
+            feature_base_document,
+            200,
+            Some(vec![parser::CityObjectType::Building]),
+            None,
+            None,
+        )
+        .expect("build cjindex cityjson world");
+        world
+            .index_with_grid()
+            .expect("index cjindex cityjson world");
+        let quadtree = build_quadtree(&world);
+        let inputs_dir = dataset_dir.join("inputs");
+        let input_file =
+            write_inputs(&world, &inputs_dir, &quadtree, "tile").expect("write inputs");
+        let ndjson_path = exported_ndjson_path(&input_file);
+        let ndjson = fs::read_to_string(ndjson_path).expect("read exported ndjson");
+
+        assert!(ndjson.contains("\"type\":\"CityJSONFeature\""));
+        assert_eq!(ndjson.lines().count(), 1);
+    }
 }

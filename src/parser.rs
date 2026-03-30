@@ -19,6 +19,8 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 
 use cityjson::v2_0::vertex::VertexIndex as GeometryVertexIndex;
+use cjindex::{BBox as IndexBbox, CityIndex, StorageLayout};
+use cjlib::json::staged::from_feature_file_with_base;
 use cjlib::{cityjson, json};
 use log::{debug, error, info, warn};
 use rayon::prelude::*;
@@ -34,8 +36,8 @@ pub struct World {
     pub features: FeatureSet,
     pub feature_base_document: Vec<u8>,
     pub grid: crate::spatial_structs::SquareGrid,
-    pub path_features_root: PathBuf,
     pub path_metadata: PathBuf,
+    pub input_source: InputSource,
 }
 
 struct ExtentResult {
@@ -63,6 +65,74 @@ struct SelectedGeometryStats {
     selected_cityobjects_with_geometry: usize,
     selected_object_types: Vec<CityObjectType>,
     ignored_object_types: Vec<CityObjectType>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum InputSource {
+    LegacyFeatureFiles {
+        features_root: PathBuf,
+    },
+    CjIndexDataset {
+        dataset_root: PathBuf,
+        index_path: PathBuf,
+        layout: CjIndexLayout,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CjIndexLayout {
+    Ndjson,
+    CityJson,
+    FeatureFiles,
+}
+
+impl CjIndexLayout {
+    fn storage_layout(self, dataset_root: &Path) -> StorageLayout {
+        match self {
+            Self::Ndjson => StorageLayout::Ndjson {
+                paths: vec![dataset_root.to_path_buf()],
+            },
+            Self::CityJson => StorageLayout::CityJson {
+                paths: vec![dataset_root.to_path_buf()],
+            },
+            Self::FeatureFiles => StorageLayout::FeatureFiles {
+                root: dataset_root.to_path_buf(),
+                metadata_glob: "**/metadata.json".to_owned(),
+                feature_glob: "**/*.city.jsonl".to_owned(),
+            },
+        }
+    }
+}
+
+impl InputSource {
+    pub fn from_cjindex_resolved(resolved: &cjindex::ResolvedDataset) -> Self {
+        let layout = match resolved.layout {
+            cjindex::DatasetLayoutKind::Ndjson => CjIndexLayout::Ndjson,
+            cjindex::DatasetLayoutKind::CityJson => CjIndexLayout::CityJson,
+            cjindex::DatasetLayoutKind::FeatureFiles => CjIndexLayout::FeatureFiles,
+        };
+        Self::CjIndexDataset {
+            dataset_root: resolved.dataset_root.clone(),
+            index_path: resolved.index_path.clone(),
+            layout,
+        }
+    }
+
+    pub fn open_index(&self) -> Result<CityIndex, Box<dyn std::error::Error>> {
+        match self {
+            Self::LegacyFeatureFiles { .. } => {
+                Err("legacy feature-file input does not use cjindex".into())
+            }
+            Self::CjIndexDataset {
+                dataset_root,
+                index_path,
+                layout,
+            } => Ok(CityIndex::open(
+                layout.storage_layout(dataset_root),
+                index_path,
+            )?),
+        }
+    }
 }
 
 impl World {
@@ -188,8 +258,99 @@ impl World {
             feature_base_document,
             grid,
             cityobject_types,
-            path_features_root,
             path_metadata,
+            input_source: InputSource::LegacyFeatureFiles {
+                features_root: path_features_root,
+            },
+        })
+    }
+
+    pub fn from_cjindex(
+        input_source: InputSource,
+        path_metadata: PathBuf,
+        feature_base_document: Vec<u8>,
+        cellsize: u32,
+        cityobject_types: Option<Vec<CityObjectType>>,
+        arg_minz: Option<i32>,
+        arg_maxz: Option<i32>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let metadata = json::from_slice(&feature_base_document)?;
+        let crs = Crs::from_model(metadata.as_inner())?;
+
+        info!(
+            "Computing extent from the features of type {:?}",
+            cityobject_types
+        );
+
+        let city_index = input_source.open_index()?;
+        let mut nr_features = 0usize;
+        let mut nr_features_ignored = 0usize;
+        let mut cityobject_types_ignored: Vec<CityObjectType> = Vec::new();
+        let mut extent: Option<Bbox> = None;
+
+        for model_result in city_index.query_iter(&all_features_bbox())? {
+            let model = model_result?;
+            let stats = selected_geometry_stats(model.as_inner(), cityobject_types.as_ref());
+            if let Some(model_bbox) = stats.bbox {
+                if let Some(current) = extent.as_mut() {
+                    merge_bbox(current, &model_bbox);
+                } else {
+                    extent = Some(model_bbox);
+                }
+                nr_features += 1;
+            } else {
+                nr_features_ignored += 1;
+                for cotype in stats.ignored_object_types {
+                    if !cityobject_types_ignored.contains(&cotype) {
+                        cityobject_types_ignored.push(cotype);
+                    }
+                }
+            }
+        }
+
+        let mut extent = extent.ok_or_else(|| {
+            format!(
+                "Did not find any CityJSONFeatures of type {:?} in cjindex dataset",
+                cityobject_types
+            )
+        })?;
+
+        if let Some(minz) = arg_minz {
+            if extent[2] < minz as f64 {
+                extent[2] = minz as f64;
+            }
+        }
+        if let Some(maxz) = arg_maxz {
+            if extent[5] > maxz as f64 {
+                extent[5] = maxz as f64;
+            }
+        }
+
+        info!(
+            "Found {} features of type {:?}",
+            nr_features, &cityobject_types
+        );
+        info!(
+            "Ignored {} features of type {:?}",
+            nr_features_ignored, &cityobject_types_ignored
+        );
+        debug!("extent: {:?}", &extent);
+        info!(
+            "Computed extent from features: {}",
+            crate::spatial_structs::bbox_to_wkt(&extent)
+        );
+
+        let grid = crate::spatial_structs::SquareGrid::new(&extent, cellsize, crs.to_epsg()?);
+        debug!("{}", grid);
+
+        Ok(Self {
+            features: Vec::with_capacity(nr_features),
+            crs,
+            feature_base_document,
+            grid,
+            cityobject_types,
+            path_metadata,
+            input_source,
         })
     }
 
@@ -234,7 +395,7 @@ impl World {
         let mut cityobject_types_ignored: Vec<CityObjectType> = Vec::new();
 
         for feature_path in features_enum_iter {
-            match json::from_feature_file_with_base(&feature_path, feature_base_document) {
+            match from_feature_file_with_base(&feature_path, feature_base_document) {
                 Ok(feature) => {
                     let stats = selected_geometry_stats(feature.as_inner(), cityobject_types);
                     if let Some(bbox) = stats.bbox {
@@ -275,7 +436,7 @@ impl World {
             .filter_map(Self::jsonl_path);
 
         for feature_path in features_enum_iter {
-            match json::from_feature_file_with_base(&feature_path, feature_base_document) {
+            match from_feature_file_with_base(&feature_path, feature_base_document) {
                 Ok(feature) => {
                     let stats = selected_geometry_stats(feature.as_inner(), cityobject_types);
                     if let Some(bbox) = stats.bbox {
@@ -297,8 +458,7 @@ impl World {
         feature_path: &PathBuf,
         feature_base_document: &[u8],
     ) {
-        if let Ok(feature) = json::from_feature_file_with_base(feature_path, feature_base_document)
-        {
+        if let Ok(feature) = from_feature_file_with_base(feature_path, feature_base_document) {
             let stats = selected_geometry_stats(feature.as_inner(), cityobject_types);
             if let Some(bbox) = stats.bbox {
                 merge_bbox(extent, &bbox);
@@ -336,58 +496,96 @@ impl World {
         }
     }
 
-    pub fn index_with_grid(&mut self) {
-        let feature_dirs_files = Self::find_feature_dirs_and_files(&self.path_features_root);
+    pub fn index_with_grid(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         info!("Counting vertices in grid cells");
 
         self.features.clear();
-        for dir in feature_dirs_files.feature_dirs {
-            for feature_path in WalkDir::new(dir).into_iter().filter_map(Self::jsonl_path) {
-                if let Some(feature_in_cells) = self.index_feature_path(&feature_path) {
-                    self.integrate_feature_in_cells(feature_in_cells);
+        let input_source = self.input_source.clone();
+        match input_source {
+            InputSource::LegacyFeatureFiles { features_root } => {
+                let feature_dirs_files = Self::find_feature_dirs_and_files(&features_root);
+                for dir in feature_dirs_files.feature_dirs {
+                    for feature_path in WalkDir::new(dir).into_iter().filter_map(Self::jsonl_path) {
+                        if let Some(feature_in_cells) =
+                            self.index_feature_path(&feature_path, &features_root)
+                        {
+                            self.integrate_feature_in_cells(feature_in_cells);
+                        }
+                    }
+                }
+                for feature_path in feature_dirs_files.feature_files {
+                    if let Some(feature_in_cells) =
+                        self.index_feature_path(&feature_path, &features_root)
+                    {
+                        self.integrate_feature_in_cells(feature_in_cells);
+                    }
+                }
+            }
+            InputSource::CjIndexDataset { .. } => {
+                let city_index = self.input_source.open_index()?;
+                for model_result in city_index.query_iter(&all_features_bbox())? {
+                    let model = model_result?;
+                    let feature_id = model_feature_id(&model)?;
+                    if let Some(feature_in_cells) =
+                        self.index_feature_model(FeatureReference::CjIndexId(feature_id), &model)
+                    {
+                        self.integrate_feature_in_cells(feature_in_cells);
+                    }
                 }
             }
         }
-        for feature_path in feature_dirs_files.feature_files {
-            if let Some(feature_in_cells) = self.index_feature_path(&feature_path) {
-                self.integrate_feature_in_cells(feature_in_cells);
-            }
-        }
         debug!("indexed {} features", self.features.len());
+        Ok(())
     }
 
-    fn index_feature_path(&self, feature_path: &PathBuf) -> Option<FeatureInGridCells> {
-        let feature = json::from_feature_file_with_base(feature_path, &self.feature_base_document);
+    fn index_feature_path(
+        &self,
+        feature_path: &PathBuf,
+        features_root: &Path,
+    ) -> Option<FeatureInGridCells> {
+        let feature = from_feature_file_with_base(feature_path, &self.feature_base_document);
         if let Ok(model) = feature {
-            let stats = selected_geometry_stats(model.as_inner(), self.cityobject_types.as_ref());
-            let bbox = stats.bbox?;
-            let centroid = stats.centroid?;
-            let cell_vtx_cnt = count_vertices_in_grid(
-                model.as_inner(),
-                stats.selected_cityobjects_with_geometry,
-                &self.grid,
-                &bbox,
-            );
-            if cell_vtx_cnt.is_empty() {
-                return None;
-            }
-            self.feature_to_cells(
-                feature_path,
-                Feature {
-                    centroid,
-                    path_jsonl: feature_path
-                        .strip_prefix(&self.path_features_root)
+            self.index_feature_model(
+                FeatureReference::LegacyPath(
+                    feature_path
+                        .strip_prefix(features_root)
                         .unwrap_or(feature_path)
                         .to_path_buf(),
-                    bbox,
-                },
-                cell_vtx_cnt,
-                &stats.selected_object_types,
+                ),
+                &model,
             )
         } else {
             error!("Failed to parse the feature {:?}", &feature_path);
             None
         }
+    }
+
+    fn index_feature_model(
+        &self,
+        feature_reference: FeatureReference,
+        model: &cjlib::CityModel,
+    ) -> Option<FeatureInGridCells> {
+        let stats = selected_geometry_stats(model.as_inner(), self.cityobject_types.as_ref());
+        let bbox = stats.bbox?;
+        let centroid = stats.centroid?;
+        let cell_vtx_cnt = count_vertices_in_grid(
+            model.as_inner(),
+            stats.selected_cityobjects_with_geometry,
+            &self.grid,
+            &bbox,
+        );
+        if cell_vtx_cnt.is_empty() {
+            return None;
+        }
+        Self::feature_to_cells(
+            Feature {
+                centroid,
+                reference: feature_reference,
+                bbox,
+            },
+            cell_vtx_cnt,
+            &stats.selected_object_types,
+        )
     }
 
     fn integrate_feature_in_cells(&mut self, feature_in_cells: FeatureInGridCells) {
@@ -403,13 +601,10 @@ impl World {
     }
 
     fn feature_to_cells(
-        &self,
-        feature_path: &PathBuf,
         feature: Feature,
         cell_vtx_cnt: HashMap<CellId, usize>,
         selected_object_types: &[CityObjectType],
     ) -> Option<FeatureInGridCells> {
-        let _ = feature_path;
         let unique_assignment = selected_object_types.iter().any(|cotype| {
             matches!(
                 cotype,
@@ -513,13 +708,25 @@ impl Crs {
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Feature {
     pub(crate) centroid: [f64; 2],
-    pub path_jsonl: PathBuf,
+    pub reference: FeatureReference,
     pub bbox: Bbox,
 }
 
 impl Feature {
     pub fn centroid(&self) -> [f64; 2] {
         self.centroid
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum FeatureReference {
+    LegacyPath(PathBuf),
+    CjIndexId(String),
+}
+
+impl Default for FeatureReference {
+    fn default() -> Self {
+        Self::LegacyPath(PathBuf::new())
     }
 }
 
@@ -570,6 +777,24 @@ impl fmt::Display for CityObjectType {
 }
 
 pub type FeatureSet = Vec<Feature>;
+
+fn all_features_bbox() -> IndexBbox {
+    IndexBbox {
+        min_x: -1.0e15,
+        max_x: 1.0e15,
+        min_y: -1.0e15,
+        max_y: 1.0e15,
+    }
+}
+
+fn model_feature_id(model: &cjlib::CityModel) -> Result<String, Box<dyn std::error::Error>> {
+    let feature: serde_json::Value = serde_json::from_str(&cjlib::json::to_feature_string(model)?)?;
+    feature
+        .get("id")
+        .and_then(serde_json::Value::as_str)
+        .map(ToString::to_string)
+        .ok_or_else(|| "CityJSONFeature id is missing".into())
+}
 
 fn selected_geometry_stats(
     model: &cityjson::v2_0::OwnedCityModel,
@@ -817,7 +1042,7 @@ mod tests {
                 .join("3dbag_x00.city.json"),
         )
         .unwrap();
-        let model = json::from_feature_file_with_base(pb, &base).unwrap();
+        let model = from_feature_file_with_base(pb, &base).unwrap();
         let stats =
             selected_geometry_stats(model.as_inner(), Some(&vec![CityObjectType::Building]));
         assert!(stats.bbox.is_some());

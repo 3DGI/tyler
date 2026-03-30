@@ -978,7 +978,7 @@ mod tests {
                 for f in 0..5 {
                     feature_set.push(crate::parser::Feature {
                         centroid: [0.0, 0.0],
-                        path_jsonl: Default::default(),
+                        reference: Default::default(),
                         bbox: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
                     });
                     let xc: f64 = format!("{}.{}", &x, &f).parse().unwrap();
@@ -998,7 +998,7 @@ mod tests {
                 for f in 0..5 {
                     feature_set.push(crate::parser::Feature {
                         centroid: [0.0, 0.0],
-                        path_jsonl: Default::default(),
+                        reference: Default::default(),
                         bbox: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
                     });
                     let xc: f64 = format!("{}.{}", &x, &f).parse().unwrap();
@@ -1022,7 +1022,7 @@ mod tests {
                 for f in 0..5 {
                     feature_set.push(crate::parser::Feature {
                         centroid: [0.0, 0.0],
-                        path_jsonl: Default::default(),
+                        reference: Default::default(),
                         bbox: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
                     });
                     let xc: f64 = format!("{}.{}", &x, &f).parse().unwrap();

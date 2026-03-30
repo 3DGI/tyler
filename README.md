@@ -176,16 +176,25 @@ tyler \
 
 #### Input data
 
-1. A main `.city.json` file, containing at least the [CRS](https://www.cityjson.org/specs/1.1.3/#referencesystem-crs) and [transform](https://www.cityjson.org/specs/1.1.3/#transform-object) objects.
-2. A directory (or directory tree) of `.city.jsonl` files, each containing one [CityJSON Feature](https://www.cityjson.org/specs/1.1.3/#text-sequences-and-streaming-with-cityjsonfeature), including all its children City Objects.
+`tyler` accepts two input styles:
+
+1. Legacy feature files:
+   - `--metadata`: a main `.city.json` file, containing at least the [CRS](https://www.cityjson.org/specs/1.1.3/#referencesystem-crs) and [transform](https://www.cityjson.org/specs/1.1.3/#transform-object) objects.
+   - `--features`: a directory (or directory tree) of `.city.jsonl` files, each containing one [CityJSON Feature](https://www.cityjson.org/specs/1.1.3/#text-sequences-and-streaming-with-cityjsonfeature), including all its children City Objects.
+2. `cjindex` datasets:
+   - `--features`: a dataset root that resolves as `ndjson`, `cityjson`, or `feature-files`.
+   - `--metadata` is optional and ignored for these inputs because `tyler` derives one shared base document from the indexed dataset.
 
 `--metadata`
 
-A main `.city.json` file, containing at least the `CRS` and `transform` objects, set by the argument.
+A main `.city.json` file for legacy feature-file input. It is optional for `cjindex` dataset input.
 
 `--features`
 
-A directory (or directory tree) of `.city.jsonl` files, each containing one CityJSON Feature, including all its children City Objects.
+Either:
+
+- a directory (or directory tree) of `.city.jsonl` files, each containing one CityJSON Feature, including all its children City Objects
+- or a `cjindex` dataset root in `ndjson`, `cityjson`, or `feature-files` layout
 
 For example:
 
@@ -199,7 +208,7 @@ The output is written to the directory set in `--output`.
 For 3D Tiles output, it will contain a `tileset.json` file and `tiles/` directory with the glTF files. 
 In case of implicit tiling, also a `subtrees/` directory is written with the subtrees.
 
-During the operation of Tyler, also an `input/` directory is created with text files, but this directory is removed with all its content after Tyler finished processing the tiles (except when debug mode is enabled).
+During the operation of Tyler, an `inputs/` directory is created with tile-local NDJSON files plus the small geoflow input lists that reference them. The `inputs/` directory is removed after tile processing finishes (except when debug mode is enabled). For `cjindex` datasets, Tyler also writes a derived metadata file under `metadata/`.
 
 #### CityObject type
 
