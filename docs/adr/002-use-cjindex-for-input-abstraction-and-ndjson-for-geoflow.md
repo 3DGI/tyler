@@ -42,20 +42,22 @@ will use NDJSON as the only exchange format passed to `geoflow`.
 
 Concretely:
 
-1. `--features` may refer either to:
-   - a legacy directory tree of standalone `.city.jsonl` feature files
+1. Tyler's CLI will take one dataset-root input path.
+2. That input path may refer either to:
+   - a legacy dataset root that contains `metadata.city.json` and standalone
+     `.city.jsonl` feature files under that root
    - a `cjindex` dataset root in `feature-files`, `ndjson`, or `cityjson`
      layout
-2. Tyler will detect `cjindex` datasets with `cjindex::resolve_dataset()`.
-3. For `cjindex` inputs, Tyler will ensure a usable sidecar index exists and
+3. Tyler will detect `cjindex` datasets with `cjindex::resolve_dataset()`.
+4. For `cjindex` inputs, Tyler will ensure a usable sidecar index exists and
    will derive one shared base metadata document for internal processing.
-4. Tyler's world/grid/quadtree state will store backend-agnostic feature
+5. Tyler's world/grid/quadtree state will store backend-agnostic feature
    references instead of only relative feature file paths:
    - legacy relative feature path
    - `cjindex` feature id
-5. For each tile, Tyler will resolve the selected feature references and write
+6. For each tile, Tyler will resolve the selected feature references and write
    a tile-local NDJSON file.
-6. Tyler will continue to invoke `geoflow` through
+7. Tyler will continue to invoke `geoflow` through
    `--path_features_input_file`, but that file will now always point at
    NDJSON created by Tyler for the tile.
 

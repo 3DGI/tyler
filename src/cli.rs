@@ -18,17 +18,11 @@ use clap::Parser;
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
 pub struct Cli {
-    /// Main CityJSON file (.city.json), containing the coordinate reference system and
-    /// transformation properties.
-    /// Required for legacy feature-file input. Ignored when --features points at a
-    /// cjindex-compatible dataset root.
-    #[arg(short, long, value_parser = existing_canonical_path)]
-    pub metadata: Option<PathBuf>,
-    /// Input feature source. This can be either:
-    /// - a directory tree of legacy CityJSONFeatures (.city.jsonl), searched recursively
+    /// Input dataset root. This can be either:
+    /// - a legacy directory containing metadata.city.json plus CityJSONFeatures (.city.jsonl)
     /// - a cjindex-compatible dataset root for NDJSON, CityJSON, or feature-files input
-    #[arg(short, long, value_parser = existing_canonical_path)]
-    pub features: PathBuf,
+    #[arg(value_parser = existing_canonical_path)]
+    pub input: PathBuf,
     /// Directory for the output.
     #[arg(short, long)]
     pub output: PathBuf,
@@ -302,19 +296,14 @@ fn hex_color(s: &str) -> Result<String, String> {
 mod tests {
     use super::Cli;
     use clap::{CommandFactory, Parser};
+    use std::path::PathBuf;
 
     fn required_args() -> Vec<&'static str> {
         vec![
             "tyler",
-            "-m",
             concat!(
                 env!("CARGO_MANIFEST_DIR"),
-                "/resources/data/features_3dbag_5909/metadata.city.json"
-            ),
-            "-f",
-            concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/resources/data/features_3dbag_5909/3dbag_v21031_7425c21b_5909_subset"
+                "/resources/data/features_3dbag_5909"
             ),
             "-o",
             env!("CARGO_MANIFEST_DIR"),
@@ -324,7 +313,6 @@ mod tests {
     fn dataset_args() -> Vec<&'static str> {
         vec![
             "tyler",
-            "-f",
             concat!(env!("CARGO_MANIFEST_DIR"), "/resources/data"),
             "-o",
             env!("CARGO_MANIFEST_DIR"),
@@ -350,8 +338,35 @@ mod tests {
     }
 
     #[test]
-    fn verify_metadata_is_optional() {
+    fn verify_single_input_arg_for_dataset_root() {
         let cli = Cli::try_parse_from(dataset_args()).unwrap();
-        assert!(cli.metadata.is_none());
+        assert_eq!(
+            cli.input,
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("resources")
+                .join("data")
+                .canonicalize()
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn reject_legacy_input_flags() {
+        let args = vec![
+            "tyler",
+            "--metadata",
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/resources/data/features_3dbag_5909/metadata.city.json"
+            ),
+            "--features",
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/resources/data/features_3dbag_5909/3dbag_v21031_7425c21b_5909_subset"
+            ),
+            "-o",
+            env!("CARGO_MANIFEST_DIR"),
+        ];
+        assert!(Cli::try_parse_from(args).is_err());
     }
 }

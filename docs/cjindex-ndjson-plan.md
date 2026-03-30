@@ -11,7 +11,7 @@ simple:
 ## Revised Design
 
 1. Use `cjindex` only as the input/layout abstraction.
-2. Stop treating `--features` as "directory of standalone feature files" only.
+2. Stop treating the input path as "directory of standalone feature files" only.
 3. Normalize every non-legacy input into NDJSON before the `geoflow` step.
 4. Keep the `tyler` -> `geoflow` boundary fixed: NDJSON file paths in
    `--path_features_input_file`.
@@ -57,7 +57,7 @@ boundary. NDJSON is the only transport format.
 ## Implementation Steps
 
 1. Add `cjindex` as a dependency in `tyler`.
-2. Detect whether `--features` is:
+2. Detect whether the single input path is:
    - legacy standalone feature files
    - `cjindex` NDJSON
    - `cjindex` CityJSON

@@ -6,7 +6,10 @@
 
 *tyler* creates tiles from 3D city objects.
 
-As input, *tyler* takes [CityJSON Features](https://www.cityjson.org/specs/1.1.3/#text-sequences-and-streaming-with-cityjsonfeature), where each feature is stored in a separate file.
+As input, *tyler* takes a dataset root. That root can either be a legacy
+directory containing `metadata.city.json` plus
+[CityJSON Features](https://www.cityjson.org/specs/1.1.3/#text-sequences-and-streaming-with-cityjsonfeature),
+or a `cjindex` dataset root.
 
 As output, *tyler* can create:
 
@@ -45,8 +48,7 @@ set TYLER_RESOURCES_DIR=%~dp0\resources
 set PROJ_DATA=%~dp0\share\proj
 
 %~dp0\bin\tyler.exe ^
---metadata %~dp0\data\metadata.city.json ^
---features %~dp0\data\30dz2_01 ^
+%~dp0\data ^
 --output %~dp0\data-out\3dtiles-terrain ^
 --exe-geof "%GF_INSTALL_ROOT%\bin\geof.exe" ^
 --3dtiles-implicit ^
@@ -129,11 +131,16 @@ Note that on systems with hyperthreading enabled this equals the number of logic
 
 ### Calculating the extent and counting features
 
-The input features (`CityJSONFeature`) are passed in with the `--features` argument, and their type (`CityObject` type) can be restricted with the `--object-type` argument. See above for the details.
+The input dataset is passed as the positional `input` argument, and the
+included feature types (`CityObject` types) can be restricted with the
+`--object-type` argument. See above for the details.
 
-Firstly, *tyler* calculates the complete extent of the input from the bounding box of each feature (of the specified type) that it can find in the `--features` directory tree.
+Firstly, *tyler* calculates the complete extent of the input from the bounding
+box of each feature (of the specified type) that it can find in the input
+dataset.
 The result of this operation is reported in the logs.
-The example below shows that *tyler* found `436` features of type `Building` and `BuildingPart` in `--features`.
+The example below shows that *tyler* found `436` features of type `Building`
+and `BuildingPart` in the input dataset.
 The extent of the input data were calculated from these `436` features.
 The computed extent is a 3D bounding box in the CRS of the input data, and it is also reported in the logs. 
 In the example below, the coordinates are in *RD New (EPSG: 7415)*.
@@ -145,10 +152,11 @@ In the example below, the coordinates are in *RD New (EPSG: 7415)*.
 [2023-07-05T08:52:06Z DEBUG tyler::parser] Computed extent from features in real-world coordinates: [84995.28, 446316.814, -5.333, 85644.749, 446996.133, 52.882]
 ```
 
-The extent calculation will be done parallel for each subdirectory of `--features`, if there are any.
-The contents of each subdirectory are processed sequentially.
-Individual files directly under `--features` are processed sequentially, after the subdirectories.
-Therefore, in order to achieve optimal performance, you should organize your features into subdirectories.
+For legacy feature-file datasets, the extent calculation is done in parallel
+for each input subdirectory, if there are any. The contents of each
+subdirectory are processed sequentially. Individual files directly under the
+dataset root are processed sequentially after the subdirectories. Therefore,
+for optimal performance, organize legacy feature files into subdirectories.
 
 ### Exporting 3D Tiles
 
@@ -157,8 +165,7 @@ The argument details are explained in the text below.
 
 ```shell
 tyler \
-    --metadata metadata.city.json \
-    --features features/ \
+    /data \
     --output /3dtiles \
     --3dtiles-implicit \
     --object-type LandUse \
@@ -176,29 +183,18 @@ tyler \
 
 #### Input data
 
-`tyler` accepts two input styles:
+`tyler` accepts a single `input` dataset root:
 
-1. Legacy feature files:
-   - `--metadata`: a main `.city.json` file, containing at least the [CRS](https://www.cityjson.org/specs/1.1.3/#referencesystem-crs) and [transform](https://www.cityjson.org/specs/1.1.3/#transform-object) objects.
-   - `--features`: a directory (or directory tree) of `.city.jsonl` files, each containing one [CityJSON Feature](https://www.cityjson.org/specs/1.1.3/#text-sequences-and-streaming-with-cityjsonfeature), including all its children City Objects.
-2. `cjindex` datasets:
-   - `--features`: a dataset root that resolves as `ndjson`, `cityjson`, or `feature-files`.
-   - `--metadata` is optional and ignored for these inputs because `tyler` derives one shared base document from the indexed dataset.
-
-`--metadata`
-
-A main `.city.json` file for legacy feature-file input. It is optional for `cjindex` dataset input.
-
-`--features`
-
-Either:
-
-- a directory (or directory tree) of `.city.jsonl` files, each containing one CityJSON Feature, including all its children City Objects
-- or a `cjindex` dataset root in `ndjson`, `cityjson`, or `feature-files` layout
+- Legacy feature-file dataset:
+  the directory must contain `metadata.city.json` and one or more
+  `.city.jsonl` feature files under that root.
+- `cjindex` dataset:
+  the directory must resolve as a `cjindex` dataset root in `ndjson`,
+  `cityjson`, or `feature-files` layout.
 
 For example:
 
-`tyler --metadata metadata.city.json --features /some/directory/`
+`tyler /some/dataset-root --output /some/output`
 
 #### Output
 

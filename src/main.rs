@@ -74,14 +74,8 @@ fn prepare_input(
     cli: &crate::cli::Cli,
     output_dir: &Path,
 ) -> Result<PreparedInput, Box<dyn std::error::Error>> {
-    match cjindex::resolve_dataset(&cli.features, None) {
+    match cjindex::resolve_dataset(&cli.input, None) {
         Ok(resolved) => {
-            if cli.metadata.is_some() {
-                info!(
-                    "Ignoring --metadata for cjindex dataset input; using the dataset metadata from {}",
-                    resolved.dataset_root.display()
-                );
-            }
             let inspection = resolved.inspect()?;
             let mut city_index =
                 cjindex::CityIndex::open(resolved.storage_layout(), &resolved.index_path)?;
@@ -104,13 +98,17 @@ fn prepare_input(
             })
         }
         Err(_error) => {
-            let metadata_path = cli.metadata.clone().ok_or_else(|| {
-                "--metadata is required when --features points at a legacy feature-file tree"
-                    .to_string()
-            })?;
+            let metadata_path = cli.input.join("metadata.city.json");
+            if !metadata_path.is_file() {
+                return Err(format!(
+                    "{} is neither a cjindex dataset root nor a legacy dataset root containing metadata.city.json",
+                    cli.input.display()
+                )
+                .into());
+            }
             Ok(PreparedInput {
                 source: parser::InputSource::LegacyFeatureFiles {
-                    features_root: cli.features.clone(),
+                    features_root: cli.input.clone(),
                 },
                 metadata_path,
                 feature_base_document: None,
@@ -468,7 +466,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )?,
                 None => parser::World::new(
                     &prepared_input.metadata_path,
-                    &cli.features,
+                    &cli.input,
                     grid_cellsize,
                     cityobject_types,
                     cli.grid_minz,
