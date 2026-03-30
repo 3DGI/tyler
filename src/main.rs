@@ -1171,6 +1171,16 @@ mod tests {
             cjindex::CityIndex::open(resolved.storage_layout(), &resolved.index_path)
                 .expect("open index");
         city_index.reindex().expect("reindex ndjson dataset");
+        let indexed_bounds = city_index
+            .iter_all_bbox_pages(1)
+            .expect("build bbox page iterator")
+            .next()
+            .expect("bbox page should exist")
+            .expect("bbox page should load")
+            .into_iter()
+            .next()
+            .expect("indexed feature should exist")
+            .bounds;
         let feature_base_document = derive_base_document(&city_index).expect("derive base doc");
         let metadata_path = dataset_dir.join("metadata.city.json");
         fs::write(&metadata_path, &feature_base_document).expect("write metadata");
@@ -1180,14 +1190,14 @@ mod tests {
             metadata_path,
             feature_base_document,
             200,
-            Some(vec![parser::CityObjectType::Building]),
+            None,
             None,
             None,
         )
         .expect("build cjindex ndjson world");
+        assert_eq!(world.grid.bbox[2], indexed_bounds.min_z);
+        assert_eq!(world.grid.bbox[5], indexed_bounds.max_z);
         world.index_with_grid().expect("index cjindex ndjson world");
-        assert_eq!(world.grid.bbox[2], world.features[0].bbox[2]);
-        assert_eq!(world.grid.bbox[5], world.features[0].bbox[5]);
         let quadtree = build_quadtree(&world);
         let inputs_dir = dataset_dir.join("inputs");
         let input_file =

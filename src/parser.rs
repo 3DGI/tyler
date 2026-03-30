@@ -352,10 +352,10 @@ impl World {
             let page = page_result?;
             for feature in page {
                 if let Some(current) = extent.as_mut() {
-                    let feature_bbox = Self::cjindex_bbox_to_world_bbox(&feature.bbox);
+                    let feature_bbox = Self::cjindex_bounds_to_world_bbox(&feature.bounds);
                     merge_bbox(current, &feature_bbox);
                 } else {
-                    extent = Some(Self::cjindex_bbox_to_world_bbox(&feature.bbox));
+                    extent = Some(Self::cjindex_bounds_to_world_bbox(&feature.bounds));
                 }
                 nr_features += 1;
             }
@@ -404,8 +404,15 @@ impl World {
         ))
     }
 
-    fn cjindex_bbox_to_world_bbox(bbox: &cjindex::BBox) -> Bbox {
-        [bbox.min_x, bbox.min_y, 0.0, bbox.max_x, bbox.max_y, 0.0]
+    fn cjindex_bounds_to_world_bbox(bounds: &cjindex::FeatureBounds) -> Bbox {
+        [
+            bounds.min_x,
+            bounds.min_y,
+            bounds.min_z,
+            bounds.max_x,
+            bounds.max_y,
+            bounds.max_z,
+        ]
     }
 
     fn read_cjindex_feature_thread_local(
@@ -634,7 +641,6 @@ impl World {
                 }
             }
         }
-        self.sync_grid_z_bounds_from_features();
         debug!("indexed {} features", self.features.len());
         Ok(())
     }
@@ -699,20 +705,6 @@ impl World {
                 grid_cell.feature_ids.push(fid)
             }
         }
-    }
-
-    fn sync_grid_z_bounds_from_features(&mut self) {
-        let Some(first_feature) = self.features.first() else {
-            return;
-        };
-
-        let mut minz = first_feature.bbox[2];
-        let mut maxz = first_feature.bbox[5];
-        for feature in &self.features[1..] {
-            minz = minz.min(feature.bbox[2]);
-            maxz = maxz.max(feature.bbox[5]);
-        }
-        self.grid.set_z_bounds(minz, maxz);
     }
 
     fn feature_to_cells(
