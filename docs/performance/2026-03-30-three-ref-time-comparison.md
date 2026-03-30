@@ -13,7 +13,7 @@ Refs:
 - patched working tree on `8560b6d` with local changes to:
   - use a new `cjindex::query_iter_with_ids()` path instead of JSON roundtrips for feature ids
   - count only the selected vertices per feature instead of scanning all vertices once per selected cityobject
-- current head on `HEAD` after switching Tyler to page-oriented cjindex scans
+- current head on `HEAD` after switching Tyler to page-oriented cjindex scans and syncing grid `z` bounds from decoded feature bbox data
 
 Method:
 
@@ -37,7 +37,7 @@ Results:
 | `623ef236ceec4d2b210c4aa7fcc7cdf1c670d1f1` | `0:30.40` | `37.94s` | `1.20s` | `128%` | `63,536 KB` | `0` | `360` |
 | `6219a556d522b016dd82f802815e558a28a0c190` | `4:06.44` | `195.78s` | `50.34s` | `99%` | `188,560 KB` | `528` | `34,551,384` |
 | patched working tree on `8560b6d` | `3:55.08` | `186.87s` | `47.59s` | `99%` | `188,284 KB` | `15,552` | `34,551,312` |
-| current head after page-oriented cjindex scans | `0:16.78` | `44.04s` | `2.83s` | `279%` | `201,148 KB` | `0` | `156,936` |
+| current head after page-oriented cjindex scans | `0:16.94` | `44.40s` | `2.84s` | `278%` | `200,976 KB` | `0` | `156,944` |
 
 Relative elapsed time:
 
@@ -47,9 +47,9 @@ Relative elapsed time:
 - patched working tree on `8560b6d` is `42.74x` slower than `master`.
 - patched working tree on `8560b6d` is `7.73x` slower than `623e`.
 - patched working tree on `8560b6d` is `1.05x` faster than `6219` (`11.36s`, about `4.6%` lower elapsed time).
-- current head after page-oriented cjindex scans is `3.05x` slower than `master`.
-- current head after page-oriented cjindex scans is `1.81x` faster than `623e`.
-- current head after page-oriented cjindex scans is `14.69x` faster than `6219` (`229.66s`, about `93.2%` lower elapsed time).
+- current head after page-oriented cjindex scans is `3.08x` slower than `master`.
+- current head after page-oriented cjindex scans is `1.79x` faster than `623e`.
+- current head after page-oriented cjindex scans is `14.55x` faster than `6219` (`229.50s`, about `93.1%` lower elapsed time).
 
 Notes:
 
@@ -59,6 +59,7 @@ Notes:
 - The patch removes two real Tyler-side inefficiencies, but the overall improvement is small. The remaining dominant cost is still the broader cjindex path architecture, especially the extra full dataset pass after extent computation and the cold-start reindex itself.
 - Switching Tyler to `cjindex::iter_all*()` removes the spatial lookup bottleneck from the full scan. The new cold run spends about `19s` in extent construction, about `19s` in grid indexing, and about `9s` rebuilding the sidecar.
 - The current head measurement now uses `cjindex` page refs with a `4096`-feature Tyler page size and thread-local index reuse to avoid reopening SQLite on every page batch.
+- The final current-head run also restores the true grid `z` range from decoded feature bbox data after grid indexing, so the unfiltered bbox-page extent shortcut does not leak a `z = 0` world bbox into downstream tile metadata.
 
 Instrumented cold-start phase breakdown on the patched working tree:
 

@@ -1186,6 +1186,8 @@ mod tests {
         )
         .expect("build cjindex ndjson world");
         world.index_with_grid().expect("index cjindex ndjson world");
+        assert_eq!(world.grid.bbox[2], world.features[0].bbox[2]);
+        assert_eq!(world.grid.bbox[5], world.features[0].bbox[5]);
         let quadtree = build_quadtree(&world);
         let inputs_dir = dataset_dir.join("inputs");
         let input_file =

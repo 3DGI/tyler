@@ -634,6 +634,7 @@ impl World {
                 }
             }
         }
+        self.sync_grid_z_bounds_from_features();
         debug!("indexed {} features", self.features.len());
         Ok(())
     }
@@ -698,6 +699,20 @@ impl World {
                 grid_cell.feature_ids.push(fid)
             }
         }
+    }
+
+    fn sync_grid_z_bounds_from_features(&mut self) {
+        let Some(first_feature) = self.features.first() else {
+            return;
+        };
+
+        let mut minz = first_feature.bbox[2];
+        let mut maxz = first_feature.bbox[5];
+        for feature in &self.features[1..] {
+            minz = minz.min(feature.bbox[2]);
+            maxz = maxz.max(feature.bbox[5]);
+        }
+        self.grid.set_z_bounds(minz, maxz);
     }
 
     fn feature_to_cells(

@@ -573,6 +573,12 @@ impl SquareGrid {
         }
     }
 
+    pub fn set_z_bounds(&mut self, minz: f64, maxz: f64) {
+        self.origin[2] = minz;
+        self.bbox[2] = minz;
+        self.bbox[5] = maxz;
+    }
+
     /// Returns the cell index (x, y) where the point is located.
     pub fn locate_point(&self, point: &[f64; 2]) -> CellId {
         let dx = point[0] - self.origin[0];
