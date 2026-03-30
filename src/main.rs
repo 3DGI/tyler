@@ -1198,6 +1198,48 @@ mod tests {
     }
 
     #[test]
+    fn write_inputs_exports_cjindex_ndjson_without_type_filter_as_ndjson() {
+        let dataset_dir = unique_test_dir("cjindex-ndjson-unfiltered");
+        let metadata =
+            fs::read_to_string(resource_path("3dbag_x00.city.json")).expect("read metadata");
+        let feature = fs::read_to_string(resource_path("3dbag_feature_x71.city.jsonl"))
+            .expect("read feature");
+        let ndjson_source = dataset_dir.join("source.city.jsonl");
+        fs::write(&ndjson_source, format!("{metadata}\n{feature}\n")).expect("write ndjson source");
+
+        let resolved =
+            cjindex::resolve_dataset(&dataset_dir, None).expect("resolve ndjson dataset");
+        let mut city_index =
+            cjindex::CityIndex::open(resolved.storage_layout(), &resolved.index_path)
+                .expect("open index");
+        city_index.reindex().expect("reindex ndjson dataset");
+        let feature_base_document = derive_base_document(&city_index).expect("derive base doc");
+        let metadata_path = dataset_dir.join("metadata.city.json");
+        fs::write(&metadata_path, &feature_base_document).expect("write metadata");
+
+        let mut world = parser::World::from_cjindex(
+            parser::InputSource::from_cjindex_resolved(&resolved),
+            metadata_path,
+            feature_base_document,
+            200,
+            None,
+            None,
+            None,
+        )
+        .expect("build cjindex ndjson world");
+        world.index_with_grid().expect("index cjindex ndjson world");
+        let quadtree = build_quadtree(&world);
+        let inputs_dir = dataset_dir.join("inputs");
+        let input_file =
+            write_inputs(&world, &inputs_dir, &quadtree, "tile").expect("write inputs");
+        let ndjson_path = exported_ndjson_path(&input_file);
+        let ndjson = fs::read_to_string(ndjson_path).expect("read exported ndjson");
+
+        assert!(ndjson.contains("\"type\":\"CityJSONFeature\""));
+        assert_eq!(ndjson.lines().count(), 1);
+    }
+
+    #[test]
     fn write_inputs_exports_cjindex_cityjson_as_ndjson() {
         let dataset_dir = unique_test_dir("cjindex-cityjson");
         let metadata: Value = serde_json::from_slice(

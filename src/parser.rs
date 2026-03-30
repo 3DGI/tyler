@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
@@ -28,6 +29,12 @@ use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 
 use crate::spatial_structs::{Bbox, Cell, CellId};
+
+const CJINDEX_PAGE_SIZE: usize = 4096;
+
+thread_local! {
+    static CJINDEX_THREAD_LOCAL: RefCell<Option<(PathBuf, CityIndex)>> = const { RefCell::new(None) };
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct World {
@@ -282,30 +289,12 @@ impl World {
         );
 
         let city_index = input_source.open_index()?;
-        let mut nr_features = 0usize;
-        let mut nr_features_ignored = 0usize;
-        let mut cityobject_types_ignored: Vec<CityObjectType> = Vec::new();
-        let mut extent: Option<Bbox> = None;
-
-        for model_result in city_index.iter_all()? {
-            let model = model_result?;
-            let stats = selected_geometry_stats(model.as_inner(), cityobject_types.as_ref());
-            if let Some(model_bbox) = stats.bbox {
-                if let Some(current) = extent.as_mut() {
-                    merge_bbox(current, &model_bbox);
-                } else {
-                    extent = Some(model_bbox);
-                }
-                nr_features += 1;
+        let (extent, nr_features, nr_features_ignored, cityobject_types_ignored) =
+            if cityobject_types.is_none() {
+                Self::extent_from_cjindex_bbox_pages(&city_index)?
             } else {
-                nr_features_ignored += 1;
-                for cotype in stats.ignored_object_types {
-                    if !cityobject_types_ignored.contains(&cotype) {
-                        cityobject_types_ignored.push(cotype);
-                    }
-                }
-            }
-        }
+                Self::extent_from_cjindex_features(&city_index, cityobject_types.as_ref())?
+            };
 
         let mut extent = extent.ok_or_else(|| {
             format!(
@@ -350,6 +339,108 @@ impl World {
             cityobject_types,
             path_metadata,
             input_source,
+        })
+    }
+
+    fn extent_from_cjindex_bbox_pages(
+        city_index: &CityIndex,
+    ) -> Result<(Option<Bbox>, usize, usize, Vec<CityObjectType>), Box<dyn std::error::Error>> {
+        let mut extent: Option<Bbox> = None;
+        let mut nr_features = 0usize;
+
+        for page_result in city_index.iter_all_bbox_pages(CJINDEX_PAGE_SIZE)? {
+            let page = page_result?;
+            for feature in page {
+                if let Some(current) = extent.as_mut() {
+                    let feature_bbox = Self::cjindex_bbox_to_world_bbox(&feature.bbox);
+                    merge_bbox(current, &feature_bbox);
+                } else {
+                    extent = Some(Self::cjindex_bbox_to_world_bbox(&feature.bbox));
+                }
+                nr_features += 1;
+            }
+        }
+
+        Ok((extent, nr_features, 0, Vec::new()))
+    }
+
+    fn extent_from_cjindex_features(
+        city_index: &CityIndex,
+        cityobject_types: Option<&Vec<CityObjectType>>,
+    ) -> Result<(Option<Bbox>, usize, usize, Vec<CityObjectType>), Box<dyn std::error::Error>> {
+        let mut extent: Option<Bbox> = None;
+        let mut nr_features = 0usize;
+        let mut nr_features_ignored = 0usize;
+        let mut cityobject_types_ignored: Vec<CityObjectType> = Vec::new();
+
+        for page_result in city_index.iter_all_feature_ref_pages(CJINDEX_PAGE_SIZE)? {
+            let page = page_result?;
+            for feature in page {
+                let model = city_index.read_feature(&feature)?;
+                let stats = selected_geometry_stats(model.as_inner(), cityobject_types);
+                if let Some(model_bbox) = stats.bbox {
+                    if let Some(current) = extent.as_mut() {
+                        merge_bbox(current, &model_bbox);
+                    } else {
+                        extent = Some(model_bbox);
+                    }
+                    nr_features += 1;
+                } else {
+                    nr_features_ignored += 1;
+                    for cotype in stats.ignored_object_types {
+                        if !cityobject_types_ignored.contains(&cotype) {
+                            cityobject_types_ignored.push(cotype);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok((
+            extent,
+            nr_features,
+            nr_features_ignored,
+            cityobject_types_ignored,
+        ))
+    }
+
+    fn cjindex_bbox_to_world_bbox(bbox: &cjindex::BBox) -> Bbox {
+        [bbox.min_x, bbox.min_y, 0.0, bbox.max_x, bbox.max_y, 0.0]
+    }
+
+    fn read_cjindex_feature_thread_local(
+        input_source: &InputSource,
+        feature: &cjindex::IndexedFeatureRef,
+    ) -> cjlib::Result<cjlib::CityModel> {
+        let InputSource::CjIndexDataset { index_path, .. } = input_source else {
+            return Err(cjlib::Error::Io(std::io::Error::other(
+                "cjindex feature reads require a cjindex dataset",
+            )));
+        };
+
+        CJINDEX_THREAD_LOCAL.with(|cell| {
+            let needs_open = {
+                let slot = cell.borrow();
+                match slot.as_ref() {
+                    Some((cached_index_path, _)) => cached_index_path != index_path,
+                    None => true,
+                }
+            };
+
+            if needs_open {
+                let city_index = input_source
+                    .open_index()
+                    .map_err(|error| cjlib::Error::Io(std::io::Error::other(error.to_string())))?;
+                *cell.borrow_mut() = Some((index_path.clone(), city_index));
+            }
+
+            let slot = cell.borrow();
+            let Some((_, city_index)) = slot.as_ref() else {
+                return Err(cjlib::Error::Io(std::io::Error::other(
+                    "cjindex thread-local index cache was not initialized",
+                )));
+            };
+            city_index.read_feature(feature)
         })
     }
 
@@ -521,12 +612,23 @@ impl World {
                 }
             }
             InputSource::CjIndexDataset { .. } => {
+                let input_source = self.input_source.clone();
                 let city_index = self.input_source.open_index()?;
-                for model_result in city_index.iter_all_with_ids()? {
-                    let (feature_id, model) = model_result?;
-                    if let Some(feature_in_cells) =
-                        self.index_feature_model(FeatureReference::CjIndexId(feature_id), &model)
-                    {
+                for page_result in city_index.iter_all_feature_ref_pages(CJINDEX_PAGE_SIZE)? {
+                    let page = page_result?;
+                    let feature_in_cells = page
+                        .into_par_iter()
+                        .map(|feature| -> Result<Option<FeatureInGridCells>, String> {
+                            let model =
+                                Self::read_cjindex_feature_thread_local(&input_source, &feature)
+                                    .map_err(|error| error.to_string())?;
+                            Ok(self.index_feature_model(
+                                FeatureReference::CjIndexId(feature.feature_id.clone()),
+                                &model,
+                            ))
+                        })
+                        .collect::<Result<Vec<_>, String>>()?;
+                    for feature_in_cells in feature_in_cells.into_iter().flatten() {
                         self.integrate_feature_in_cells(feature_in_cells);
                     }
                 }
