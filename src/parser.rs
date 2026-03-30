@@ -19,7 +19,7 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 
 use cityjson::v2_0::vertex::VertexIndex as GeometryVertexIndex;
-use cjindex::{BBox as IndexBbox, CityIndex, StorageLayout};
+use cjindex::{CityIndex, StorageLayout};
 use cjlib::json::staged::from_feature_file_with_base;
 use cjlib::{cityjson, json};
 use log::{debug, error, info, warn};
@@ -61,8 +61,7 @@ struct FeatureInGridCells {
 struct SelectedGeometryStats {
     bbox: Option<Bbox>,
     centroid: Option<[f64; 2]>,
-    nr_vertices: usize,
-    selected_cityobjects_with_geometry: usize,
+    selected_vertices: Vec<GeometryVertexIndex<u32>>,
     selected_object_types: Vec<CityObjectType>,
     ignored_object_types: Vec<CityObjectType>,
 }
@@ -288,7 +287,7 @@ impl World {
         let mut cityobject_types_ignored: Vec<CityObjectType> = Vec::new();
         let mut extent: Option<Bbox> = None;
 
-        for model_result in city_index.query_iter(&all_features_bbox())? {
+        for model_result in city_index.iter_all()? {
             let model = model_result?;
             let stats = selected_geometry_stats(model.as_inner(), cityobject_types.as_ref());
             if let Some(model_bbox) = stats.bbox {
@@ -523,9 +522,8 @@ impl World {
             }
             InputSource::CjIndexDataset { .. } => {
                 let city_index = self.input_source.open_index()?;
-                for model_result in city_index.query_iter(&all_features_bbox())? {
-                    let model = model_result?;
-                    let feature_id = model_feature_id(&model)?;
+                for model_result in city_index.iter_all_with_ids()? {
+                    let (feature_id, model) = model_result?;
                     if let Some(feature_in_cells) =
                         self.index_feature_model(FeatureReference::CjIndexId(feature_id), &model)
                     {
@@ -570,7 +568,7 @@ impl World {
         let centroid = stats.centroid?;
         let cell_vtx_cnt = count_vertices_in_grid(
             model.as_inner(),
-            stats.selected_cityobjects_with_geometry,
+            &stats.selected_vertices,
             &self.grid,
             &bbox,
         );
@@ -614,11 +612,7 @@ impl World {
         let mut cells: Vec<(CellId, Cell)> = Vec::with_capacity(cell_vtx_cnt.len());
 
         if unique_assignment {
-            let (cellid, nr_vertices) = cell_vtx_cnt
-                .iter()
-                .max_by(|a, b| a.1.cmp(b.1))
-                .map(|(k, v)| (k, v))
-                .unwrap();
+            let (cellid, nr_vertices) = cell_vtx_cnt.iter().max_by(|a, b| a.1.cmp(b.1)).unwrap();
             cells.push((
                 *cellid,
                 Cell {
@@ -778,24 +772,6 @@ impl fmt::Display for CityObjectType {
 
 pub type FeatureSet = Vec<Feature>;
 
-fn all_features_bbox() -> IndexBbox {
-    IndexBbox {
-        min_x: -1.0e15,
-        max_x: 1.0e15,
-        min_y: -1.0e15,
-        max_y: 1.0e15,
-    }
-}
-
-fn model_feature_id(model: &cjlib::CityModel) -> Result<String, Box<dyn std::error::Error>> {
-    let feature: serde_json::Value = serde_json::from_str(&cjlib::json::to_feature_string(model)?)?;
-    feature
-        .get("id")
-        .and_then(serde_json::Value::as_str)
-        .map(ToString::to_string)
-        .ok_or_else(|| "CityJSONFeature id is missing".into())
-}
-
 fn selected_geometry_stats(
     model: &cityjson::v2_0::OwnedCityModel,
     filter: Option<&Vec<CityObjectType>>,
@@ -808,14 +784,12 @@ fn selected_geometry_stats(
     let mut nr_vertices = 0usize;
     let mut selected_object_types = Vec::new();
     let mut ignored_object_types = Vec::new();
-    let mut selected_cityobjects_with_geometry = 0usize;
 
     collect_selected_vertex_indices(
         model,
         filter,
         &mut selected_vertices,
         &mut geometry_scratch,
-        &mut selected_cityobjects_with_geometry,
         &mut selected_object_types,
         &mut ignored_object_types,
     );
@@ -835,8 +809,7 @@ fn selected_geometry_stats(
         bbox,
         centroid: (nr_vertices > 0)
             .then_some([x_sum / nr_vertices as f64, y_sum / nr_vertices as f64]),
-        nr_vertices,
-        selected_cityobjects_with_geometry,
+        selected_vertices,
         selected_object_types,
         ignored_object_types,
     }
@@ -847,12 +820,10 @@ fn collect_selected_vertex_indices(
     filter: Option<&Vec<CityObjectType>>,
     selected_vertices: &mut Vec<GeometryVertexIndex<u32>>,
     geometry_scratch: &mut Vec<GeometryVertexIndex<u32>>,
-    selected_cityobjects_with_geometry: &mut usize,
     selected_object_types: &mut Vec<CityObjectType>,
     ignored_object_types: &mut Vec<CityObjectType>,
 ) {
     selected_vertices.clear();
-    *selected_cityobjects_with_geometry = 0;
     selected_object_types.clear();
     ignored_object_types.clear();
 
@@ -865,9 +836,6 @@ fn collect_selected_vertex_indices(
                 selected_object_types.push(object_type);
             }
             let geometry_handles = cityobject.geometry().unwrap_or(&[]);
-            if !geometry_handles.is_empty() {
-                *selected_cityobjects_with_geometry += 1;
-            }
             for geometry_handle in geometry_handles {
                 let Some(geometry) = model.get_geometry(*geometry_handle) else {
                     continue;
@@ -888,24 +856,25 @@ fn collect_selected_vertex_indices(
 
 fn count_vertices_in_grid(
     model: &cityjson::v2_0::OwnedCityModel,
-    selected_cityobjects_with_geometry: usize,
+    selected_vertices: &[GeometryVertexIndex<u32>],
     grid: &crate::spatial_structs::SquareGrid,
     bbox: &Bbox,
 ) -> HashMap<CellId, usize> {
     let mut cell_vtx_cnt: HashMap<CellId, usize> = HashMap::new();
 
-    if !model.vertices().is_empty() {
-        for _ in 0..selected_cityobjects_with_geometry {
-            for vertex in model.vertices().as_slice() {
-                let point = [vertex.x(), vertex.y()];
-                let cellid = grid.locate_point(&point);
-                *cell_vtx_cnt.entry(cellid).or_insert(1) += 1;
-            }
-        }
+    for vertex_ref in selected_vertices {
+        let Some(vertex) = model.vertices().get(*vertex_ref) else {
+            continue;
+        };
+        let point = [vertex.x(), vertex.y()];
+        let cellid = grid.locate_point(&point);
+        *cell_vtx_cnt.entry(cellid).or_insert(1) += 1;
     }
 
-    for cellid in grid.intersect_bbox(bbox) {
-        *cell_vtx_cnt.entry(cellid).or_insert(1) += 1;
+    if !selected_vertices.is_empty() {
+        for cellid in grid.intersect_bbox(bbox) {
+            *cell_vtx_cnt.entry(cellid).or_insert(1) += 1;
+        }
     }
 
     cell_vtx_cnt
@@ -1046,9 +1015,83 @@ mod tests {
         let stats =
             selected_geometry_stats(model.as_inner(), Some(&vec![CityObjectType::Building]));
         assert!(stats.bbox.is_some());
-        assert!(stats.nr_vertices > 0);
+        assert!(!stats.selected_vertices.is_empty());
         let bbox = stats.bbox.unwrap();
         assert!(bbox[0] > 0.0);
         assert!(bbox[1] > 0.0);
+    }
+
+    #[test]
+    fn count_vertices_in_grid_only_counts_selected_vertices() {
+        let base = serde_json::to_vec(&serde_json::json!({
+            "type": "CityJSON",
+            "version": "2.0",
+            "transform": {
+                "scale": [1.0, 1.0, 1.0],
+                "translate": [0.0, 0.0, 0.0]
+            }
+        }))
+        .unwrap();
+        let feature = serde_json::json!({
+            "type": "CityJSONFeature",
+            "id": "mixed-feature",
+            "CityObjects": {
+                "building-1": {
+                    "type": "Building",
+                    "geometry": [{
+                        "type": "MultiSurface",
+                        "lod": "1.0",
+                        "boundaries": [[[0, 1, 2]]]
+                    }]
+                },
+                "road-1": {
+                    "type": "Road",
+                    "geometry": [{
+                        "type": "MultiSurface",
+                        "lod": "1.0",
+                        "boundaries": [[[3, 4, 5]]]
+                    }]
+                }
+            },
+            "vertices": [
+                [0, 0, 0],
+                [1, 0, 0],
+                [0, 1, 0],
+                [100, 100, 0],
+                [101, 100, 0],
+                [100, 101, 0]
+            ]
+        });
+        let feature_path = std::env::temp_dir().join(format!(
+            "tyler-parser-selected-vertices-{}.city.jsonl",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&feature_path, serde_json::to_vec(&feature).unwrap()).unwrap();
+
+        let model = from_feature_file_with_base(&feature_path, &base).unwrap();
+        let stats =
+            selected_geometry_stats(model.as_inner(), Some(&vec![CityObjectType::Building]));
+        let grid = crate::spatial_structs::SquareGrid::new(
+            &[0.0, 0.0, 0.0, 200.0, 200.0, 10.0],
+            100,
+            7415,
+        );
+        let counts = count_vertices_in_grid(
+            model.as_inner(),
+            &stats.selected_vertices,
+            &grid,
+            &stats.bbox.unwrap(),
+        );
+
+        let building_cell = grid.locate_point(&[0.0, 0.0]);
+        let road_cell = grid.locate_point(&[100.0, 100.0]);
+
+        assert!(counts.contains_key(&building_cell));
+        assert!(!counts.contains_key(&road_cell));
+
+        let _ = std::fs::remove_file(feature_path);
     }
 }

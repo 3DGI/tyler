@@ -11,6 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#![allow(
+    clippy::manual_is_multiple_of,
+    clippy::needless_as_bytes,
+    clippy::needless_borrows_for_generic_args,
+    clippy::to_string_trait_impl,
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::unnecessary_fallible_conversions,
+    clippy::unnecessary_to_owned,
+    clippy::unnecessary_unwrap,
+    clippy::useless_vec
+)]
 mod cli;
 mod formats;
 mod parser;
