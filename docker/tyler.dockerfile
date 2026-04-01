@@ -21,6 +21,11 @@ COPY Cargo.toml Cargo.lock ./
 COPY resources ./resources
 COPY src ./src
 COPY proj ./proj
+COPY --from=cjlib . /usr/src/cjlib
+COPY --from=cjindex . /usr/src/cjindex
+COPY --from=cityjson-rs . /usr/src/cityjson-rs
+COPY --from=cityarrow . /usr/src/cityarrow
+COPY --from=serde_cityjson . /usr/src/serde_cityjson
 RUN --mount=type=cache,target=/usr/src/tyler/target /root/.cargo/bin/cargo install --path .
 
 COPY docker/strip-docker-image-export ./
