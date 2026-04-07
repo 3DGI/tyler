@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 use log::info;
 
-use crate::parser::Transform;
+use crate::parser::{CityJSONFeatureVertices, Transform};
 
 /// Metadata extracted from the first line of a CityJSONL file.
 pub struct CityJsonlMetadata {
@@ -35,6 +35,7 @@ const REQUIRED_METADATA_KEYS: &[&str] = &[
 ];
 
 /// Required keys on each feature line.
+#[allow(dead_code)]
 const REQUIRED_FEATURE_KEYS: &[&str] = &["CityObjects", "id", "type", "vertices"];
 
 /// Validate that `obj` contains all `required` keys.
@@ -54,6 +55,7 @@ fn validate_keys(
 /// Process a CityJSONL file: extract metadata and split features into individual files.
 ///
 /// Returns the paths to the generated metadata file and features directory.
+#[allow(dead_code)]
 pub fn process_cityjsonl(
     jsonl_path: &Path,
     output_dir: &Path,
@@ -160,4 +162,86 @@ pub fn process_cityjsonl(
     };
 
     Ok((metadata_path, features_dir, meta))
+}
+
+/// Load a CityJSONL file entirely into memory: metadata + all features parsed.
+///
+/// Unlike [`process_cityjsonl`], this never writes individual files to disk.
+/// Each feature line is parsed directly into [`CityJSONFeatureVertices`].
+pub fn load_cityjsonl_to_memory(
+    jsonl_path: &Path,
+) -> Result<(CityJsonlMetadata, Vec<CityJSONFeatureVertices>)> {
+    if !jsonl_path.exists() {
+        bail!("Input file {} does not exist", jsonl_path.display());
+    }
+
+    let file_size = fs::metadata(jsonl_path)
+        .with_context(|| format!("stat {}", jsonl_path.display()))?
+        .len() as usize;
+
+    let file =
+        fs::File::open(jsonl_path).with_context(|| format!("opening {}", jsonl_path.display()))?;
+    let reader = BufReader::new(file);
+
+    // --- First line: metadata ---
+    let mut lines = reader.lines();
+    let first_line = lines
+        .next()
+        .context("CityJSONL file is empty; expected metadata line")?
+        .context("reading metadata line")?;
+
+    let metadata_value: serde_json::Value =
+        serde_json::from_str(&first_line).context("parsing metadata JSON")?;
+    let metadata_obj = metadata_value
+        .as_object()
+        .context("metadata line must be a JSON object")?;
+    validate_keys(metadata_obj, REQUIRED_METADATA_KEYS, "Metadata")?;
+
+    let transform: Transform =
+        serde_json::from_value(metadata_obj["transform"].clone()).context("parsing transform")?;
+
+    let reference_system = metadata_obj
+        .get("metadata")
+        .and_then(|m| m.get("referenceSystem"))
+        .and_then(|r| r.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    // --- Remaining lines: features (parsed into memory) ---
+    // Estimate capacity: average feature ~5-8KB
+    let mut features: Vec<CityJSONFeatureVertices> =
+        Vec::with_capacity(file_size / 5000);
+
+    for line_result in lines {
+        let line = line_result.context("reading feature line")?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let cf: CityJSONFeatureVertices =
+            serde_json::from_str(trimmed).context("parsing feature into CityJSONFeatureVertices")?;
+        features.push(cf);
+    }
+
+    if features.is_empty() {
+        bail!(
+            "{} does not contain any CityObject feature records",
+            jsonl_path.display()
+        );
+    }
+
+    info!(
+        "Loaded {} features into memory from {}",
+        features.len(),
+        jsonl_path.display()
+    );
+
+    let meta = CityJsonlMetadata {
+        raw: first_line,
+        transform,
+        reference_system,
+    };
+
+    Ok((meta, features))
 }

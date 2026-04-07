@@ -3,6 +3,7 @@
 //!
 //! Uses Apache `parquet` crate for Parquet I/O and `geozero` for WKB geometry parsing.
 
+use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -14,7 +15,7 @@ use log::{debug, info, warn};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use serde_json::{json, Map, Value};
 
-use crate::parser::Transform;
+use crate::parser::{CityJSONFeatureVertices, CityObject, CityObjectType, Geometry, Transform};
 use crate::transform_align::TransformAligner;
 
 /// A single 3D polygon ring (closed ring of [x, y, z] vertices).
@@ -218,6 +219,7 @@ fn centroid_2d(polygons: &[Polygon3D]) -> Option<[f64; 2]> {
 /// Convert 3D polygons into CityJSONFeature JSON and write to `features_dir`.
 ///
 /// The `aligner` handles CRS reprojection (if needed) and quantization.
+#[allow(dead_code)]
 fn write_tree_feature(
     feature: &GeoFeature,
     aligner: &TransformAligner,
@@ -299,6 +301,7 @@ fn write_tree_feature(
 /// * `ref_epsg` — The EPSG code of the reference CRS.
 /// * `city_object_type` — The CityJSON object type (e.g. "SolitaryVegetationObject").
 /// * `id_column` — Optional column name to use as feature ID. Defaults to row index.
+#[allow(dead_code)]
 pub fn process_geoparquet(
     parquet_path: &Path,
     features_dir: &Path,
@@ -430,7 +433,169 @@ pub fn process_geoparquet(
     Ok(feature_count)
 }
 
-/// Process a GeoParquet file in standalone mode (no buildings reference).
+/// Build a [`CityJSONFeatureVertices`] directly in memory from a [`GeoFeature`].
+///
+/// This is the in-memory equivalent of [`write_tree_feature`], avoiding the
+/// JSON → file → JSON round-trip.
+fn build_tree_feature_in_memory(
+    feature: &GeoFeature,
+    aligner: &TransformAligner,
+    city_object_type: CityObjectType,
+) -> Result<CityJSONFeatureVertices> {
+    let mut vertices_qc: Vec<[i64; 3]> = Vec::new();
+    let mut boundaries: Vec<Vec<Vec<usize>>> = Vec::with_capacity(feature.polygons.len());
+
+    for polygon in &feature.polygons {
+        for ring in polygon {
+            let mut ring_indices: Vec<usize> = Vec::with_capacity(ring.len());
+            for vertex in ring {
+                let qc = aligner.align_and_quantize(vertex)?;
+                let idx = vertices_qc.len();
+                vertices_qc.push(qc);
+                ring_indices.push(idx);
+            }
+            // CityJSON MultiSurface boundary: each ring is a separate surface [[ring]]
+            boundaries.push(vec![ring_indices]);
+        }
+    }
+
+    let geometry = Geometry::MultiSurface {
+        lod: Some("2".to_string()),
+        boundaries,
+    };
+
+    let city_object = CityObject {
+        cotype: city_object_type,
+        geometry: Some(vec![geometry]),
+    };
+
+    let mut cityobjects = HashMap::with_capacity(1);
+    cityobjects.insert(feature.id.clone(), city_object);
+
+    Ok(CityJSONFeatureVertices {
+        id: Some(feature.id.clone()),
+        cityobjects,
+        vertices: vertices_qc,
+    })
+}
+
+/// Load a GeoParquet file entirely into memory as [`CityJSONFeatureVertices`] structs.
+///
+/// Unlike [`process_geoparquet`], this never writes individual files to disk.
+/// Each row is converted directly into a [`CityJSONFeatureVertices`].
+pub fn load_geoparquet_to_memory(
+    parquet_path: &Path,
+    ref_transform: Transform,
+    ref_epsg: u16,
+    city_object_type: &str,
+    id_column: Option<&str>,
+) -> Result<Vec<CityJSONFeatureVertices>> {
+    if !parquet_path.exists() {
+        bail!(
+            "GeoParquet file does not exist: {}",
+            parquet_path.display()
+        );
+    }
+
+    let file = fs::File::open(parquet_path)
+        .with_context(|| format!("opening {}", parquet_path.display()))?;
+
+    let builder = ParquetRecordBatchReaderBuilder::try_new(file)
+        .context("building Parquet reader")?;
+
+    // Pre-allocate from parquet footer row count
+    let total_rows = builder.metadata().file_metadata().num_rows() as usize;
+
+    // Extract GeoParquet metadata.
+    let kv_metadata = builder
+        .metadata()
+        .file_metadata()
+        .key_value_metadata()
+        .context("Parquet file has no key-value metadata")?;
+
+    let geo_meta = kv_metadata
+        .iter()
+        .find(|kv| kv.key == "geo")
+        .and_then(|kv| kv.value.as_ref())
+        .context("No 'geo' key in Parquet metadata — is this a GeoParquet file?")?;
+
+    let src_epsg = extract_epsg_from_geo_metadata(geo_meta)?;
+    let geom_col = geometry_column_name(geo_meta)?;
+    debug!(
+        "GeoParquet (in-memory): source EPSG:{}, geometry column: '{}'",
+        src_epsg, geom_col
+    );
+
+    let aligner = TransformAligner::new(src_epsg, ref_epsg, ref_transform)?;
+
+    // Parse the city_object_type string into the enum
+    let cotype: CityObjectType = serde_json::from_value(serde_json::Value::String(
+        city_object_type.to_string(),
+    ))
+    .with_context(|| format!("unknown CityObjectType '{city_object_type}'"))?;
+
+    let schema = builder.schema().clone();
+    let reader = builder.build().context("building Parquet batch reader")?;
+
+    let geom_idx = schema
+        .index_of(&geom_col)
+        .with_context(|| format!("geometry column '{geom_col}' not found in schema"))?;
+
+    let id_col_idx = id_column.and_then(|name| schema.index_of(name).ok());
+
+    let mut features: Vec<CityJSONFeatureVertices> = Vec::with_capacity(total_rows);
+    let mut row_idx: usize = 0;
+
+    for batch_result in reader {
+        let batch = batch_result.context("reading Parquet record batch")?;
+        let geom_array = batch.column(geom_idx);
+        let num_rows = batch.num_rows();
+
+        for i in 0..num_rows {
+            let wkb_bytes = extract_binary(geom_array, i)?;
+            if wkb_bytes.is_empty() {
+                warn!("Row {row_idx}: empty geometry, skipping");
+                row_idx += 1;
+                continue;
+            }
+
+            let polygons = match parse_wkb_3d(wkb_bytes) {
+                Ok(p) => p,
+                Err(e) => {
+                    warn!("Row {row_idx}: failed to parse WKB: {e}, skipping");
+                    row_idx += 1;
+                    continue;
+                }
+            };
+
+            let id = if let Some(col_idx) = id_col_idx {
+                extract_string(batch.column(col_idx), i)
+                    .unwrap_or_else(|| format!("tree-{row_idx:05}"))
+            } else {
+                format!("tree-{row_idx:05}")
+            };
+
+            let geo_feature = GeoFeature {
+                id,
+                polygons,
+                attributes: Map::new(), // Attributes not parsed into CityJSONFeatureVertices
+            };
+
+            let cf = build_tree_feature_in_memory(&geo_feature, &aligner, cotype)?;
+            features.push(cf);
+            row_idx += 1;
+        }
+    }
+
+    info!(
+        "Loaded {} {} features into memory from {}",
+        features.len(),
+        city_object_type,
+        parquet_path.display()
+    );
+
+    Ok(features)
+}
 ///
 /// Reads the GeoParquet, computes the data's bounding box to derive a CityJSON
 /// transform, writes feature files and a `metadata.city.json`.
@@ -654,6 +819,7 @@ pub fn process_geoparquet_standalone(
 
 /// Check if a tree centroid overlaps any building bounding box in the features directory.
 /// Returns the number of overlaps detected (as warnings).
+#[allow(dead_code)]
 pub fn check_overlap(features_dir: &Path, parquet_path: &Path) -> Result<usize> {
     // Collect building bboxes from existing features.
     let mut building_bboxes: Vec<[f64; 4]> = Vec::new(); // [xmin, ymin, xmax, ymax]

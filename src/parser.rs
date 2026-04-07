@@ -27,6 +27,18 @@ use walkdir::WalkDir;
 
 use crate::spatial_structs::{BboxQc, Cell, CellId};
 
+/// Read available memory from `/proc/meminfo` (Linux only).
+/// Returns `None` on non-Linux or if the file cannot be parsed.
+pub fn available_memory_bytes() -> Option<u64> {
+    std::fs::read_to_string("/proc/meminfo").ok().and_then(|s| {
+        s.lines()
+            .find(|l| l.starts_with("MemAvailable:"))
+            .and_then(|l| l.split_whitespace().nth(1))
+            .and_then(|kb| kb.parse::<u64>().ok())
+            .map(|kb| kb * 1024)
+    })
+}
+
 /// Represents the "world" that contains some features and needs to be partitioned into
 /// tiles.
 ///
@@ -44,6 +56,10 @@ pub struct World {
     pub cityobject_types: Option<Vec<CityObjectType>>,
     pub crs: Crs,
     pub features: FeatureSet,
+    /// Pre-loaded feature data, indexed by fid. `None` entries are ignored/filtered features.
+    /// Empty Vec when using file-based (legacy) path.
+    #[serde(skip)]
+    pub feature_data: Vec<Option<CityJSONFeatureVertices>>,
     pub grid: crate::spatial_structs::SquareGrid,
     pub path_features_root: PathBuf,
     pub path_metadata: PathBuf,
@@ -195,12 +211,90 @@ impl World {
 
         Ok(Self {
             features,
+            feature_data: Vec::new(),
             crs,
             transform,
             grid,
             cityobject_types,
             path_features_root,
             path_metadata,
+        })
+    }
+
+    /// Construct a `World` from pre-loaded in-memory features.
+    ///
+    /// This bypasses all file I/O: extent is computed from the in-memory data,
+    /// and features are stored for direct access during indexing and GLB generation.
+    pub fn from_features(
+        transform: Transform,
+        reference_system: String,
+        feature_data: Vec<CityJSONFeatureVertices>,
+        cellsize: u32,
+        cityobject_types: Option<Vec<CityObjectType>>,
+        arg_minz: Option<i32>,
+        arg_maxz: Option<i32>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let crs = Crs::new(reference_system);
+
+        debug!(
+            "Computing extent from {} in-memory features of type {:?}",
+            feature_data.len(),
+            cityobject_types
+        );
+
+        // Compute extent from in-memory features (parallel)
+        let extent_results: Vec<_> = feature_data
+            .par_iter()
+            .filter_map(|cf| cf.bbox_of_types(cityobject_types.as_ref()))
+            .collect();
+
+        if extent_results.is_empty() {
+            return Err(Box::try_from(format!(
+                "Did not find any features of type {:?} in the in-memory data",
+                cityobject_types
+            ))
+            .unwrap());
+        }
+
+        let mut extent_qc = extent_results[0].clone();
+        for bbox in &extent_results[1..] {
+            extent_qc.update_with(bbox);
+        }
+
+        let nr_features = feature_data.len();
+        debug!(
+            "Found {} features of type {:?}",
+            nr_features, &cityobject_types
+        );
+        debug!("extent_qc: {:?}", &extent_qc);
+        let extent_rw = extent_qc.to_bbox(&transform, arg_minz, arg_maxz);
+        debug!(
+            "Computed extent from features: {}",
+            crate::spatial_structs::bbox_to_wkt(&extent_rw)
+        );
+
+        let epsg = crs.to_epsg()?;
+        let grid = crate::spatial_structs::SquareGrid::new(&extent_rw, cellsize, epsg);
+        debug!("{}", grid);
+
+        let mut features: FeatureSet = Vec::with_capacity(nr_features + 1);
+        features.resize(nr_features + 1, Feature::default());
+
+        // Wrap each feature in Some for the feature_data Vec
+        let feature_data_vec: Vec<Option<CityJSONFeatureVertices>> = feature_data
+            .into_iter()
+            .map(Some)
+            .collect();
+
+        Ok(Self {
+            features,
+            feature_data: feature_data_vec,
+            crs,
+            transform,
+            grid,
+            cityobject_types,
+            path_features_root: PathBuf::new(),
+            path_metadata: PathBuf::new(),
         })
     }
 
@@ -395,6 +489,52 @@ impl World {
 
     // Loop through the features and assign the features to the grid cells.
     pub fn index_with_grid(&mut self) {
+        if !self.feature_data.is_empty() {
+            self.index_with_grid_in_memory();
+        } else {
+            self.index_with_grid_from_files();
+        }
+    }
+
+    /// Index features from in-memory data using `par_iter()`.
+    fn index_with_grid_in_memory(&mut self) {
+        debug!("Indexing {} in-memory features into grid cells", self.feature_data.len());
+
+        // Parallel: compute cell assignments for each feature
+        let features_in_cells: Vec<(usize, FeatureInGridCells)> = self
+            .feature_data
+            .par_iter()
+            .enumerate()
+            .filter_map(|(fid, cf_opt)| {
+                let featurevertices = cf_opt.as_ref()?;
+                let cell_vtx_cnt = self.count_vertices(featurevertices);
+                if cell_vtx_cnt.is_empty() {
+                    return None;
+                }
+                let feature = featurevertices.to_feature(Path::new(""));
+                let fic = self.feature_to_cells_from_data(&feature, cell_vtx_cnt)?;
+                Some((fid, fic))
+            })
+            .collect();
+
+        // Sequential merge into grid (same as file-based path)
+        let mut fcount: usize = 0;
+        for (fid, feature_in_cells) in &features_in_cells {
+            self.features[*fid] = feature_in_cells.feature.clone();
+            for (cellid, cell) in &feature_in_cells.cells {
+                let grid_cell = self.grid.cell_mut(cellid);
+                grid_cell.nr_vertices += cell.nr_vertices;
+                if !grid_cell.feature_ids.contains(fid) {
+                    grid_cell.feature_ids.push(*fid)
+                }
+            }
+            fcount += 1;
+        }
+        debug!("indexed {} features (in-memory)", fcount);
+    }
+
+    /// Index features from files on disk (legacy path).
+    fn index_with_grid_from_files(&mut self) {
         let feature_dirs_files = Self::find_feature_dirs_and_files(&self.path_features_root);
         debug!("Counting vertices in grid cells");
         // todo input: split input file by newline?
@@ -508,6 +648,52 @@ impl World {
         cell_vtx_cnt
     }
 
+    /// Converts a pre-built [Feature] and cell vertex counts into [FeatureInGridCells].
+    /// Used by both the file-based and in-memory indexing paths.
+    fn feature_to_cells_from_data(
+        &self,
+        feature: &Feature,
+        cell_vtx_cnt: HashMap<CellId, usize>,
+    ) -> Option<FeatureInGridCells> {
+        let mut cells: Vec<(CellId, Cell)> = Vec::with_capacity(cell_vtx_cnt.len());
+
+        let use_single_cell = match &self.cityobject_types {
+            None => true,
+            Some(cotypes) => {
+                cotypes.contains(&CityObjectType::Building)
+                    || cotypes.contains(&CityObjectType::BuildingPart)
+            }
+        };
+
+        if use_single_cell {
+            let (cellid, nr_vertices) = cell_vtx_cnt
+                .iter()
+                .max_by(|a, b| a.1.cmp(b.1))
+                .map(|(k, v)| (k, v))?;
+            cells.push((
+                *cellid,
+                Cell {
+                    feature_ids: Vec::new(),
+                    nr_vertices: *nr_vertices,
+                },
+            ));
+        } else {
+            for (cellid, nr_vertices) in cell_vtx_cnt.iter() {
+                cells.push((
+                    *cellid,
+                    Cell {
+                        feature_ids: Vec::new(),
+                        nr_vertices: *nr_vertices,
+                    },
+                ));
+            }
+        }
+        Some(FeatureInGridCells {
+            feature: feature.clone(),
+            cells,
+        })
+    }
+
     /// Converts the [CityJSONFeatureVertices] into a [Feature] and returns the grid cells where
     /// where the feature is located.
     fn feature_to_cells(
@@ -614,6 +800,11 @@ pub struct Metadata {
 pub struct Crs(String);
 
 impl Crs {
+    /// Create a new CRS from a reference system URI string.
+    pub fn new(reference_system: String) -> Self {
+        Crs(reference_system)
+    }
+
     /// Return the EPSG code from the CRS definition, if the CRS definition is indeed an EPSG.
     ///
     /// ## Examples
@@ -937,9 +1128,45 @@ pub enum CityObjectType {
     GenericCityObject,
 }
 
+impl CityObjectType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CityObjectType::Bridge => "Bridge",
+            CityObjectType::BridgePart => "BridgePart",
+            CityObjectType::BridgeInstallation => "BridgeInstallation",
+            CityObjectType::BridgeConstructiveElement => "BridgeConstructiveElement",
+            CityObjectType::BridgeRoom => "BridgeRoom",
+            CityObjectType::BridgeFurniture => "BridgeFurniture",
+            CityObjectType::Building => "Building",
+            CityObjectType::BuildingPart => "BuildingPart",
+            CityObjectType::BuildingInstallation => "BuildingInstallation",
+            CityObjectType::BuildingConstructiveElement => "BuildingConstructiveElement",
+            CityObjectType::BuildingFurniture => "BuildingFurniture",
+            CityObjectType::BuildingStorey => "BuildingStorey",
+            CityObjectType::BuildingRoom => "BuildingRoom",
+            CityObjectType::BuildingUnit => "BuildingUnit",
+            CityObjectType::CityFurniture => "CityFurniture",
+            CityObjectType::LandUse => "LandUse",
+            CityObjectType::OtherConstruction => "OtherConstruction",
+            CityObjectType::PlantCover => "PlantCover",
+            CityObjectType::SolitaryVegetationObject => "SolitaryVegetationObject",
+            CityObjectType::TINRelief => "TINRelief",
+            CityObjectType::Tunnel => "Tunnel",
+            CityObjectType::TunnelPart => "TunnelPart",
+            CityObjectType::TunnelInstallation => "TunnelInstallation",
+            CityObjectType::WaterBody => "WaterBody",
+            CityObjectType::Road => "Road",
+            CityObjectType::Railway => "Railway",
+            CityObjectType::Waterway => "Waterway",
+            CityObjectType::TransportSquare => "TransportSquare",
+            CityObjectType::GenericCityObject => "GenericCityObject",
+        }
+    }
+}
+
 impl fmt::Display for CityObjectType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
+        f.write_str(self.as_str())
     }
 }
 
@@ -954,8 +1181,23 @@ type Solid = Vec<Shell>;
 #[derive(Deserialize, Debug)]
 #[serde(tag = "type")]
 pub enum Geometry {
-    MultiSurface { boundaries: MultiSurface },
-    Solid { boundaries: Solid },
+    MultiSurface {
+        lod: Option<String>,
+        boundaries: MultiSurface,
+    },
+    Solid {
+        lod: Option<String>,
+        boundaries: Solid,
+    },
+}
+
+impl Geometry {
+    pub fn lod(&self) -> Option<&str> {
+        match self {
+            Geometry::MultiSurface { lod, .. } => lod.as_deref(),
+            Geometry::Solid { lod, .. } => lod.as_deref(),
+        }
+    }
 }
 
 #[derive(Deserialize, Debug)]

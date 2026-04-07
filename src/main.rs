@@ -37,7 +37,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::formats::cesium3dtiles::{Tile, TileId};
 use clap::Parser;
-use log::{debug, log_enabled, warn, Level};
+use log::{debug, info, log_enabled, warn, Level};
 use rayon::prelude::*;
 #[cfg(feature = "geoflow")]
 use subprocess::{Exec, Redirection};
@@ -286,82 +286,97 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // --- end of argument parsing
 
-    // --- Begin preprocessing pipeline
-    let prep_dir = cli.output.join("_prep");
-    fs::create_dir_all(&prep_dir)?;
-
-    let (path_metadata, path_features) = match (&cli.buildings, &cli.trees) {
-        // Buildings (optionally with trees)
-        (Some(buildings_path), trees_opt) => {
-            let (meta_path, feat_dir, cityjsonl_meta) =
-                cityjsonl_source::process_cityjsonl(buildings_path, &prep_dir)?;
-
-            if let Some(trees_path) = trees_opt {
-                let src_epsg = cityjsonl_meta
-                    .reference_system
-                    .split('/')
-                    .last()
-                    .and_then(|s| s.parse::<u16>().ok())
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "Could not extract EPSG code from reference system: {}",
-                            cityjsonl_meta.reference_system
-                        )
-                    });
-
-                let tree_count = geoparquet_source::process_geoparquet(
-                    trees_path,
-                    &feat_dir,
-                    cityjsonl_meta.transform.clone(),
-                    src_epsg,
-                    "SolitaryVegetationObject",
-                    cli.tree_id_column.as_deref(),
-                )?;
-                debug!("Wrote {} tree features to {:?}", tree_count, &feat_dir);
-
-                let overlaps = geoparquet_source::check_overlap(&feat_dir, trees_path)?;
-                if overlaps > 0 {
-                    warn!(
-                        "{} tree(s) overlap building bounding boxes — check positioning",
-                        overlaps
-                    );
-                }
-            }
-
-            (meta_path, feat_dir)
-        }
-        // Trees only (no buildings)
-        (None, Some(trees_path)) => {
-            geoparquet_source::process_geoparquet_standalone(
-                trees_path,
-                &prep_dir,
-                "SolitaryVegetationObject",
-                cli.tree_id_column.as_deref(),
-            )?
-        }
-        // Unreachable: clap ArgGroup guarantees at least one
-        (None, None) => unreachable!("clap ArgGroup requires --buildings or --trees"),
-    };
-    // --- End preprocessing pipeline
-
-    // Populate the World with features
-    // Primitive types that implement Copy are efficiently copied into the function and
-    // and it is cleaner to avoid the indirection. However, heap-allocated container
-    // types are best passed by reference, because it is "expensive" to Clone them
-    // (they don't implement Copy). When we move a value, we explicitly transfer
-    // ownership of the value (eg cli.object_type).
+    // --- Begin preprocessing pipeline (in-memory) ---
     let world: parser::World = match debug_data.world {
         None => {
-            let mut world = parser::World::new(
-                &path_metadata,
-                &path_features,
-                grid_cellsize,
-                cli.object_type,
-                cli.grid_minz,
-                cli.grid_maxz,
-            )?;
-            world.index_with_grid(); // todo input: in general, build a line index
-            world
+            match (&cli.buildings, &cli.trees) {
+                // Buildings (optionally with trees)
+                (Some(buildings_path), trees_opt) => {
+                    // OOM check
+                    let file_size = fs::metadata(buildings_path)
+                        .map(|m| m.len())
+                        .unwrap_or(0);
+                    let estimated = file_size * 3;
+                    let available = parser::available_memory_bytes().unwrap_or(u64::MAX);
+                    if estimated > available * 7 / 10 {
+                        return Err(Box::from(format!(
+                            "Estimated memory needed: {:.1} GB (input file {:.1} MB \u{00d7} 3), \
+                             available: {:.1} GB. Allocate at least {:.0} GB RAM to this process.",
+                            estimated as f64 / 1e9,
+                            file_size as f64 / 1e6,
+                            available as f64 / 1e9,
+                            (estimated as f64 / 0.7 / 1e9).ceil()
+                        )));
+                    }
+
+                    // Load buildings into memory
+                    let (cityjsonl_meta, mut features) =
+                        cityjsonl_source::load_cityjsonl_to_memory(buildings_path)?;
+                    info!("Loaded {} building features into memory", features.len());
+
+                    // Load trees (if any) into memory
+                    if let Some(trees_path) = trees_opt {
+                        let src_epsg = cityjsonl_meta
+                            .reference_system
+                            .split('/')
+                            .last()
+                            .and_then(|s| s.parse::<u16>().ok())
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "Could not extract EPSG code from reference system: {}",
+                                    cityjsonl_meta.reference_system
+                                )
+                            });
+
+                        let tree_features = geoparquet_source::load_geoparquet_to_memory(
+                            trees_path,
+                            cityjsonl_meta.transform.clone(),
+                            src_epsg,
+                            "SolitaryVegetationObject",
+                            cli.tree_id_column.as_deref(),
+                        )?;
+                        info!("Loaded {} tree features into memory", tree_features.len());
+                        features.extend(tree_features);
+                    }
+
+                    // Build World from in-memory features
+                    let mut world = parser::World::from_features(
+                        cityjsonl_meta.transform,
+                        cityjsonl_meta.reference_system,
+                        features,
+                        grid_cellsize,
+                        cli.object_type,
+                        cli.grid_minz,
+                        cli.grid_maxz,
+                    )?;
+                    world.index_with_grid();
+                    world
+                }
+                // Trees only (no buildings) — use file-based path for standalone parquet
+                (None, Some(trees_path)) => {
+                    let prep_dir = cli.output.join("_prep");
+                    fs::create_dir_all(&prep_dir)?;
+                    let (path_metadata, path_features) =
+                        geoparquet_source::process_geoparquet_standalone(
+                            trees_path,
+                            &prep_dir,
+                            "SolitaryVegetationObject",
+                            cli.tree_id_column.as_deref(),
+                        )?;
+                    let mut world = parser::World::new(
+                        &path_metadata,
+                        &path_features,
+                        grid_cellsize,
+                        cli.object_type,
+                        cli.grid_minz,
+                        cli.grid_maxz,
+                    )?;
+                    world.index_with_grid();
+                    world
+                }
+                // Unreachable: clap ArgGroup guarantees at least one
+                (None, None) => unreachable!("clap ArgGroup requires --buildings or --trees"),
+            }
         }
         Some(world_path) => {
             debug!("Loading world from bincode {world_path:?}");
@@ -369,6 +384,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             bincode::deserialize_from(world_file)?
         }
     };
+    // --- End preprocessing pipeline ---
 
     debug!(
         "Computed grid statistics: {}",
@@ -526,6 +542,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let tiles_len = tiles.len();
         debug!("Starting to process {} tiles with native glTF generation...", tiles_len);
         let processed_count = AtomicUsize::new(0);
+        let lod_filter = cli.lod.as_deref();
         let tiles_failed_iter = tiles.into_par_iter().map(|(tile, tileid)| {
             let tileid_grid = &tile.id;
             let qtree_nodeid: spatial_structs::QuadTreeNodeId = tileid_grid.into();
@@ -548,7 +565,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if log_enabled!(Level::Debug) {
                 debug!("Writing native GLB for tile {} to {:?}", tile.id, output_file);
             }
-            match gltf_writer::write_tile_glb(&world, &quadtree, qtree_nodeid, &output_file, &material_config, cli.tiles_version) {
+            match gltf_writer::write_tile_glb(&world, &quadtree, qtree_nodeid, &output_file, &material_config, cli.tiles_version, lod_filter) {
                 Ok(_) => {
                     let count = processed_count.fetch_add(1, Ordering::Relaxed) + 1;
                     if count % 10 == 0 || count == tiles_len {

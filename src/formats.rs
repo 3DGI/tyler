@@ -385,16 +385,10 @@ pub mod cesium3dtiles {
                     });
                 }
 
-                // Calculate geometric error for leaf tile based on tile size
-                // Use a small fraction of the tile's diagonal as geometric error
-                // This ensures positive value while being appropriate for leaf tiles
-                let dx = tile_bbox[3] - tile_bbox[0];
-                let dy = tile_bbox[4] - tile_bbox[1];
-                let dz = tile_bbox[5] - tile_bbox[2];
-                let diagonal = (dx * dx + dy * dy + dz * dz).sqrt();
-                let leaf_geometric_error = diagonal * 0.001; // 0.1% of diagonal as minimum
-                // Ensure minimum value of 0.1 to avoid issues with very small tiles
-                let geometric_error = leaf_geometric_error.max(0.1);
+                // Leaf tiles have no children to refine into, so geometricError is 0
+                // per the 3D Tiles spec. This ensures the required monotonically
+                // decreasing hierarchy: tileset > root > internal nodes > leaves.
+                let geometric_error = 0.0;
 
                 // For 3D Tiles with geographic 3D bounding volumes, GLB content uses input CRS (local coordinate system)
                 // This matches pg2b3dm 2.0.0+ approach - coordinates are in input CRS, not geographic 3D
@@ -457,13 +451,8 @@ pub mod cesium3dtiles {
                 // its side on the x-axis.
                 let dz = cell_bbox[5] - cell_bbox[2];
 
-                // LoD2.2 - leaf node with minimum geometric error
-                // Calculate geometric error for leaf tile based on tile size
-                let dx = cell_bbox[3] - cell_bbox[0];
-                let dy = cell_bbox[4] - cell_bbox[1];
-                let diagonal = (dx * dx + dy * dy + dz * dz).sqrt();
-                let leaf_geometric_error = diagonal * 0.001; // 0.1% of diagonal as minimum
-                let geometric_error_lod22 = leaf_geometric_error.max(0.1); // Ensure minimum value
+                // LoD2.2 - leaf node with geometricError 0 (no children to refine into)
+                let geometric_error_lod22 = 0.0;
                 
                 // For 3D Tiles with geographic 3D bounding volumes, GLB content uses input CRS (local coordinate system)
                 // This matches pg2b3dm 2.0.0+ approach - coordinates are in input CRS, not geographic 3D
@@ -1808,7 +1797,7 @@ pub mod cesium3dtiles {
             quadtree.export(&world, None).unwrap();
 
             let _tileset =
-                Tileset::from_quadtree(&quadtree, &world, 16_f64, 200, None, None, true, true);
+                Tileset::from_quadtree(&quadtree, &world, 16_f64, 200, None, None, true, true, TilesVersion::V1_1);
 
             // tileset.make_implicit(&world.grid, &quadtree, );
 
@@ -1893,6 +1882,7 @@ pub mod cesium3dtiles {
                 extensions_required: Some(vec![ExtensionName::ContentGltf]),
                 extensions: Some(extensions),
                 root: Default::default(),
+                tiles_version: TilesVersion::V1_1,
             };
             println!("{}", to_string_pretty(&t).unwrap());
         }
@@ -1918,6 +1908,7 @@ pub mod cesium3dtiles {
                 extensions_required: Some(vec![ExtensionName::ContentGltf]),
                 extensions: Some(extensions),
                 root: Default::default(),
+                tiles_version: TilesVersion::V1_1,
             };
             println!("{}", to_string_pretty(&t).unwrap());
         }

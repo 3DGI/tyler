@@ -84,6 +84,7 @@ impl TransformAligner {
     }
 
     /// Get a reference to the destination transform.
+    #[allow(dead_code)]
     pub fn ref_transform(&self) -> &Transform {
         &self.ref_transform
     }

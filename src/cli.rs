@@ -69,6 +69,11 @@ pub struct Cli {
     /// You can specify it multiple times. If not set, all types are accepted.
     #[arg(long, value_enum, display_order = 5)]
     pub object_type: Option<Vec<crate::parser::CityObjectType>>,
+    /// Filter CityJSON geometries to a single Level of Detail (e.g. "1.2", "2.2").
+    /// When set, only geometries whose "lod" field matches this value are included
+    /// in the GLB output. If not set, all geometries are included.
+    #[arg(long, display_order = 6)]
+    pub lod: Option<String>,
     /// The metadata class to assign to the property table when the output is
     /// 3D Tiles (https://github.com/CesiumGS/glTF/tree/3d-tiles-next/extensions/2.0/Vendor/EXT_structural_metadata#class).
     #[arg(long = "3dtiles-metadata-class", display_order = 10)]

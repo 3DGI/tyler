@@ -50,6 +50,7 @@ pub fn write_tile_glb<P: AsRef<Path>>(
     output_path: P,
     material_config: &MaterialConfig,
     tiles_version: TilesVersion,
+    lod_filter: Option<&str>,
 ) -> Result<()> {
     let qtree_node = quadtree
         .node(&qtree_node_id)
@@ -121,10 +122,17 @@ pub fn write_tile_glb<P: AsRef<Path>>(
             if !seen_fids.insert(*fid) {
                 continue; // already added this feature to this tile
             }
-            let feature = &world.features[*fid];
-            let cf = CityJSONFeatureVertices::from_file(&feature.path_jsonl)
-                .map_err(|e| anyhow::anyhow!("Failed to read {:?}: {}", feature.path_jsonl, e))?;
-            builder.add_feature(&cf, &world.transform, &material_config.color_map)?;
+            // Borrow from in-memory data if available, otherwise read from file
+            let cf_owned;
+            let cf_ref = if let Some(cf) = world.feature_data.get(*fid).and_then(|o| o.as_ref()) {
+                cf
+            } else {
+                let feature = &world.features[*fid];
+                cf_owned = CityJSONFeatureVertices::from_file(&feature.path_jsonl)
+                    .map_err(|e| anyhow::anyhow!("Failed to read {:?}: {}", feature.path_jsonl, e))?;
+                &cf_owned
+            };
+            builder.add_feature(cf_ref, &world.transform, &material_config.color_map, lod_filter)?;
         }
     }
 
@@ -181,6 +189,7 @@ impl MeshBuilder {
         feature: &CityJSONFeatureVertices,
         transform: &Transform,
         color_map: &HashMap<CityObjectType, [f32; 4]>,
+        lod_filter: Option<&str>,
     ) -> Result<()> {
         let building_id = feature
             .id
@@ -218,21 +227,40 @@ impl MeshBuilder {
             })
             .unwrap_or_else(|| feature.cityobjects.values().next().unwrap());
         self.batch_id_to_cityobject_type
-            .push(format!("{:?}", primary_type.cotype));
+            .push(primary_type.cotype.as_str().to_string());
 
         let default_color = [1.0_f32, 0.753, 0.796, 1.0]; // #FFC0CB pink
         let mut vertex_cache: HashMap<usize, u32> = HashMap::new();
+        let lod_filter_owned: Option<String> = lod_filter.map(|s| s.to_string());
         for (_, co) in feature.cityobjects.iter() {
             let color = color_map.get(&co.cotype).copied().unwrap_or(default_color);
             if let Some(geoms) = &co.geometry {
+                // Determine which LoD to use for this CityObject:
+                // - If --lod is set, use only that LoD (hoisted above the loop)
+                // - Otherwise, use the highest LoD available per CityObject
+                let effective_lod: Option<&str> = if lod_filter_owned.is_some() {
+                    lod_filter_owned.as_deref()
+                } else {
+                    geoms.iter()
+                        .filter_map(|g| g.lod())
+                        .max_by(|a, b| a.parse::<f64>().unwrap_or(0.0)
+                            .partial_cmp(&b.parse::<f64>().unwrap_or(0.0))
+                            .unwrap_or(std::cmp::Ordering::Equal))
+                };
                 for geometry in geoms {
+                    // Skip geometries that do not match the target LoD
+                    if let Some(target) = effective_lod {
+                        if geometry.lod() != Some(target) {
+                            continue;
+                        }
+                    }
                     match geometry {
-                        Geometry::MultiSurface { boundaries } => {
+                        Geometry::MultiSurface { boundaries, .. } => {
                             for surface in boundaries {
                                 self.add_surface(surface, &feature.vertices, transform, &mut vertex_cache, batch_index, color)?;
                             }
                         }
-                        Geometry::Solid { boundaries } => {
+                        Geometry::Solid { boundaries, .. } => {
                             for shell in boundaries {
                                 for surface in shell {
                                     self.add_surface(surface, &feature.vertices, transform, &mut vertex_cache, batch_index, color)?;
@@ -264,9 +292,10 @@ impl MeshBuilder {
             return Ok(());
         }
 
-        let mut local_positions: Vec<[f32; 3]> = Vec::new();
-        let mut glb_indices: Vec<u32> = Vec::new();
-        let mut hole_indices: Vec<usize> = Vec::new();
+        let total_verts: usize = surface.iter().map(|r| r.len()).sum();
+        let mut local_positions: Vec<[f32; 3]> = Vec::with_capacity(total_verts);
+        let mut glb_indices: Vec<u32> = Vec::with_capacity(total_verts);
+        let mut hole_indices: Vec<usize> = Vec::with_capacity(surface.len().saturating_sub(1));
         let mut vertex_count = 0usize;
 
         for (ring_idx, ring) in surface.iter().enumerate() {
@@ -278,8 +307,18 @@ impl MeshBuilder {
             }
 
             for &vertex_id in ring {
-                let position = self.compute_local_position(vertex_id, vertices_qc, transform)?;
-                let glb_index = self.vertex_index(vertex_id, position, cache, batch_index, color);
+                let (position, glb_index) = if let Some(&existing) = cache.get(&vertex_id) {
+                    (self.positions[existing as usize], existing)
+                } else {
+                    let pos = self.compute_local_position(vertex_id, vertices_qc, transform)?;
+                    self.positions.push(pos);
+                    self.normals.push([0.0, 0.0, 0.0]);
+                    self.colors.push(color);
+                    self.batch_ids.push(batch_index);
+                    let idx = (self.positions.len() - 1) as u32;
+                    cache.insert(vertex_id, idx);
+                    (pos, idx)
+                };
                 local_positions.push(position);
                 glb_indices.push(glb_index);
                 vertex_count += 1;
@@ -366,26 +405,6 @@ impl MeshBuilder {
 
         self.emit_triangles(face_indices);
         Ok(())
-    }
-
-    fn vertex_index(
-        &mut self,
-        idx: usize,
-        position: [f32; 3],
-        cache: &mut HashMap<usize, u32>,
-        batch_index: u32,
-        color: [f32; 4],
-    ) -> u32 {
-        if let Some(&existing) = cache.get(&idx) {
-            return existing;
-        }
-        self.positions.push(position);
-        self.normals.push([0.0, 0.0, 0.0]);
-        self.colors.push(color);
-        self.batch_ids.push(batch_index);
-        let index = (self.positions.len() - 1) as u32;
-        cache.insert(idx, index);
-        index
     }
 
     fn emit_triangles(&mut self, face_indices: Vec<u32>) {
