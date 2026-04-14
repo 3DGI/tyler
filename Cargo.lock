@@ -584,7 +584,7 @@ dependencies = [
 
 [[package]]
 name = "cityarrow"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "arrow",
  "arrow-buffer",
@@ -603,24 +603,25 @@ dependencies = [
 
 [[package]]
 name = "cityjson"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "num 0.4.3",
 ]
 
 [[package]]
 name = "cityparquet"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "arrow",
  "cityarrow",
- "parquet",
+ "cityjson",
+ "memmap2",
  "serde_json",
 ]
 
 [[package]]
 name = "cjindex"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "cjlib",
  "cjlib-ffi-core",
@@ -641,7 +642,7 @@ dependencies = [
 
 [[package]]
 name = "cjlib"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "cityarrow",
  "cityjson",
@@ -2703,7 +2704,7 @@ dependencies = [
 
 [[package]]
 name = "serde_cityjson"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "ahash",
  "cityjson",
