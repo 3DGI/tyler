@@ -86,11 +86,11 @@ fn prepare_input(
     cli: &crate::cli::Cli,
     output_dir: &Path,
 ) -> Result<PreparedInput, Box<dyn std::error::Error>> {
-    match cjindex::resolve_dataset(&cli.input, None) {
+    match cityjson_index::resolve_dataset(&cli.input, None) {
         Ok(resolved) => {
             let inspection = resolved.inspect()?;
             let mut city_index =
-                cjindex::CityIndex::open(resolved.storage_layout(), &resolved.index_path)?;
+                cityjson_index::CityIndex::open(resolved.storage_layout(), &resolved.index_path)?;
             if !inspection.index.exists || inspection.index.fresh != Some(true) {
                 info!(
                     "Rebuilding cjindex sidecar at {}",
@@ -130,7 +130,7 @@ fn prepare_input(
 }
 
 fn derive_base_document(
-    city_index: &cjindex::CityIndex,
+    city_index: &cityjson_index::CityIndex,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let metadata = city_index.metadata()?;
     let Some(base_document) = metadata.first() else {
@@ -220,7 +220,7 @@ fn write_inputs(
                 let model = city_index.get(feature_id)?.ok_or_else(|| {
                     format!("feature {feature_id} could not be resolved from cjindex")
                 })?;
-                cjlib::json::to_feature_writer(&mut feature_output, &model)?;
+                cityjson_lib::json::to_feature_writer(&mut feature_output, &model)?;
                 feature_output.write_all(b"\n")?;
             }
         }
@@ -1166,9 +1166,9 @@ mod tests {
         fs::write(&ndjson_source, format!("{metadata}\n{feature}\n")).expect("write ndjson source");
 
         let resolved =
-            cjindex::resolve_dataset(&dataset_dir, None).expect("resolve ndjson dataset");
+            cityjson_index::resolve_dataset(&dataset_dir, None).expect("resolve ndjson dataset");
         let mut city_index =
-            cjindex::CityIndex::open(resolved.storage_layout(), &resolved.index_path)
+            cityjson_index::CityIndex::open(resolved.storage_layout(), &resolved.index_path)
                 .expect("open index");
         city_index.reindex().expect("reindex ndjson dataset");
         let indexed_bounds = city_index
@@ -1220,9 +1220,9 @@ mod tests {
         fs::write(&ndjson_source, format!("{metadata}\n{feature}\n")).expect("write ndjson source");
 
         let resolved =
-            cjindex::resolve_dataset(&dataset_dir, None).expect("resolve ndjson dataset");
+            cityjson_index::resolve_dataset(&dataset_dir, None).expect("resolve ndjson dataset");
         let mut city_index =
-            cjindex::CityIndex::open(resolved.storage_layout(), &resolved.index_path)
+            cityjson_index::CityIndex::open(resolved.storage_layout(), &resolved.index_path)
                 .expect("open index");
         city_index.reindex().expect("reindex ndjson dataset");
         let feature_base_document = derive_base_document(&city_index).expect("derive base doc");
@@ -1273,9 +1273,9 @@ mod tests {
         .expect("write cityjson source");
 
         let resolved =
-            cjindex::resolve_dataset(&dataset_dir, None).expect("resolve cityjson dataset");
+            cityjson_index::resolve_dataset(&dataset_dir, None).expect("resolve cityjson dataset");
         let mut city_index =
-            cjindex::CityIndex::open(resolved.storage_layout(), &resolved.index_path)
+            cityjson_index::CityIndex::open(resolved.storage_layout(), &resolved.index_path)
                 .expect("open index");
         city_index.reindex().expect("reindex cityjson dataset");
         let feature_base_document = derive_base_document(&city_index).expect("derive base doc");

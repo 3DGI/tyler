@@ -19,8 +19,8 @@ name = "tyler"
 path = "src/main.rs"
 
 [dependencies]
-cjlib = { path = "../cjlib" }
-cjindex = { path = "../cjindex" }
+cityjson-lib = { path = "../cityjson-lib" }
+cityjson-index = { path = "../cityjson-index" }
 log = "0.4.17"
 env_logger = "0.10.0"
 clap = { version = "4.0.32", features = ["cargo", "derive"] }
