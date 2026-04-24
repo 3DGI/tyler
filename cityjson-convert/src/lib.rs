@@ -39,6 +39,15 @@ pub enum GeometryPlacement {
 }
 
 #[derive(Clone, Debug)]
+pub struct GeographicClipRegion {
+    pub source_crs: String,
+    pub west: f64,
+    pub south: f64,
+    pub east: f64,
+    pub north: f64,
+}
+
+#[derive(Clone, Debug)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct ExportOptions {
     pub native_glb_color: String,
@@ -46,6 +55,7 @@ pub struct ExportOptions {
     pub feature_type_colors: BTreeMap<String, String>,
     pub geometry_placement: GeometryPlacement,
     pub clip_bbox: Option<[f64; 6]>,
+    pub clip_geographic_region: Option<GeographicClipRegion>,
     pub smooth_normals: bool,
     pub quantize_geometry: bool,
     pub meshopt_compression: bool,
@@ -59,6 +69,7 @@ impl Default for ExportOptions {
             feature_type_colors: BTreeMap::new(),
             geometry_placement: GeometryPlacement::default(),
             clip_bbox: None,
+            clip_geographic_region: None,
             smooth_normals: false,
             quantize_geometry: true,
             meshopt_compression: true,

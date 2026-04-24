@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
-use cityjson_convert::{convert_to_glb, ExportOptions, GeometryPlacement};
+use cityjson_convert::{convert_to_glb, ExportOptions, GeographicClipRegion, GeometryPlacement};
 use cityjson_lib::json;
 use serde_json::Value;
 
@@ -83,6 +83,25 @@ fn read_f32_vec3_accessor(root: &Value, bin: &[u8], accessor_index: usize) -> Ve
 fn normalize(vector: [f32; 3]) -> [f32; 3] {
     let length = (vector[0] * vector[0] + vector[1] * vector[1] + vector[2] * vector[2]).sqrt();
     [vector[0] / length, vector[1] / length, vector[2] / length]
+}
+
+fn ecef_from_lon_lat(lon_degrees: f64, lat_degrees: f64) -> [f64; 3] {
+    let radius = 6_378_137.0_f64;
+    let lon = lon_degrees.to_radians();
+    let lat = lat_degrees.to_radians();
+    [
+        radius * lat.cos() * lon.cos(),
+        radius * lat.cos() * lon.sin(),
+        radius * lat.sin(),
+    ]
+}
+
+fn lon_lat_from_ecef(position: [f64; 3]) -> [f64; 2] {
+    let horizontal = position[0].hypot(position[1]);
+    [
+        position[1].atan2(position[0]).to_degrees(),
+        position[2].atan2(horizontal).to_degrees(),
+    ]
 }
 
 #[allow(clippy::uninlined_format_args)]
@@ -701,6 +720,162 @@ fn convert_to_glb_can_clip_to_bbox_with_preclip_smooth_normals() {
     ]);
 
     assert_vec3_approx_eq(normals[clipped_boundary_index], expected_boundary_normal);
+}
+
+#[test]
+fn convert_to_glb_can_clip_to_geographic_region() {
+    let model = json::from_slice(
+        br#"{
+            "type":"CityJSON",
+            "version":"2.0",
+            "CityObjects":{
+                "surface-1":{
+                    "type":"BuildingPart",
+                    "geometry":[
+                        {
+                            "type":"MultiSurface",
+                            "lod":"2.2",
+                            "boundaries":[
+                                [[0,1,2]],
+                                [[1,3,2]]
+                            ]
+                        }
+                    ]
+                }
+            },
+            "vertices":[
+                [0.0,0.0,0.0],
+                [2.0,0.0,0.0],
+                [0.0,2.0,0.0],
+                [2.0,2.0,0.0]
+            ]
+        }"#,
+    )
+    .expect("inline CityJSON fixture should parse");
+    let output_path = stable_output_path("clipped-geographic-region");
+    let options = ExportOptions {
+        clip_geographic_region: Some(GeographicClipRegion {
+            source_crs: "EPSG:4979".to_string(),
+            west: 0.0,
+            south: 0.0,
+            east: 1.0,
+            north: 1.0,
+        }),
+        quantize_geometry: false,
+        meshopt_compression: false,
+        ..ExportOptions::default()
+    };
+
+    convert_to_glb(&model, &output_path, &options)
+        .expect("geographically clipped GLB conversion should succeed");
+
+    let glb_bytes = fs::read(&output_path).expect("clipped test GLB should exist");
+    let root = read_glb_json(&glb_bytes);
+    let bin = read_glb_bin(&glb_bytes);
+    let positions = read_f32_vec3_accessor(&root, bin, 0);
+    let node_matrix = root["nodes"][0]["matrix"]
+        .as_array()
+        .expect("root node should carry the local-to-world transform");
+    let center = node_matrix_local_translation(node_matrix);
+    let mut touches_east = false;
+    let mut touches_north = false;
+
+    for position in &positions {
+        let world_x = position[0] + center[0];
+        let world_y = position[1] + center[1];
+        assert!((0.0..=1.0).contains(&world_x), "x outside clip: {world_x}");
+        assert!((0.0..=1.0).contains(&world_y), "y outside clip: {world_y}");
+        touches_east |= (world_x - 1.0).abs() < 1.0e-6;
+        touches_north |= (world_y - 1.0).abs() < 1.0e-6;
+    }
+
+    assert!(
+        touches_east,
+        "clipped mesh should include the east boundary"
+    );
+    assert!(
+        touches_north,
+        "clipped mesh should include the north boundary"
+    );
+}
+
+#[test]
+fn convert_to_glb_solves_geographic_clip_intersections_in_source_space() {
+    let [a_x, a_y, a_z] = ecef_from_lon_lat(0.0, 0.0);
+    let [b_x, b_y, b_z] = ecef_from_lon_lat(10.0, 0.0);
+    let [c_x, c_y, c_z] = ecef_from_lon_lat(0.0, 1.0);
+    let model = json::from_slice(
+        format!(
+            r#"{{
+            "type":"CityJSON",
+            "version":"2.0",
+            "CityObjects":{{
+                "surface-1":{{
+                    "type":"TINRelief",
+                    "geometry":[
+                        {{
+                            "type":"MultiSurface",
+                            "lod":"1.0",
+                            "boundaries":[
+                                [[0,1,2]]
+                            ]
+                        }}
+                    ]
+                }}
+            }},
+            "vertices":[
+                [{a_x},{a_y},{a_z}],
+                [{b_x},{b_y},{b_z}],
+                [{c_x},{c_y},{c_z}]
+            ]
+        }}"#
+        )
+        .as_bytes(),
+    )
+    .expect("inline ECEF CityJSON fixture should parse");
+    let output_path = stable_output_path("clipped-geographic-ecef");
+    let options = ExportOptions {
+        clip_geographic_region: Some(GeographicClipRegion {
+            source_crs: "EPSG:4978".to_string(),
+            west: -1.0,
+            south: -1.0,
+            east: 2.0,
+            north: 2.0,
+        }),
+        quantize_geometry: false,
+        meshopt_compression: false,
+        ..ExportOptions::default()
+    };
+
+    convert_to_glb(&model, &output_path, &options)
+        .expect("geographically clipped ECEF GLB conversion should succeed");
+
+    let glb_bytes = fs::read(&output_path).expect("clipped test GLB should exist");
+    let root = read_glb_json(&glb_bytes);
+    let bin = read_glb_bin(&glb_bytes);
+    let positions = read_f32_vec3_accessor(&root, bin, 0);
+    let node_matrix = root["nodes"][0]["matrix"]
+        .as_array()
+        .expect("root node should carry the local-to-world transform");
+    let center = node_matrix_local_translation(node_matrix);
+    let mut touches_east = false;
+
+    for position in &positions {
+        let source_position = [
+            f64::from(position[0] + center[0]),
+            f64::from(position[1] + center[1]),
+            f64::from(position[2] + center[2]),
+        ];
+        let [lon, lat] = lon_lat_from_ecef(source_position);
+        assert!(lon <= 2.0001, "longitude outside clip: {lon}");
+        assert!(lat <= 2.0001, "latitude outside clip: {lat}");
+        touches_east |= (lon - 2.0).abs() < 0.0001;
+    }
+
+    assert!(
+        touches_east,
+        "clipped mesh should include a source-space intersection on the east boundary"
+    );
 }
 
 #[test]

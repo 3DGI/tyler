@@ -7,7 +7,7 @@ use std::io::Write;
 use std::path::Path;
 
 use crate::proj::Proj;
-use crate::{ExportOptions, GeometryPlacement};
+use crate::{ExportOptions, GeographicClipRegion, GeometryPlacement};
 use anyhow::{bail, Context, Result};
 use cityjson_lib::cityjson::v2_0::{AttributeValue, CityObject, GeometryType, VertexIndex};
 use cityjson_lib::CityModel;
@@ -29,6 +29,8 @@ const MESH_FEATURES_EXTENSION: &str = "EXT_mesh_features";
 const STRUCTURAL_METADATA_EXTENSION: &str = "EXT_structural_metadata";
 const QUANTIZED_POSITION_STRIDE: usize = std::mem::size_of::<QuantizedPosition>();
 const QUANTIZED_NORMAL_STRIDE: usize = std::mem::size_of::<QuantizedNormal>();
+const CLIP_PLANE_EPSILON: f64 = 1.0e-12;
+const GEOGRAPHIC_CLIP_INTERSECTION_ITERATIONS: usize = 64;
 
 /// Parse hex color string (#RRGGBB) to RGBA f32 array [R, G, B, A]
 fn hex_to_rgba(hex: &str) -> Result<[f32; 4], anyhow::Error> {
@@ -91,11 +93,9 @@ pub fn write_city_model_glb<P: AsRef<Path>>(
     options: &ExportOptions,
 ) -> Result<()> {
     let coordinate_transform = CoordinateTransform::from_model(model, options)?;
-    let mut collector = MeshCollector::new(
-        coordinate_transform,
-        options.smooth_normals,
-        options.clip_bbox,
-    );
+    let clip_volume = ClipVolume::from_options(options)?;
+    let mut collector =
+        MeshCollector::new(coordinate_transform, options.smooth_normals, clip_volume);
     collector.add_model(model)?;
     let processed = collector.finish()?;
     info!(
@@ -313,7 +313,21 @@ struct SourceTriangle {
 #[derive(Clone, Copy, Debug)]
 struct ClipVertex {
     source_position: [f64; 3],
+    clip_position: [f64; 3],
     barycentric: [f32; 3],
+}
+
+struct GeographicClipVolume {
+    transformer: Option<Proj>,
+    west: f64,
+    south: f64,
+    east: f64,
+    north: f64,
+}
+
+enum ClipVolume {
+    SourceBbox([f64; 6]),
+    GeographicRegion(GeographicClipVolume),
 }
 
 #[derive(Default)]
@@ -347,7 +361,7 @@ struct MeshCollector {
     primitives: BTreeMap<String, RawPrimitiveMesh>,
     coordinate_transform: CoordinateTransform,
     smooth_normals: bool,
-    clip_bbox: Option<[f64; 6]>,
+    clip_volume: Option<ClipVolume>,
 }
 
 struct CoordinateTransform {
@@ -587,6 +601,170 @@ impl CoordinateTransform {
     }
 }
 
+impl ClipVolume {
+    fn from_options(options: &ExportOptions) -> Result<Option<Self>> {
+        if let Some(region) = &options.clip_geographic_region {
+            return Self::geographic_region(region).map(Some);
+        }
+
+        Ok(options.clip_bbox.map(Self::SourceBbox))
+    }
+
+    fn geographic_region(region: &GeographicClipRegion) -> Result<Self> {
+        let source_crs = canonical_epsg_crs(&region.source_crs)?;
+        let transformer = (source_crs != "EPSG:4979")
+            .then(|| Proj::new_known_crs(&source_crs, "EPSG:4979", None))
+            .transpose()
+            .context("failed to create source CRS to EPSG:4979 clip transform")?;
+        Ok(Self::GeographicRegion(GeographicClipVolume {
+            transformer,
+            west: region.west,
+            south: region.south,
+            east: region.east,
+            north: region.north,
+        }))
+    }
+
+    fn clip_position(&self, source_position: [f64; 3]) -> Result<[f64; 3]> {
+        match self {
+            Self::SourceBbox(_) => Ok(source_position),
+            Self::GeographicRegion(region) => {
+                let [x, y, z] = source_position;
+                let geographic = if let Some(transformer) = &region.transformer {
+                    transformer
+                        .convert((x, y, z))
+                        .context("failed to project position to EPSG:4979 for clipping")?
+                } else {
+                    (x, y, z)
+                };
+                Ok([geographic.0, geographic.1, geographic.2])
+            }
+        }
+    }
+
+    fn planes(&self) -> ([(usize, f64, bool); 6], usize) {
+        match self {
+            Self::SourceBbox(bbox) => (
+                [
+                    (0, bbox[0], false),
+                    (0, bbox[3], true),
+                    (1, bbox[1], false),
+                    (1, bbox[4], true),
+                    (2, bbox[2], false),
+                    (2, bbox[5], true),
+                ],
+                6,
+            ),
+            Self::GeographicRegion(region) => (
+                [
+                    (0, region.west, false),
+                    (0, region.east, true),
+                    (1, region.south, false),
+                    (1, region.north, true),
+                    (0, 0.0, true),
+                    (0, 0.0, true),
+                ],
+                4,
+            ),
+        }
+    }
+
+    fn intersect_edge(
+        &self,
+        start: ClipVertex,
+        end: ClipVertex,
+        axis: usize,
+        boundary: f64,
+    ) -> Result<Option<ClipVertex>> {
+        match self {
+            Self::SourceBbox(_) => self.intersect_edge_linear(start, end, axis, boundary),
+            Self::GeographicRegion(_) => self.intersect_edge_geographic(start, end, axis, boundary),
+        }
+    }
+
+    fn intersect_edge_linear(
+        &self,
+        start: ClipVertex,
+        end: ClipVertex,
+        axis: usize,
+        boundary: f64,
+    ) -> Result<Option<ClipVertex>> {
+        let delta = end.clip_position[axis] - start.clip_position[axis];
+        if delta.abs() <= CLIP_PLANE_EPSILON {
+            return Ok(None);
+        }
+        let t = (boundary - start.clip_position[axis]) / delta;
+        self.interpolate_clip_vertex(start, end, t).map(Some)
+    }
+
+    fn intersect_edge_geographic(
+        &self,
+        start: ClipVertex,
+        end: ClipVertex,
+        axis: usize,
+        boundary: f64,
+    ) -> Result<Option<ClipVertex>> {
+        let mut low_t = 0.0;
+        let mut high_t = 1.0;
+        let mut low_distance = start.clip_position[axis] - boundary;
+        let high_distance = end.clip_position[axis] - boundary;
+
+        if low_distance.abs() <= CLIP_PLANE_EPSILON {
+            return Ok(Some(start));
+        }
+        if high_distance.abs() <= CLIP_PLANE_EPSILON {
+            return Ok(Some(end));
+        }
+        if low_distance.signum() == high_distance.signum() {
+            bail!(
+                "geographic clip edge does not bracket boundary on axis {axis}: {low_distance} to {high_distance}"
+            );
+        }
+
+        for _ in 0..GEOGRAPHIC_CLIP_INTERSECTION_ITERATIONS {
+            let mid_t = f64::midpoint(low_t, high_t);
+            let midpoint = self.interpolate_clip_vertex(start, end, mid_t)?;
+            let mid_distance = midpoint.clip_position[axis] - boundary;
+            if mid_distance.abs() <= CLIP_PLANE_EPSILON || (high_t - low_t).abs() <= f64::EPSILON {
+                return Ok(Some(midpoint));
+            }
+            if low_distance.signum() == mid_distance.signum() {
+                low_t = mid_t;
+                low_distance = mid_distance;
+            } else {
+                high_t = mid_t;
+            }
+        }
+
+        let t = f64::midpoint(low_t, high_t);
+        self.interpolate_clip_vertex(start, end, t).map(Some)
+    }
+
+    #[allow(clippy::cast_possible_truncation)]
+    fn interpolate_clip_vertex(
+        &self,
+        start: ClipVertex,
+        end: ClipVertex,
+        t: f64,
+    ) -> Result<ClipVertex> {
+        let tf32 = t as f32;
+        let source_position = [
+            start.source_position[0] + (end.source_position[0] - start.source_position[0]) * t,
+            start.source_position[1] + (end.source_position[1] - start.source_position[1]) * t,
+            start.source_position[2] + (end.source_position[2] - start.source_position[2]) * t,
+        ];
+        Ok(ClipVertex {
+            source_position,
+            clip_position: self.clip_position(source_position)?,
+            barycentric: [
+                start.barycentric[0] + (end.barycentric[0] - start.barycentric[0]) * tf32,
+                start.barycentric[1] + (end.barycentric[1] - start.barycentric[1]) * tf32,
+                start.barycentric[2] + (end.barycentric[2] - start.barycentric[2]) * tf32,
+            ],
+        })
+    }
+}
+
 fn canonical_epsg_crs(value: &str) -> Result<String> {
     if let Some(code) = value.strip_prefix("EPSG:") {
         let parsed = code.parse::<u32>().context("invalid EPSG code")?;
@@ -643,14 +821,14 @@ impl MeshCollector {
     fn new(
         coordinate_transform: CoordinateTransform,
         smooth_normals: bool,
-        clip_bbox: Option<[f64; 6]>,
+        clip_volume: Option<ClipVolume>,
     ) -> Self {
         Self {
             features: Vec::new(),
             primitives: BTreeMap::new(),
             coordinate_transform,
             smooth_normals,
-            clip_bbox,
+            clip_volume,
         }
     }
 
@@ -987,27 +1165,30 @@ impl RawPrimitiveMesh {
         &self,
         coordinate_transform: &CoordinateTransform,
         smooth_normals: bool,
-        clip_bbox: Option<[f64; 6]>,
+        clip_volume: Option<&ClipVolume>,
     ) -> Result<BuiltPrimitiveMesh> {
         let mut built = BuiltPrimitiveMesh::default();
         let source_vertex_normals = smooth_normals.then(|| self.normalized_source_vertex_normals());
         let mut vertex_map = HashMap::new();
 
         for triangle in &self.triangles {
-            let clipped_triangles = if let Some(bbox) = clip_bbox {
-                Self::clip_triangle_to_bbox(triangle.source_positions, bbox)
+            let clipped_triangles = if let Some(clip_volume) = clip_volume {
+                Self::clip_triangle_to_volume(triangle.source_positions, clip_volume)?
             } else {
                 vec![[
                     ClipVertex {
                         source_position: triangle.source_positions[0],
+                        clip_position: triangle.source_positions[0],
                         barycentric: [1.0, 0.0, 0.0],
                     },
                     ClipVertex {
                         source_position: triangle.source_positions[1],
+                        clip_position: triangle.source_positions[1],
                         barycentric: [0.0, 1.0, 0.0],
                     },
                     ClipVertex {
                         source_position: triangle.source_positions[2],
+                        clip_position: triangle.source_positions[2],
                         barycentric: [0.0, 0.0, 1.0],
                     },
                 ]]
@@ -1023,7 +1204,7 @@ impl RawPrimitiveMesh {
 
                 for corner in 0..3 {
                     let clipped_corner = clipped_triangle[corner];
-                    positions[corner] = if clip_bbox.is_some() {
+                    positions[corner] = if clip_volume.is_some() {
                         coordinate_transform.transform_position(clipped_corner.source_position)?
                     } else {
                         triangle.local_positions[corner]
@@ -1084,33 +1265,34 @@ impl RawPrimitiveMesh {
             .collect()
     }
 
-    fn clip_triangle_to_bbox(triangle: [[f64; 3]; 3], bbox: [f64; 6]) -> Vec<[ClipVertex; 3]> {
+    fn clip_triangle_to_volume(
+        triangle: [[f64; 3]; 3],
+        clip_volume: &ClipVolume,
+    ) -> Result<Vec<[ClipVertex; 3]>> {
         let mut polygon = vec![
             ClipVertex {
                 source_position: triangle[0],
+                clip_position: clip_volume.clip_position(triangle[0])?,
                 barycentric: [1.0, 0.0, 0.0],
             },
             ClipVertex {
                 source_position: triangle[1],
+                clip_position: clip_volume.clip_position(triangle[1])?,
                 barycentric: [0.0, 1.0, 0.0],
             },
             ClipVertex {
                 source_position: triangle[2],
+                clip_position: clip_volume.clip_position(triangle[2])?,
                 barycentric: [0.0, 0.0, 1.0],
             },
         ];
 
-        for (axis, boundary, keep_less_equal) in [
-            (0, bbox[0], false),
-            (0, bbox[3], true),
-            (1, bbox[1], false),
-            (1, bbox[4], true),
-            (2, bbox[2], false),
-            (2, bbox[5], true),
-        ] {
-            polygon = clip_polygon_against_plane(polygon, axis, boundary, keep_less_equal);
+        let (planes, plane_count) = clip_volume.planes();
+        for (axis, boundary, keep_less_equal) in planes.into_iter().take(plane_count) {
+            polygon =
+                clip_polygon_against_plane(polygon, clip_volume, axis, boundary, keep_less_equal)?;
             if polygon.len() < 3 {
-                return Vec::new();
+                return Ok(Vec::new());
             }
         }
 
@@ -1124,7 +1306,7 @@ impl RawPrimitiveMesh {
             triangles.push(clipped_triangle);
         }
 
-        triangles
+        Ok(triangles)
     }
 }
 
@@ -1215,31 +1397,31 @@ fn normalize_vector(vector: [f32; 3]) -> [f32; 3] {
 
 fn clip_polygon_against_plane(
     polygon: Vec<ClipVertex>,
+    clip_volume: &ClipVolume,
     axis: usize,
     boundary: f64,
     keep_less_equal: bool,
-) -> Vec<ClipVertex> {
+) -> Result<Vec<ClipVertex>> {
     if polygon.is_empty() {
-        return polygon;
+        return Ok(polygon);
     }
 
     let mut clipped = Vec::new();
-    let epsilon = 1.0e-9_f64;
 
     for index in 0..polygon.len() {
         let current = polygon[index];
         let next = polygon[(index + 1) % polygon.len()];
-        let current_distance = current.source_position[axis] - boundary;
-        let next_distance = next.source_position[axis] - boundary;
+        let current_distance = current.clip_position[axis] - boundary;
+        let next_distance = next.clip_position[axis] - boundary;
         let current_inside = if keep_less_equal {
-            current_distance <= epsilon
+            current_distance <= CLIP_PLANE_EPSILON
         } else {
-            current_distance >= -epsilon
+            current_distance >= -CLIP_PLANE_EPSILON
         };
         let next_inside = if keep_less_equal {
-            next_distance <= epsilon
+            next_distance <= CLIP_PLANE_EPSILON
         } else {
-            next_distance >= -epsilon
+            next_distance >= -CLIP_PLANE_EPSILON
         };
 
         if current_inside && next_inside {
@@ -1248,10 +1430,8 @@ fn clip_polygon_against_plane(
         }
 
         if current_inside != next_inside {
-            let delta = next.source_position[axis] - current.source_position[axis];
-            if delta.abs() > epsilon {
-                let t = (boundary - current.source_position[axis]) / delta;
-                clipped.push(interpolate_clip_vertex(current, next, t));
+            if let Some(intersection) = clip_volume.intersect_edge(current, next, axis, boundary)? {
+                clipped.push(intersection);
             }
         }
 
@@ -1260,24 +1440,7 @@ fn clip_polygon_against_plane(
         }
     }
 
-    clipped
-}
-
-#[allow(clippy::cast_possible_truncation)]
-fn interpolate_clip_vertex(start: ClipVertex, end: ClipVertex, t: f64) -> ClipVertex {
-    let tf32 = t as f32;
-    ClipVertex {
-        source_position: [
-            start.source_position[0] + (end.source_position[0] - start.source_position[0]) * t,
-            start.source_position[1] + (end.source_position[1] - start.source_position[1]) * t,
-            start.source_position[2] + (end.source_position[2] - start.source_position[2]) * t,
-        ],
-        barycentric: [
-            start.barycentric[0] + (end.barycentric[0] - start.barycentric[0]) * tf32,
-            start.barycentric[1] + (end.barycentric[1] - start.barycentric[1]) * tf32,
-            start.barycentric[2] + (end.barycentric[2] - start.barycentric[2]) * tf32,
-        ],
-    }
+    Ok(clipped)
 }
 
 fn is_degenerate_source_triangle(points: [[f64; 3]; 3]) -> bool {
@@ -1327,14 +1490,14 @@ impl ProcessedScene {
             primitives,
             coordinate_transform,
             smooth_normals,
-            clip_bbox,
+            clip_volume,
             ..
         } = collector;
         let mut primitives: BTreeMap<String, BuiltPrimitiveMesh> = primitives
             .into_iter()
             .map(|(feature_type, primitive)| {
                 primitive
-                    .build(&coordinate_transform, smooth_normals, clip_bbox)
+                    .build(&coordinate_transform, smooth_normals, clip_volume.as_ref())
                     .map(|built| (feature_type, built))
             })
             .collect::<Result<_>>()?;

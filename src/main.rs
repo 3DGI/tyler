@@ -177,6 +177,7 @@ fn build_glb_export_options(
         feature_type_colors,
         geometry_placement,
         clip_bbox,
+        clip_geographic_region: None,
         smooth_normals: cli.smooth_normals,
         quantize_geometry: true,
         meshopt_compression: true,
@@ -499,6 +500,20 @@ fn geographic_tile_ids_for_bounds(
         }
     }
     tile_ids
+}
+
+fn geographic_bounds_for_tile(root: GeographicBounds, tile_id: &TileId) -> GeographicBounds {
+    let tiles_per_axis = 1_usize << tile_id.level;
+    let tile_width = (root.east - root.west) / tiles_per_axis as f64;
+    let tile_height = (root.north - root.south) / tiles_per_axis as f64;
+    let west = root.west + tile_width * tile_id.x as f64;
+    let south = root.south + tile_height * tile_id.y as f64;
+    GeographicBounds {
+        west,
+        south,
+        east: west + tile_width,
+        north: south + tile_height,
+    }
 }
 
 fn geographic_tile_index(value: f64, origin: f64, tile_size: f64, tiles_per_axis: usize) -> usize {
@@ -1121,9 +1136,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let export_jobs = match cli.cesium3dtiles_implicit {
         true => {
-            if cli.cesium3dtiles_content_clip_to_tile_bounds {
-                warn!("--3dtiles-content-clip-to-tile-bounds is not applied for geographic implicit tiling yet");
-            }
             let export_jobs = geographic_implicit_tile_export_jobs(
                 &world,
                 &quadtree,
@@ -1194,7 +1206,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let geometry_placement = cityjson_convert::GeometryPlacement::Enu {
-            source_crs,
+            source_crs: source_crs.clone(),
             ecef_origin: root_enu_frame.ecef_origin,
             east: root_enu_frame.east,
             north: root_enu_frame.north,
@@ -1264,8 +1276,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             let mut tile_export_options = export_options.clone();
-            if cli.cesium3dtiles_content_clip_to_tile_bounds && !cli.cesium3dtiles_implicit {
-                if let Some(source_tile_id) = &job.source_tile_id {
+            if cli.cesium3dtiles_content_clip_to_tile_bounds {
+                if cli.cesium3dtiles_implicit {
+                    let tile_bounds =
+                        geographic_bounds_for_tile(root_geographic_bounds, &job.content_tile_id);
+                    tile_export_options.clip_geographic_region =
+                        Some(cityjson_convert::GeographicClipRegion {
+                            source_crs: source_crs.clone(),
+                            west: tile_bounds.west,
+                            south: tile_bounds.south,
+                            east: tile_bounds.east,
+                            north: tile_bounds.north,
+                        });
+                } else if let Some(source_tile_id) = &job.source_tile_id {
                     let qtree_nodeid: spatial_structs::QuadTreeNodeId = source_tile_id.into();
                     let qtree_node = quadtree.node(&qtree_nodeid).unwrap_or_else(|| {
                         panic!("did not find tile {} in quadtree", source_tile_id)
@@ -1981,5 +2004,22 @@ mod tests {
                 TileId::new(3, 2, 2),
             ]
         );
+    }
+
+    #[test]
+    fn geographic_bounds_for_tile_matches_implicit_subdivision() {
+        let root = GeographicBounds {
+            west: 0.0,
+            south: 50.0,
+            east: 4.0,
+            north: 54.0,
+        };
+
+        let bounds = geographic_bounds_for_tile(root, &TileId::new(2, 1, 2));
+
+        assert!((bounds.west - 2.0).abs() < f64::EPSILON);
+        assert!((bounds.south - 51.0).abs() < f64::EPSILON);
+        assert!((bounds.east - 3.0).abs() < f64::EPSILON);
+        assert!((bounds.north - 52.0).abs() < f64::EPSILON);
     }
 }

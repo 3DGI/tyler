@@ -42,6 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         feature_type_colors: BTreeMap::default(),
         geometry_placement: GeometryPlacement::SourceCoordinates,
         clip_bbox: None,
+        clip_geographic_region: None,
         smooth_normals: cli.smooth_normals,
         quantize_geometry: !cli.no_quantization,
         meshopt_compression: !cli.no_meshopt_compression,
