@@ -348,10 +348,10 @@ fn geographic_implicit_tile_export_jobs(
     root_region: GeographicBounds,
     transformer: &Proj,
 ) -> Result<Vec<TileExportJob>, Box<dyn std::error::Error>> {
-    let mut content_tile_features: HashMap<TileId, HashSet<usize>> = HashMap::new();
+    let mut feature_content_tiles: HashMap<usize, HashSet<TileId>> = HashMap::new();
     let mut feature_geographic_bounds: HashMap<usize, GeographicBounds> = HashMap::new();
     let unique_assignment = geographic_implicit_unique_assignment(world);
-    let mut feature_tile_assignments = 0usize;
+    let mut raw_feature_tile_assignments = 0usize;
 
     for tile_ref in tileset.collect_leaves() {
         let source_tile_id = tile_ref.id.clone();
@@ -387,12 +387,24 @@ fn geographic_implicit_tile_export_jobs(
                 geographic_tile_ids_for_bounds(root_region, feature_bounds, content_level)
             };
             for content_tile_id in content_tile_ids {
-                feature_tile_assignments += 1;
-                content_tile_features
-                    .entry(content_tile_id)
+                raw_feature_tile_assignments += 1;
+                feature_content_tiles
+                    .entry(feature_id)
                     .or_default()
-                    .insert(feature_id);
+                    .insert(content_tile_id);
             }
+        }
+    }
+
+    let mut content_tile_features: HashMap<TileId, HashSet<usize>> = HashMap::new();
+    let mut feature_tile_assignments = 0usize;
+    for (feature_id, content_tile_ids) in feature_content_tiles {
+        for content_tile_id in non_overlapping_tile_ids(content_tile_ids) {
+            feature_tile_assignments += 1;
+            content_tile_features
+                .entry(content_tile_id)
+                .or_default()
+                .insert(feature_id);
         }
     }
 
@@ -411,12 +423,38 @@ fn geographic_implicit_tile_export_jobs(
         .collect();
     jobs.sort_by(|lhs, rhs| lhs.content_tile_id.cmp(&rhs.content_tile_id));
     info!(
-        "Geographic implicit tiling assigned {} source features to {} content tiles ({} feature-tile assignments)",
+        "Geographic implicit tiling assigned {} source features to {} content tiles ({} feature-tile assignments, {} before ancestor deduplication)",
         world.features.len(),
         jobs.len(),
-        feature_tile_assignments
+        feature_tile_assignments,
+        raw_feature_tile_assignments
     );
     Ok(jobs)
+}
+
+fn non_overlapping_tile_ids(tile_ids: HashSet<TileId>) -> Vec<TileId> {
+    let mut tile_ids: Vec<TileId> = tile_ids.into_iter().collect();
+    tile_ids.sort_unstable();
+
+    let mut retained = Vec::with_capacity(tile_ids.len());
+    for candidate in &tile_ids {
+        if tile_ids.iter().any(|ancestor| {
+            ancestor.level < candidate.level && tile_id_is_ancestor_of(ancestor, candidate)
+        }) {
+            continue;
+        }
+        retained.push(candidate.clone());
+    }
+
+    retained
+}
+
+fn tile_id_is_ancestor_of(ancestor: &TileId, descendant: &TileId) -> bool {
+    if ancestor.level >= descendant.level {
+        return false;
+    }
+    let shift = descendant.level - ancestor.level;
+    ancestor.x == (descendant.x >> shift) && ancestor.y == (descendant.y >> shift)
 }
 
 fn geographic_implicit_unique_assignment(world: &parser::World) -> bool {
@@ -2021,5 +2059,27 @@ mod tests {
         assert!((bounds.south - 51.0).abs() < f64::EPSILON);
         assert!((bounds.east - 3.0).abs() < f64::EPSILON);
         assert!((bounds.north - 52.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn non_overlapping_tile_ids_removes_descendants_when_ancestor_has_content() {
+        let tile_ids = HashSet::from([
+            TileId::new(0, 0, 1),
+            TileId::new(0, 0, 2),
+            TileId::new(1, 0, 2),
+            TileId::new(2, 0, 2),
+            TileId::new(3, 3, 2),
+        ]);
+
+        let retained = non_overlapping_tile_ids(tile_ids);
+
+        assert_eq!(
+            retained,
+            vec![
+                TileId::new(0, 0, 1),
+                TileId::new(2, 0, 2),
+                TileId::new(3, 3, 2),
+            ]
+        );
     }
 }
