@@ -800,6 +800,83 @@ fn convert_to_glb_can_clip_to_geographic_region() {
 }
 
 #[test]
+fn convert_to_glb_drops_feature_types_fully_outside_clip_region() {
+    // One TINRelief triangle sits inside the clip region; one Road triangle
+    // sits entirely outside it. Before the empty-primitive fix, the Road
+    // primitive survived the BTreeMap with zero vertices and the encoder
+    // bailed with "primitive bounds missing for non-empty mesh", causing
+    // the whole tile to be pruned.
+    let model = json::from_slice(
+        br#"{
+            "type":"CityJSON",
+            "version":"2.0",
+            "CityObjects":{
+                "relief-1":{
+                    "type":"TINRelief",
+                    "geometry":[
+                        {
+                            "type":"MultiSurface",
+                            "lod":"1.0",
+                            "boundaries":[
+                                [[0,1,2]]
+                            ]
+                        }
+                    ]
+                },
+                "road-1":{
+                    "type":"Road",
+                    "geometry":[
+                        {
+                            "type":"MultiSurface",
+                            "lod":"1.0",
+                            "boundaries":[
+                                [[3,4,5]]
+                            ]
+                        }
+                    ]
+                }
+            },
+            "vertices":[
+                [0.1,0.1,0.0],
+                [0.9,0.1,0.0],
+                [0.5,0.9,0.0],
+                [5.0,5.0,0.0],
+                [6.0,5.0,0.0],
+                [5.5,6.0,0.0]
+            ]
+        }"#,
+    )
+    .expect("inline CityJSON fixture should parse");
+    let output_path = stable_output_path("clip-drops-empty-feature-type");
+    let options = ExportOptions {
+        clip_geographic_region: Some(GeographicClipRegion {
+            source_crs: "EPSG:4979".to_string(),
+            west: 0.0,
+            south: 0.0,
+            east: 1.0,
+            north: 1.0,
+        }),
+        quantize_geometry: false,
+        meshopt_compression: false,
+        ..ExportOptions::default()
+    };
+
+    convert_to_glb(&model, &output_path, &options)
+        .expect("GLB conversion should succeed when one feature_type is fully clipped away");
+
+    let glb_bytes = fs::read(&output_path).expect("test GLB should exist");
+    let root = read_glb_json(&glb_bytes);
+    let primitives = root["meshes"][0]["primitives"]
+        .as_array()
+        .expect("mesh should expose primitives");
+    assert_eq!(
+        primitives.len(),
+        1,
+        "primitive for fully-clipped Road should be dropped, leaving only TINRelief"
+    );
+}
+
+#[test]
 fn convert_to_glb_solves_geographic_clip_intersections_in_source_space() {
     let [a_x, a_y, a_z] = ecef_from_lon_lat(0.0, 0.0);
     let [b_x, b_y, b_z] = ecef_from_lon_lat(10.0, 0.0);

@@ -1501,6 +1501,15 @@ impl ProcessedScene {
                     .map(|built| (feature_type, built))
             })
             .collect::<Result<_>>()?;
+        // Clipping (in `RawPrimitiveMesh::build`) can leave a per-feature_type
+        // primitive with no surviving triangles when every triangle of that
+        // type fell outside the clip volume. Drop those here so the encoder
+        // never sees an empty primitive — `Bounds::from_vertices` would
+        // otherwise return None and bail with "primitive bounds missing for
+        // non-empty mesh", causing the whole tile to be pruned.
+        primitives.retain(|_, primitive| {
+            !(primitive.vertices.is_empty() && primitive.indices.is_empty())
+        });
         let mut bounds = Bounds::empty();
         let mut has_vertices = false;
         for primitive in primitives.values() {
