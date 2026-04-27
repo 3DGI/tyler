@@ -698,6 +698,14 @@ impl World {
         selected_object_types: &[CityObjectType],
     ) -> Option<FeatureInGridCells> {
         let unique_assignment = selected_object_types.iter().any(|cotype| {
+            // In this case we have a 1-1 feature-to-cell assignment, we only retain the vertex
+            // count in the cell that gets the feature.
+            // The cell that receives the feature is the one with the highest vertex count
+            // of the feature.
+            // However, with this method it is not possible to combine cityobject types that
+            // require different cell-assignment methods into the same tileset.
+            // E.g. terrain features need to be duplicated across cells, buildings need to
+            // unique. The tileset for them must be generated separately.
             matches!(
                 cotype,
                 CityObjectType::Building | CityObjectType::BuildingPart

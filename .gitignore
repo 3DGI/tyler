@@ -12,8 +12,9 @@
 /tmp
 
 # Test data
-/tests/output
+/tests/output*
 /cityjson-convert/tests/output/
+.geodepot
 
 # Debug data
 *.tsv

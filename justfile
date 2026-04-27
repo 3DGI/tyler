@@ -33,7 +33,7 @@ clean: clean-output
 
 # Clean the test output directories.
 clean-output:
-    rm -rf tests/output
+    rm -rf tests/output*
     rm -rf cityjson-convert/tests/output
 
 # Run the full local validation sequence.
