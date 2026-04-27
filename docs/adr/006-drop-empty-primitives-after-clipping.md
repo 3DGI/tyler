@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-When tyler builds an implicit-tiled 3D Tiles output that includes non-unique
+When tyler builds a 3D Tiles output that includes non-unique
 CityObject types (e.g. `Road`, `Railway`, `WaterBody`, `TINRelief`), some
 content tiles failed GLB conversion with:
 
@@ -42,13 +42,6 @@ In `cityjson-convert/src/gltf_writer.rs`:
    `ProcessedScene::encode_primitives_raw`. Both return `None` for an empty
    vertex slice and bail with `primitive bounds missing for non-empty mesh`.
 
-### Why only implicit tiling
-
-`clip_geographic_region` is set only for implicit content tiles in
-`src/main.rs`. Explicit tiling uses `clip_bbox` derived from the qtree node
-bbox, which is fitted to cells that actually contain feature vertices, so
-per-feature-type primitives almost never become empty after clipping.
-
 ### Why only non-unique CityObject types
 
 Buildings/BuildingParts use unique-assignment: each feature is centroid-routed
@@ -59,7 +52,7 @@ that the actual triangles never touch — typical for diagonal linear features
 (roads, railways), whose axis-aligned bbox is much larger than the geometry
 itself.
 
-The failing combination is: implicit tiling + non-unique types + a tile that
+The failing combination is: non-unique types + a tile that
 receives a feature by bbox-overlap whose triangles all sit outside the tile,
 while another feature_type in the same tile still has surviving triangles.
 
@@ -90,7 +83,7 @@ every feature_type appear as a primitive.
 
 Good:
 
-- implicit-tiled output no longer drops content tiles that mix fully-clipped
+- tileset output no longer drops content tiles that mix fully-clipped
   and surviving feature types
 - the GLB writer enforces an invariant the encoder already assumed: every
   primitive in `ProcessedScene::primitives` has at least one vertex
