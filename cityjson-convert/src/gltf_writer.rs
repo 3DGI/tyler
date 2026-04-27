@@ -440,9 +440,6 @@ struct BufferBuilder {
 struct EncodedGlb {
     root: json::Root,
     bin_buffer: Vec<u8>,
-    meshopt_views: Vec<Option<MeshoptBufferView>>,
-    primitive_feature_counts: Vec<usize>,
-    structural_metadata: Option<StructuralMetadataExtension>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -1573,7 +1570,7 @@ impl ProcessedScene {
             .sum()
     }
 
-    fn write_glb<P: AsRef<Path>>(&self, output_path: P, options: &ExportOptions) -> Result<()> {
+    fn write_glb<P: AsRef<Path>>(self, output_path: P, options: &ExportOptions) -> Result<()> {
         if self
             .primitives
             .iter()
@@ -1602,15 +1599,18 @@ impl ProcessedScene {
             output_path.as_ref().display()
         );
 
-        let encoded = self.encode_glb(options)?;
+        let vertex_count = self.vertex_count();
+        let index_count = self.index_count();
         let bounds = self
             .bounds
             .ok_or_else(|| anyhow::anyhow!("geometry bounds missing for non-empty mesh"))?;
+        let node_translation = self.node_translation();
+        let encoded = self.encode_glb(options)?;
         encoded.write(output_path.as_ref())?;
 
         debug!("GLB Summary: {}", output_path.as_ref().display());
-        debug!("  Vertices: {}", self.vertex_count());
-        debug!("  Indices: {}", self.index_count());
+        debug!("  Vertices: {}", vertex_count);
+        debug!("  Indices: {}", index_count);
         debug!(
             "  Local coordinate range: X [{:.2}, {:.2}], Y [{:.2}, {:.2}], Z [{:.2}, {:.2}]",
             bounds.min[0],
@@ -1622,15 +1622,13 @@ impl ProcessedScene {
         );
         debug!(
             "  Node translation: [{:.2}, {:.2}, {:.2}]",
-            self.node_translation_base[0] + self.center[0],
-            self.node_translation_base[1] + self.center[1],
-            self.node_translation_base[2] + self.center[2]
+            node_translation[0], node_translation[1], node_translation[2]
         );
 
         Ok(())
     }
 
-    fn encode_glb(&self, options: &ExportOptions) -> Result<EncodedGlb> {
+    fn encode_glb(self, options: &ExportOptions) -> Result<EncodedGlb> {
         if options.quantize_geometry {
             QuantizedScene::from_processed(self)?.encode_glb(options)
         } else {
@@ -1638,13 +1636,23 @@ impl ProcessedScene {
         }
     }
 
-    fn encode_raw_glb(&self, options: &ExportOptions) -> Result<EncodedGlb> {
+    fn encode_raw_glb(self, options: &ExportOptions) -> Result<EncodedGlb> {
+        let Self {
+            primitives,
+            features,
+            node_translation_base,
+            center,
+            ..
+        } = self;
         let mut buffer_builder = BufferBuilder::default();
-        let primitive_encodings =
-            self.encode_primitives_raw(&mut buffer_builder, options.meshopt_compression)?;
+        let primitive_encodings = encode_primitives_raw(
+            &primitives,
+            &mut buffer_builder,
+            options.meshopt_compression,
+        )?;
         let materials = build_materials(&primitive_encodings, options)?;
         let structural_metadata = StructuralMetadataExtension::from_features(
-            &self.features,
+            &features,
             &mut buffer_builder,
             &options.metadata_class_name,
             options.meshopt_compression,
@@ -1654,7 +1662,14 @@ impl ProcessedScene {
             buffer_builder,
             primitive_encodings,
             materials,
-            build_node_matrix(1.0, self.node_translation()),
+            build_node_matrix(
+                1.0,
+                [
+                    node_translation_base[0] + center[0],
+                    node_translation_base[1] + center[1],
+                    node_translation_base[2] + center[2],
+                ],
+            ),
             false,
             options.meshopt_compression,
             structural_metadata,
@@ -1688,7 +1703,7 @@ impl ProcessedPrimitiveMesh {
 }
 
 impl QuantizedScene {
-    fn from_processed(scene: &ProcessedScene) -> Result<Self> {
+    fn from_processed(scene: ProcessedScene) -> Result<Self> {
         let bounds = scene
             .bounds
             .ok_or_else(|| anyhow::anyhow!("geometry bounds missing for non-empty mesh"))?;
@@ -1704,27 +1719,37 @@ impl QuantizedScene {
         .fold(0.0_f32, f32::max)
         .max(f32::EPSILON);
 
+        let center = scene.node_translation();
         let primitives = scene
             .primitives
-            .iter()
+            .into_iter()
             .map(|primitive| primitive.quantize(position_scale))
             .collect::<Result<Vec<_>>>()?;
 
         Ok(Self {
             primitives,
             position_scale,
-            center: scene.node_translation(),
-            features: scene.features.clone(),
+            center,
+            features: scene.features,
         })
     }
 
-    fn encode_glb(&self, options: &ExportOptions) -> Result<EncodedGlb> {
+    fn encode_glb(self, options: &ExportOptions) -> Result<EncodedGlb> {
+        let Self {
+            primitives,
+            position_scale,
+            center,
+            features,
+        } = self;
         let mut buffer_builder = BufferBuilder::default();
-        let primitive_encodings =
-            self.encode_primitives(&mut buffer_builder, options.meshopt_compression)?;
+        let primitive_encodings = encode_quantized_primitives(
+            &primitives,
+            &mut buffer_builder,
+            options.meshopt_compression,
+        )?;
         let materials = build_materials(&primitive_encodings, options)?;
         let structural_metadata = StructuralMetadataExtension::from_features(
-            &self.features,
+            &features,
             &mut buffer_builder,
             &options.metadata_class_name,
             options.meshopt_compression,
@@ -1734,7 +1759,7 @@ impl QuantizedScene {
             buffer_builder,
             primitive_encodings,
             materials,
-            build_node_matrix(self.position_scale, self.center),
+            build_node_matrix(position_scale, center),
             true,
             options.meshopt_compression,
             structural_metadata,
@@ -1812,14 +1837,17 @@ fn build_encoded_glb(
     meshopt_compression: bool,
     structural_metadata: Option<StructuralMetadataExtension>,
 ) -> EncodedGlb {
-    let primitive_feature_counts = primitive_encodings
-        .iter()
-        .map(|encoding| encoding.feature_count)
-        .collect::<Vec<_>>();
+    let has_structural_metadata = structural_metadata.is_some();
     let mesh = json::Mesh {
         primitives: primitive_encodings
             .into_iter()
-            .map(|encoding| encoding.primitive)
+            .map(|mut encoding| {
+                encoding.primitive.extensions = Some(mesh_feature_extensions(
+                    encoding.feature_count,
+                    has_structural_metadata,
+                ));
+                encoding.primitive
+            })
             .collect(),
         weights: None,
         extensions: None,
@@ -1859,15 +1887,22 @@ fn build_encoded_glb(
         extensions_used.push(MESHOPT_EXTENSION.to_string());
         extensions_required.push(MESHOPT_EXTENSION.to_string());
     }
-    if !primitive_feature_counts.is_empty() {
+    if !mesh.primitives.is_empty() {
         extensions_used.push(MESH_FEATURES_EXTENSION.to_string());
     }
     if structural_metadata.is_some() {
         extensions_used.push(STRUCTURAL_METADATA_EXTENSION.to_string());
     }
 
+    let BufferBuilder {
+        bytes,
+        mut buffer_views,
+        accessors,
+        meshopt_views,
+        fallback_buffer_length,
+    } = buffer_builder;
     let mut buffers = vec![json::Buffer {
-        byte_length: json::validation::USize64(buffer_builder.bytes.len() as u64),
+        byte_length: json::validation::USize64(bytes.len() as u64),
         uri: None,
         name: Some("buffer0".into()),
         extensions: None,
@@ -1875,24 +1910,36 @@ fn build_encoded_glb(
     }];
     if meshopt_compression {
         buffers.push(json::Buffer {
-            byte_length: json::validation::USize64(buffer_builder.fallback_buffer_length as u64),
+            byte_length: json::validation::USize64(fallback_buffer_length as u64),
             uri: None,
             name: Some("fallback".into()),
-            extensions: None,
+            extensions: Some(meshopt_fallback_buffer_extension()),
             extras: Option::default(),
         });
     }
 
+    for (buffer_view, meshopt_view) in buffer_views.iter_mut().zip(meshopt_views.iter()) {
+        let Some(meshopt_view) = meshopt_view else {
+            continue;
+        };
+        buffer_view.extensions = Some(meshopt_buffer_view_extension(meshopt_view));
+    }
+
+    let root_extensions = structural_metadata
+        .as_ref()
+        .map(structural_metadata_root_extension);
+
     EncodedGlb {
         root: json::Root {
-            accessors: buffer_builder.accessors,
+            accessors,
             buffers,
-            buffer_views: buffer_builder.buffer_views,
+            buffer_views,
             materials,
             meshes: vec![mesh],
             nodes: vec![node],
             scenes: vec![scene],
             scene: Some(json::Index::new(0)),
+            extensions: root_extensions,
             extensions_used,
             extensions_required,
             asset: json::Asset {
@@ -1903,10 +1950,7 @@ fn build_encoded_glb(
             },
             ..Default::default()
         },
-        bin_buffer: buffer_builder.bytes,
-        meshopt_views: buffer_builder.meshopt_views,
-        primitive_feature_counts,
-        structural_metadata,
+        bin_buffer: bytes,
     }
 }
 
@@ -1964,84 +2008,80 @@ fn reorder_features_by_type(
     Ok(reordered)
 }
 
-impl ProcessedScene {
-    fn encode_primitives_raw(
-        &self,
-        buffer_builder: &mut BufferBuilder,
-        meshopt_compression: bool,
-    ) -> Result<Vec<PrimitiveEncoding>> {
-        let mut primitive_encodings = Vec::with_capacity(self.primitives.len());
-        for (material_index, primitive) in self.primitives.iter().enumerate() {
-            let bounds = Bounds::from_vertices(&primitive.vertices)
-                .ok_or_else(|| anyhow::anyhow!("primitive bounds missing for non-empty mesh"))?;
-            let vertex_accessors = buffer_builder.push_float_vertices(
-                &primitive.vertices,
-                &bounds,
-                meshopt_compression,
-                true,
-            )?;
-            let index_buffer = primitive.select_index_buffer()?;
-            let index_accessor = buffer_builder.push_indices(
-                &index_buffer,
-                primitive.vertices.len(),
-                meshopt_compression,
-            )?;
-            primitive_encodings.push(PrimitiveEncoding {
-                feature_type: primitive.feature_type.clone(),
-                primitive: build_primitive(
-                    vertex_accessors,
-                    index_accessor,
-                    u32::try_from(material_index).expect("material index within u32 range"),
-                ),
-                feature_count: primitive
-                    .vertices
-                    .iter()
-                    .map(|vertex| vertex.feature_id)
-                    .collect::<BTreeSet<_>>()
-                    .len(),
-            });
-        }
-        Ok(primitive_encodings)
+fn encode_primitives_raw(
+    primitives: &[ProcessedPrimitiveMesh],
+    buffer_builder: &mut BufferBuilder,
+    meshopt_compression: bool,
+) -> Result<Vec<PrimitiveEncoding>> {
+    let mut primitive_encodings = Vec::with_capacity(primitives.len());
+    for (material_index, primitive) in primitives.iter().enumerate() {
+        let bounds = Bounds::from_vertices(&primitive.vertices)
+            .ok_or_else(|| anyhow::anyhow!("primitive bounds missing for non-empty mesh"))?;
+        let vertex_accessors = buffer_builder.push_float_vertices(
+            &primitive.vertices,
+            &bounds,
+            meshopt_compression,
+            true,
+        )?;
+        let index_buffer = primitive.select_index_buffer()?;
+        let index_accessor = buffer_builder.push_indices(
+            &index_buffer,
+            primitive.vertices.len(),
+            meshopt_compression,
+        )?;
+        primitive_encodings.push(PrimitiveEncoding {
+            feature_type: primitive.feature_type.clone(),
+            primitive: build_primitive(
+                vertex_accessors,
+                index_accessor,
+                u32::try_from(material_index).expect("material index within u32 range"),
+            ),
+            feature_count: primitive
+                .vertices
+                .iter()
+                .map(|vertex| vertex.feature_id)
+                .collect::<BTreeSet<_>>()
+                .len(),
+        });
     }
+    Ok(primitive_encodings)
 }
 
-impl QuantizedScene {
-    fn encode_primitives(
-        &self,
-        buffer_builder: &mut BufferBuilder,
-        meshopt_compression: bool,
-    ) -> Result<Vec<PrimitiveEncoding>> {
-        let mut primitive_encodings = Vec::with_capacity(self.primitives.len());
-        for (material_index, primitive) in self.primitives.iter().enumerate() {
-            let vertex_accessors = buffer_builder.push_quantized_vertices(
-                &primitive.positions,
-                &primitive.normals,
-                &primitive.feature_ids,
-                &primitive.position_bounds,
-                meshopt_compression,
-            )?;
-            let index_accessor = buffer_builder.push_indices(
-                &primitive.indices,
-                primitive.positions.len(),
-                meshopt_compression,
-            )?;
-            primitive_encodings.push(PrimitiveEncoding {
-                feature_type: primitive.feature_type.clone(),
-                primitive: build_primitive(
-                    vertex_accessors,
-                    index_accessor,
-                    u32::try_from(material_index).expect("material index within u32 range"),
-                ),
-                feature_count: primitive
-                    .feature_ids
-                    .iter()
-                    .copied()
-                    .collect::<BTreeSet<_>>()
-                    .len(),
-            });
-        }
-        Ok(primitive_encodings)
+fn encode_quantized_primitives(
+    primitives: &[QuantizedPrimitiveMesh],
+    buffer_builder: &mut BufferBuilder,
+    meshopt_compression: bool,
+) -> Result<Vec<PrimitiveEncoding>> {
+    let mut primitive_encodings = Vec::with_capacity(primitives.len());
+    for (material_index, primitive) in primitives.iter().enumerate() {
+        let vertex_accessors = buffer_builder.push_quantized_vertices(
+            &primitive.positions,
+            &primitive.normals,
+            &primitive.feature_ids,
+            &primitive.position_bounds,
+            meshopt_compression,
+        )?;
+        let index_accessor = buffer_builder.push_indices(
+            &primitive.indices,
+            primitive.positions.len(),
+            meshopt_compression,
+        )?;
+        primitive_encodings.push(PrimitiveEncoding {
+            feature_type: primitive.feature_type.clone(),
+            primitive: build_primitive(
+                vertex_accessors,
+                index_accessor,
+                u32::try_from(material_index).expect("material index within u32 range"),
+            ),
+            feature_count: primitive
+                .feature_ids
+                .iter()
+                .copied()
+                .collect::<BTreeSet<_>>()
+                .len(),
+        });
     }
+    Ok(primitive_encodings)
 }
 
 fn build_primitive(
@@ -2779,24 +2819,8 @@ impl BufferBuilder {
 
 impl EncodedGlb {
     fn write<P: AsRef<Path>>(self, output_path: P) -> Result<()> {
-        let mut root_json =
-            serde_json::to_value(&self.root).context("failed to serialize glTF root to JSON")?;
-        if self.meshopt_views.iter().any(Option::is_some) {
-            inject_meshopt_extensions(&mut root_json, &self.meshopt_views)?;
-        }
-        if !self.primitive_feature_counts.is_empty() {
-            inject_mesh_feature_extensions(
-                &mut root_json,
-                &self.primitive_feature_counts,
-                self.structural_metadata.is_some(),
-            )?;
-        }
-        if let Some(structural_metadata) = &self.structural_metadata {
-            inject_structural_metadata_extension(&mut root_json, structural_metadata)?;
-        }
-
         let mut json_bytes =
-            serde_json::to_vec(&root_json).context("failed to encode glTF JSON chunk")?;
+            serde_json::to_vec(&self.root).context("failed to encode glTF JSON chunk")?;
         let json_padding = (4 - (json_bytes.len() % 4)) % 4;
         json_bytes.extend(std::iter::repeat_n(b' ', json_padding));
 
@@ -2841,63 +2865,7 @@ impl EncodedGlb {
     }
 }
 
-fn inject_mesh_feature_extensions(
-    root: &mut JsonValue,
-    primitive_feature_counts: &[usize],
-    has_structural_metadata: bool,
-) -> Result<()> {
-    let root_object = root
-        .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("glTF root JSON must be an object"))?;
-    let meshes = root_object
-        .get_mut("meshes")
-        .and_then(JsonValue::as_array_mut)
-        .ok_or_else(|| anyhow::anyhow!("glTF root JSON must contain a meshes array"))?;
-    let mesh = meshes
-        .get_mut(0)
-        .and_then(JsonValue::as_object_mut)
-        .ok_or_else(|| anyhow::anyhow!("glTF root JSON must contain a mesh object"))?;
-    let primitives = mesh
-        .get_mut("primitives")
-        .and_then(JsonValue::as_array_mut)
-        .ok_or_else(|| anyhow::anyhow!("glTF root JSON must contain primitive array"))?;
-
-    if primitives.len() != primitive_feature_counts.len() {
-        anyhow::bail!(
-            "primitive count {} does not match mesh feature metadata {}",
-            primitives.len(),
-            primitive_feature_counts.len()
-        );
-    }
-
-    for (primitive, feature_count) in primitives.iter_mut().zip(primitive_feature_counts.iter()) {
-        let mut feature_id = json_value!({
-            "featureCount": feature_count,
-            "attribute": 0,
-        });
-        if has_structural_metadata {
-            feature_id
-                .as_object_mut()
-                .expect("feature ID JSON should be an object")
-                .insert("propertyTable".to_string(), json_value!(0));
-        }
-
-        insert_extension(
-            primitive,
-            MESH_FEATURES_EXTENSION,
-            json_value!({
-                "featureIds": [feature_id]
-            }),
-        )?;
-    }
-
-    Ok(())
-}
-
-fn inject_structural_metadata_extension(
-    root: &mut JsonValue,
-    structural_metadata: &StructuralMetadataExtension,
-) -> Result<()> {
+fn structural_metadata_json(structural_metadata: &StructuralMetadataExtension) -> JsonValue {
     let mut class_properties = JsonMap::new();
     let mut property_table_properties = JsonMap::new();
     for (name, column) in &structural_metadata.columns {
@@ -2905,103 +2873,103 @@ fn inject_structural_metadata_extension(
         property_table_properties.insert(name.clone(), column.property_table_entry.clone());
     }
 
-    insert_extension(
-        root,
-        STRUCTURAL_METADATA_EXTENSION,
-        json_value!({
-            "schema": {
-                "id": "schema_0",
-                "classes": {
-                    structural_metadata.class_name.clone(): {
-                        "name": structural_metadata.class_name,
-                        "properties": JsonValue::Object(class_properties),
-                    }
+    json_value!({
+        "schema": {
+            "id": "schema_0",
+            "classes": {
+                structural_metadata.class_name.clone(): {
+                    "name": structural_metadata.class_name,
+                    "properties": JsonValue::Object(class_properties),
                 }
-            },
-            "propertyTables": [{
-                "class": structural_metadata.class_name,
-                "count": structural_metadata.feature_count,
-                "properties": JsonValue::Object(property_table_properties),
-            }]
-        }),
-    )
+            }
+        },
+        "propertyTables": [{
+            "class": structural_metadata.class_name,
+            "count": structural_metadata.feature_count,
+            "properties": JsonValue::Object(property_table_properties),
+        }]
+    })
 }
 
-fn inject_meshopt_extensions(
-    root: &mut JsonValue,
-    meshopt_views: &[Option<MeshoptBufferView>],
-) -> Result<()> {
-    let root_object = root
-        .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("glTF root JSON must be an object"))?;
-    let buffers = root_object
-        .get_mut("buffers")
-        .and_then(JsonValue::as_array_mut)
-        .ok_or_else(|| anyhow::anyhow!("glTF root JSON must contain a buffers array"))?;
-    let fallback_buffer = buffers
-        .get_mut(1)
-        .ok_or_else(|| anyhow::anyhow!("glTF root JSON must contain a fallback buffer"))?;
-    insert_extension(
-        fallback_buffer,
-        MESHOPT_EXTENSION,
+fn structural_metadata_root_extension(
+    structural_metadata: &StructuralMetadataExtension,
+) -> json::extensions::root::Root {
+    let mut others = JsonMap::new();
+    others.insert(
+        STRUCTURAL_METADATA_EXTENSION.to_string(),
+        structural_metadata_json(structural_metadata),
+    );
+    let mut extension = json::extensions::root::Root::default();
+    extension.others = others;
+    extension
+}
+
+fn meshopt_fallback_buffer_extension() -> json::extensions::buffer::Buffer {
+    let mut others = JsonMap::new();
+    others.insert(
+        MESHOPT_EXTENSION.to_string(),
         json_value!({ "fallback": true }),
-    )?;
-
-    let buffer_views = root_object
-        .get_mut("bufferViews")
-        .and_then(JsonValue::as_array_mut)
-        .ok_or_else(|| anyhow::anyhow!("glTF root JSON must contain a bufferViews array"))?;
-    if buffer_views.len() != meshopt_views.len() {
-        anyhow::bail!(
-            "buffer view count {} does not match meshopt metadata {}",
-            buffer_views.len(),
-            meshopt_views.len()
-        );
-    }
-
-    for (buffer_view, meshopt_view) in buffer_views.iter_mut().zip(meshopt_views.iter()) {
-        let Some(meshopt_view) = meshopt_view else {
-            continue;
-        };
-
-        let mut extension = JsonMap::new();
-        extension.insert("buffer".into(), JsonValue::from(meshopt_view.buffer));
-        extension.insert(
-            "byteOffset".into(),
-            JsonValue::from(meshopt_view.byte_offset),
-        );
-        extension.insert(
-            "byteLength".into(),
-            JsonValue::from(meshopt_view.byte_length),
-        );
-        extension.insert(
-            "byteStride".into(),
-            JsonValue::from(meshopt_view.byte_stride),
-        );
-        extension.insert("count".into(), JsonValue::from(meshopt_view.count));
-        extension.insert("mode".into(), JsonValue::from(meshopt_view.mode));
-        if let Some(filter) = meshopt_view.filter {
-            extension.insert("filter".into(), JsonValue::from(filter));
-        }
-
-        insert_extension(buffer_view, MESHOPT_EXTENSION, JsonValue::Object(extension))?;
-    }
-
-    Ok(())
+    );
+    let mut extension = json::extensions::buffer::Buffer::default();
+    extension.others = others;
+    extension
 }
 
-fn insert_extension(target: &mut JsonValue, name: &str, value: JsonValue) -> Result<()> {
-    let object = target
-        .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("extension target must be a JSON object"))?;
-    let extensions = object
-        .entry("extensions")
-        .or_insert_with(|| JsonValue::Object(JsonMap::new()));
-    let extensions_object = extensions
-        .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("glTF extensions field must be a JSON object"))?;
-    extensions_object.insert(name.to_string(), value);
-    Ok(())
+fn meshopt_buffer_view_extension(
+    meshopt_view: &MeshoptBufferView,
+) -> json::extensions::buffer::View {
+    let mut extension = JsonMap::new();
+    extension.insert("buffer".into(), JsonValue::from(meshopt_view.buffer));
+    extension.insert(
+        "byteOffset".into(),
+        JsonValue::from(meshopt_view.byte_offset),
+    );
+    extension.insert(
+        "byteLength".into(),
+        JsonValue::from(meshopt_view.byte_length),
+    );
+    extension.insert(
+        "byteStride".into(),
+        JsonValue::from(meshopt_view.byte_stride),
+    );
+    extension.insert("count".into(), JsonValue::from(meshopt_view.count));
+    extension.insert("mode".into(), JsonValue::from(meshopt_view.mode));
+    if let Some(filter) = meshopt_view.filter {
+        extension.insert("filter".into(), JsonValue::from(filter));
+    }
+
+    let mut others = JsonMap::new();
+    others.insert(MESHOPT_EXTENSION.to_string(), JsonValue::Object(extension));
+    let mut buffer_view_extension = json::extensions::buffer::View::default();
+    buffer_view_extension.others = others;
+    buffer_view_extension
+}
+
+fn mesh_feature_extensions(
+    feature_count: usize,
+    has_structural_metadata: bool,
+) -> json::extensions::mesh::Primitive {
+    let mut feature_id = json_value!({
+        "featureCount": feature_count,
+        "attribute": 0,
+    });
+    if has_structural_metadata {
+        feature_id
+            .as_object_mut()
+            .expect("feature ID JSON should be an object")
+            .insert("propertyTable".to_string(), json_value!(0));
+    }
+
+    let mut others = JsonMap::new();
+    others.insert(
+        MESH_FEATURES_EXTENSION.to_string(),
+        json_value!({
+            "featureIds": [feature_id]
+        }),
+    );
+    let mut extension = json::extensions::mesh::Primitive::default();
+    extension.others = others;
+    extension
 }
 
 fn align_length(length: usize, alignment: usize) -> usize {
