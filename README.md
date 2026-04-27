@@ -283,6 +283,19 @@ latitude. Implicit tilesets use additive refinement so parent and child content
 can coexist when source-leaf content appears at mixed implicit levels. The GLB
 content remains encoded in the shared root ENU frame.
 
+#### Geometric error
+
+*tyler* currently writes full-detail content only on leaf tiles. Internal tiles
+are traversal nodes, not simplified renderable representations. Their
+`geometricError` is therefore computed from spatial tile size:
+
+```text
+geometricError = tile_width * geometric_error_factor
+```
+
+Leaf tiles use `geometricError: 0.0`. Tune the factor with
+`--geometric-error-factor`; higher values make detailed content refine earlier.
+
 For explicit tilesets, it is possible to add a tightly-fitted bounding volume to the [tile's content](https://docs.ogc.org/cs/22-025r4/22-025r4.html#core-content-bounding-volume).
 You can enable this with the `--3dtiles-content-add-bv` option.
 

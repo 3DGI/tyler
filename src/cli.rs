@@ -61,10 +61,11 @@ pub struct Cli {
     /// Add the boundingVolume of the content for the the tiles that have content.
     #[arg(long = "3dtiles-content-add-bv")]
     pub cesium3dtiles_content_add_bv: bool,
-    /// Set the geometric error (see 3D Tiles specification) on the parent nodes of leafs. This controls at what
-    /// camera distance leaf nodes become visible. Higher values make content visible earlier when zooming in.
-    #[arg(long, short = 'e', default_value = "12")]
-    pub geometric_error_above_leaf: Option<f64>,
+    /// Set the geometric error factor (see 3D Tiles specification) for internal tiles.
+    /// Internal tile geometricError is computed as tile width multiplied by this factor.
+    /// Higher values make detailed content visible earlier when zooming in.
+    #[arg(long = "geometric-error-factor", short = 'e', default_value = "0.024")]
+    pub geometric_error_factor: Option<f64>,
     /// Set the 2D cell size for the grid that is used for constructing the quadtree.
     /// In input units (eg. meters). Note that the cell size will be adjusted so that it is
     /// possible to construct a tightly fit square, containing 4^n cells. The final cell size will
@@ -374,6 +375,15 @@ mod tests {
         args.push("--include-parent-attributes".to_string());
         let cli = Cli::try_parse_from(args).unwrap();
         assert!(cli.include_parent_attributes);
+    }
+
+    #[test]
+    fn verify_geometric_error_factor() {
+        let dataset_dir = legacy_dataset_dir();
+        let mut args = required_args(&dataset_dir);
+        args.extend(["--geometric-error-factor".to_string(), "0.05".to_string()]);
+        let cli = Cli::try_parse_from(args).unwrap();
+        assert_eq!(cli.geometric_error_factor, Some(0.05));
     }
 
     #[test]

@@ -1032,7 +1032,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // Since we have a default value, we can safely unwrap.
     let grid_cellsize = cli.grid_cellsize.unwrap();
-    let geometric_error_above_leaf = cli.geometric_error_above_leaf.unwrap();
+    let geometric_error_factor = cli.geometric_error_factor.unwrap();
+    if geometric_error_factor < 0.0 {
+        return Err("--geometric-error-factor must be non-negative".into());
+    }
     let format = Formats::_3DTiles; // override --format
                                     // Since we have a default value, it is safe to unwrap
                                     // let qtree_capacity = 0; // override cli.qtree_capacity
@@ -1192,7 +1195,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut tileset = formats::cesium3dtiles::Tileset::from_quadtree(
         &quadtree,
         &world,
-        geometric_error_above_leaf,
+        geometric_error_factor,
         grid_cellsize,
         cli.grid_minz,
         cli.grid_maxz,

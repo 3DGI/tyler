@@ -155,8 +155,8 @@ pub mod cesium3dtiles {
         pub fn from_quadtree(
             quadtree: &QuadTree,
             world: &crate::parser::World,
-            geometric_error_above_leaf: f64,
-            arg_cellsize: u32,
+            geometric_error_factor: f64,
+            _arg_cellsize: u32,
             arg_minz: Option<i32>,
             arg_maxz: Option<i32>,
             content_bv_from_tile: bool,
@@ -170,8 +170,7 @@ pub mod cesium3dtiles {
                 quadtree,
                 world,
                 &transformer,
-                geometric_error_above_leaf,
-                arg_cellsize,
+                geometric_error_factor,
                 arg_minz,
                 arg_maxz,
                 content_bv_from_tile,
@@ -205,8 +204,7 @@ pub mod cesium3dtiles {
 
             Self {
                 asset: Default::default(),
-                geometric_error: geometric_error_above_leaf
-                    + root_with_transform.geometric_error * 1.5,
+                geometric_error: root_with_transform.geometric_error,
                 root: root_with_transform,
                 properties: None,
                 extensions_used: Some(vec![ExtensionName::ContentGltf]),
@@ -223,8 +221,7 @@ pub mod cesium3dtiles {
             quadtree: &QuadTree,
             world: &crate::parser::World,
             transformer: &Proj,
-            geometric_error_above_leaf: f64,
-            arg_cellsize: u32,
+            geometric_error_factor: f64,
             arg_minz: Option<i32>,
             arg_maxz: Option<i32>,
             content_bv_from_tile: bool,
@@ -249,28 +246,18 @@ pub mod cesium3dtiles {
                 let bounding_volume =
                     BoundingVolume::region_from_bbox(&tile_bbox, transformer).unwrap();
 
-                // The geometric error of a tile is computed based on the specified error
-                // for the nodes have leafs as children (assuming all leaf nodes are at the same level)
-                let level_multiplier = (tile_bbox[3] - tile_bbox[0]) / (arg_cellsize as f64) - 2.0;
-                let mut d = geometric_error_above_leaf * level_multiplier;
-                let d_string = format!("{d:.2}");
-                if d < 0.0 {
-                    warn!("d is negative in internal tile {tile_id}");
-                } else if d_string == *"0.00" {
-                    // Because, for instance we have a —grid-cellsize 250, then a parent of the deepest level will have an edge length of 2 * 250.
-                    // So for the 'level_multiplier' formula we get:
-                    // 500 / 250 - 2.0 = 0
-                    // Which then results in a 'd' of 0.
-                    d = geometric_error_above_leaf;
-                }
+                // Tyler currently writes full-detail content only at leaves. Internal
+                // tiles are traversal nodes, so their geometric error is a spatial
+                // refinement trigger proportional to the tile footprint.
+                let tile_width = (tile_bbox[3] - tile_bbox[0]).max(tile_bbox[4] - tile_bbox[1]);
+                let geometric_error = tile_width * geometric_error_factor;
                 let mut tile_children: Vec<Tile> = Vec::new();
                 for child in quadtree.children.iter() {
                     tile_children.push(Self::generate_tiles(
                         child,
                         world,
                         transformer,
-                        geometric_error_above_leaf,
-                        arg_cellsize,
+                        geometric_error_factor,
                         arg_minz,
                         arg_maxz,
                         content_bv_from_tile,
@@ -280,7 +267,7 @@ pub mod cesium3dtiles {
                 Tile {
                     id: tile_id,
                     bounding_volume,
-                    geometric_error: d,
+                    geometric_error,
                     viewer_request_volume: None,
                     refine: Some(Refinement::Replace),
                     transform: None,
@@ -348,21 +335,10 @@ pub mod cesium3dtiles {
                     });
                 }
 
-                // Calculate geometric error for leaf tile based on tile size
-                // Use a small fraction of the tile's diagonal as geometric error
-                // This ensures positive value while being appropriate for leaf tiles
-                let dx = tile_bbox[3] - tile_bbox[0];
-                let dy = tile_bbox[4] - tile_bbox[1];
-                let dz = tile_bbox[5] - tile_bbox[2];
-                let diagonal = (dx * dx + dy * dy + dz * dz).sqrt();
-                let leaf_geometric_error = diagonal * 0.001; // 0.1% of diagonal as minimum
-                                                             // Ensure minimum value of 0.1 to avoid issues with very small tiles
-                let geometric_error = leaf_geometric_error.max(0.1);
-
                 Tile {
                     id: tile_id,
                     bounding_volume,
-                    geometric_error,
+                    geometric_error: 0.0,
                     viewer_request_volume: None,
                     refine: Some(Refinement::Replace),
                     transform: None,
@@ -1838,6 +1814,28 @@ pub mod cesium3dtiles {
             }
         }
 
+        fn assert_geometric_error_decreases_to_zero(tile: &Tile) {
+            if let Some(children) = &tile.children {
+                for child in children {
+                    assert!(
+                        tile.geometric_error >= child.geometric_error,
+                        "tile {} geometricError {} should be >= child {} geometricError {}",
+                        tile.id,
+                        tile.geometric_error,
+                        child.id,
+                        child.geometric_error
+                    );
+                    assert_geometric_error_decreases_to_zero(child);
+                }
+            } else {
+                assert!(
+                    tile.geometric_error.abs() <= f64::EPSILON,
+                    "leaf tile {} should have zero geometricError",
+                    tile.id
+                );
+            }
+        }
+
         #[test]
         fn test_implicittiling() {
             // 85162.9 447106.8 85562.9 447706.8
@@ -1884,7 +1882,7 @@ pub mod cesium3dtiles {
             let tileset = Tileset::from_quadtree(
                 &quadtree,
                 &world,
-                16_f64,
+                0.024,
                 200,
                 None,
                 None,
@@ -1893,6 +1891,8 @@ pub mod cesium3dtiles {
                 &root_enu_frame,
             );
             assert_tile_bounding_volumes_are_regions(&tileset.root);
+            assert_geometric_error_decreases_to_zero(&tileset.root);
+            assert!((tileset.geometric_error - tileset.root.geometric_error).abs() <= f64::EPSILON);
             let root_transform = tileset
                 .root
                 .transform

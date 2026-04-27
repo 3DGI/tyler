@@ -23,6 +23,8 @@
   parallelism.
 - Tile conversion now uses thread-local `CityIndex` handles for cjindex reads
   and defers normal per-feature cleanup until after tile model merging.
+- 3D Tiles internal `geometricError` is now computed from tile width using
+  `--geometric-error-factor`; full-detail leaf tiles use `0.0`.
 - Tyler now takes a single dataset root input instead of separate `--metadata` and `--features` arguments.
 - Tyler no longer depends on an external `geoflow-bundle` installation for GLB export.
 - For implicit 3DTiles, tiling is now performed in geographic coordinates
