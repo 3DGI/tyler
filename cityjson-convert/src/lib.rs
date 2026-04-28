@@ -19,7 +19,6 @@ use std::path::Path;
 
 use anyhow::Result;
 use cityjson_lib::CityModel;
-use log::debug;
 
 #[derive(Clone, Debug, Default)]
 pub enum GeometryPlacement {
@@ -92,6 +91,5 @@ pub fn convert_to_glb<P: AsRef<Path>>(
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent)?;
     }
-    debug!("Writing GLB output to {}", output.display());
     gltf_writer::write_city_model_glb(model, output, options)
 }
