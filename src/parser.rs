@@ -265,8 +265,7 @@ impl World {
                     .iter_all_feature_ref_pages(CJINDEX_PAGE_SIZE)
                     .map_err(|e| std::io::Error::other(e.to_string()))?;
                 for page_result in pages_iter {
-                    let page =
-                        page_result.map_err(|e| std::io::Error::other(e.to_string()))?;
+                    let page = page_result.map_err(|e| std::io::Error::other(e.to_string()))?;
                     for chunk in page.chunks(CJINDEX_PARALLEL_CHUNK_SIZE) {
                         if chunk_tx.send(chunk.to_vec()).is_err() {
                             return Ok(());
@@ -376,10 +375,11 @@ impl World {
         let cityobject_types: Option<&Vec<CityObjectType>> = self.cityobject_types.as_ref();
         let grid_layout = grid.layout();
 
-        type ChunkResult = Result<Vec<Option<FeatureInGridCells>>, std::io::Error>;
         let (chunk_tx, chunk_rx) =
             std::sync::mpsc::sync_channel::<Vec<cityjson_index::IndexedFeatureRef>>(64);
-        let (result_tx, result_rx) = std::sync::mpsc::sync_channel::<ChunkResult>(64);
+        let (result_tx, result_rx) = std::sync::mpsc::sync_channel::<
+            Result<Vec<Option<FeatureInGridCells>>, std::io::Error>,
+        >(64);
 
         let mut indexed_features = 0usize;
         let mut consumer_err: Option<std::io::Error> = None;
@@ -393,62 +393,59 @@ impl World {
         //     in cells, and pushes the result to result_tx.
         //   Stage 3 (integrator, main thread): drains result_rx and applies the
         //     mutations to `features` and `grid`.
-        let loader_outcome = std::thread::scope(
-            |s| -> Result<(usize, usize), std::io::Error> {
-                let page_loader = s.spawn(move || -> Result<(usize, usize), std::io::Error> {
-                    let pages_iter = city_index
-                        .iter_all_feature_ref_pages(CJINDEX_PAGE_SIZE)
-                        .map_err(|e| std::io::Error::other(e.to_string()))?;
-                    let mut page_count = 0usize;
-                    let mut scanned_features = 0usize;
-                    for page_result in pages_iter {
-                        let page =
-                            page_result.map_err(|e| std::io::Error::other(e.to_string()))?;
-                        page_count += 1;
-                        scanned_features += page.len();
-                        for chunk in page.chunks(CJINDEX_PARALLEL_CHUNK_SIZE) {
-                            if chunk_tx.send(chunk.to_vec()).is_err() {
-                                return Ok((page_count, scanned_features));
-                            }
-                        }
-                    }
-                    Ok((page_count, scanned_features))
-                });
-
-                s.spawn(move || {
-                    chunk_rx
-                        .into_iter()
-                        .par_bridge()
-                        .for_each_with(result_tx, |tx, chunk| {
-                            let result = Self::index_cjindex_feature_refs_chunk(
-                                input_source,
-                                &grid_layout,
-                                cityobject_types,
-                                &chunk,
-                            );
-                            let _ = tx.send(result);
-                        });
-                });
-
-                while let Ok(result) = result_rx.recv() {
-                    match result {
-                        Ok(fics) => {
-                            for fic in fics.into_iter().flatten() {
-                                indexed_features += 1;
-                                integrate_feature_in_cells(features, grid, fic);
-                            }
-                        }
-                        Err(e) => {
-                            if consumer_err.is_none() {
-                                consumer_err = Some(e);
-                            }
+        let loader_outcome = std::thread::scope(|s| -> Result<(usize, usize), std::io::Error> {
+            let page_loader = s.spawn(move || -> Result<(usize, usize), std::io::Error> {
+                let pages_iter = city_index
+                    .iter_all_feature_ref_pages(CJINDEX_PAGE_SIZE)
+                    .map_err(|e| std::io::Error::other(e.to_string()))?;
+                let mut page_count = 0usize;
+                let mut scanned_features = 0usize;
+                for page_result in pages_iter {
+                    let page = page_result.map_err(|e| std::io::Error::other(e.to_string()))?;
+                    page_count += 1;
+                    scanned_features += page.len();
+                    for chunk in page.chunks(CJINDEX_PARALLEL_CHUNK_SIZE) {
+                        if chunk_tx.send(chunk.to_vec()).is_err() {
+                            return Ok((page_count, scanned_features));
                         }
                     }
                 }
+                Ok((page_count, scanned_features))
+            });
 
-                page_loader.join().expect("page loader thread panicked")
-            },
-        );
+            s.spawn(move || {
+                chunk_rx
+                    .into_iter()
+                    .par_bridge()
+                    .for_each_with(result_tx, |tx, chunk| {
+                        let result = Self::index_cjindex_feature_refs_chunk(
+                            input_source,
+                            &grid_layout,
+                            cityobject_types,
+                            &chunk,
+                        );
+                        let _ = tx.send(result);
+                    });
+            });
+
+            while let Ok(result) = result_rx.recv() {
+                match result {
+                    Ok(fics) => {
+                        for fic in fics.into_iter().flatten() {
+                            indexed_features += 1;
+                            integrate_feature_in_cells(features, grid, fic);
+                        }
+                    }
+                    Err(e) => {
+                        if consumer_err.is_none() {
+                            consumer_err = Some(e);
+                        }
+                    }
+                }
+            }
+
+            page_loader.join().expect("page loader thread panicked")
+        });
 
         if let Some(e) = consumer_err {
             return Err(Box::new(e));
