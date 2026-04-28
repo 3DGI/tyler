@@ -423,8 +423,8 @@ impl CachedProjTransform {
             let transformer = cache
                 .get(&self.key)
                 .expect("cached PROJ transform should have been inserted");
-            let transformed = transformer.convert((point[0], point[1], point[2]))?;
-            Ok([transformed.0, transformed.1, transformed.2])
+            let converted = transformer.convert((point[0], point[1], point[2]))?;
+            Ok([converted.0, converted.1, converted.2])
         })
     }
 }
