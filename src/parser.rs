@@ -27,7 +27,7 @@ use log::{debug, info};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::spatial_structs::{Bbox, Cell, CellId};
+use crate::spatial_structs::{Bbox, Cell, CellId, GridLayout};
 
 const CJINDEX_PAGE_SIZE: usize = 65_536;
 const CJINDEX_PARALLEL_CHUNK_SIZE: usize = 2_048;
@@ -180,16 +180,12 @@ impl World {
             cityobject_types
         );
 
-        let city_index = input_source.open_index()?;
         let (extent, nr_features, nr_features_ignored, cityobject_types_ignored) =
             if cityobject_types.is_none() {
+                let city_index = input_source.open_index()?;
                 Self::extent_from_cjindex_bbox_pages(&city_index)?
             } else {
-                Self::extent_from_cjindex_features(
-                    &input_source,
-                    &city_index,
-                    cityobject_types.as_ref(),
-                )?
+                Self::extent_from_cjindex_features(&input_source, cityobject_types.as_ref())?
             };
 
         let mut extent = extent.ok_or_else(|| {
@@ -254,27 +250,50 @@ impl World {
 
     fn extent_from_cjindex_features(
         input_source: &InputSource,
-        city_index: &CityIndex,
         cityobject_types: Option<&Vec<CityObjectType>>,
     ) -> Result<(Option<Bbox>, usize, usize, Vec<CityObjectType>), Box<dyn std::error::Error>> {
-        let mut total = ExtentStats::default();
+        let city_index = input_source.open_index()?;
+        let (chunk_tx, chunk_rx) =
+            std::sync::mpsc::sync_channel::<Vec<cityjson_index::IndexedFeatureRef>>(64);
 
-        for page_result in city_index.iter_all_feature_ref_pages(CJINDEX_PAGE_SIZE)? {
-            let page = page_result?;
-            let chunk_results = page
-                .par_chunks(CJINDEX_PARALLEL_CHUNK_SIZE)
-                .map(|feature_refs| {
+        // Same 2-stage pipeline as `index_with_grid`: a dedicated page-loader
+        // thread streams owned chunks to `chunk_tx` so workers can start
+        // processing before all pages have been read.
+        let total = std::thread::scope(|s| -> Result<ExtentStats, std::io::Error> {
+            let page_loader = s.spawn(move || -> Result<(), std::io::Error> {
+                let pages_iter = city_index
+                    .iter_all_feature_ref_pages(CJINDEX_PAGE_SIZE)
+                    .map_err(|e| std::io::Error::other(e.to_string()))?;
+                for page_result in pages_iter {
+                    let page =
+                        page_result.map_err(|e| std::io::Error::other(e.to_string()))?;
+                    for chunk in page.chunks(CJINDEX_PARALLEL_CHUNK_SIZE) {
+                        if chunk_tx.send(chunk.to_vec()).is_err() {
+                            return Ok(());
+                        }
+                    }
+                }
+                Ok(())
+            });
+
+            let total = chunk_rx
+                .into_iter()
+                .par_bridge()
+                .map(|chunk| {
                     Self::extent_from_cjindex_feature_refs_chunk(
                         input_source,
-                        feature_refs,
+                        &chunk,
                         cityobject_types,
                     )
                 })
-                .collect::<Vec<_>>();
-            for chunk in chunk_results {
-                total.merge(chunk?);
-            }
-        }
+                .try_reduce(ExtentStats::default, |mut a, b| {
+                    a.merge(b);
+                    Ok(a)
+                })?;
+
+            page_loader.join().expect("page loader thread panicked")?;
+            Ok(total)
+        })?;
 
         Ok((
             total.extent,
@@ -345,36 +364,100 @@ impl World {
         info!("Counting vertices in grid cells");
 
         self.features.clear();
-        let city_index = self.input_source.open_index()?;
-        let mut page_count = 0usize;
-        let mut scanned_features = 0usize;
-        let mut indexed_features = 0usize;
         let started = Instant::now();
-        for page_result in city_index.iter_all_feature_ref_pages(CJINDEX_PAGE_SIZE)? {
-            let page_started = Instant::now();
-            let page = page_result?;
-            page_count += 1;
-            scanned_features += page.len();
-            let feature_in_cells = page
-                .par_chunks(CJINDEX_PARALLEL_CHUNK_SIZE)
-                .map(|feature_refs| self.index_cjindex_feature_refs_chunk(feature_refs))
-                .collect::<Vec<_>>();
-            for chunk_result in feature_in_cells {
-                for feature_in_cells in chunk_result?.into_iter().flatten() {
-                    indexed_features += 1;
-                    self.integrate_feature_in_cells(feature_in_cells);
+        let city_index = self.input_source.open_index()?;
+
+        // Split the &mut self borrow into disjoint field borrows so workers can
+        // hold immutable views (input_source, grid_layout, cityobject_types)
+        // while the integrator mutates `features` and `grid`.
+        let features: &mut FeatureSet = &mut self.features;
+        let grid: &mut crate::spatial_structs::SquareGrid = &mut self.grid;
+        let input_source: &InputSource = &self.input_source;
+        let cityobject_types: Option<&Vec<CityObjectType>> = self.cityobject_types.as_ref();
+        let grid_layout = grid.layout();
+
+        type ChunkResult = Result<Vec<Option<FeatureInGridCells>>, std::io::Error>;
+        let (chunk_tx, chunk_rx) =
+            std::sync::mpsc::sync_channel::<Vec<cityjson_index::IndexedFeatureRef>>(64);
+        let (result_tx, result_rx) = std::sync::mpsc::sync_channel::<ChunkResult>(64);
+
+        let mut indexed_features = 0usize;
+        let mut consumer_err: Option<std::io::Error> = None;
+
+        // 3-stage pipeline:
+        //   Stage 1 (page_loader): streams pages from cjindex and pushes owned
+        //     chunks to chunk_tx. Runs on its own OS thread so I/O overlaps with
+        //     CPU work in the rayon pool.
+        //   Stage 2 (workers): par_bridge consumes chunk_rx and dispatches each
+        //     chunk to a rayon worker, which parses the features, counts vertices
+        //     in cells, and pushes the result to result_tx.
+        //   Stage 3 (integrator, main thread): drains result_rx and applies the
+        //     mutations to `features` and `grid`.
+        let loader_outcome = std::thread::scope(
+            |s| -> Result<(usize, usize), std::io::Error> {
+                let page_loader = s.spawn(move || -> Result<(usize, usize), std::io::Error> {
+                    let pages_iter = city_index
+                        .iter_all_feature_ref_pages(CJINDEX_PAGE_SIZE)
+                        .map_err(|e| std::io::Error::other(e.to_string()))?;
+                    let mut page_count = 0usize;
+                    let mut scanned_features = 0usize;
+                    for page_result in pages_iter {
+                        let page =
+                            page_result.map_err(|e| std::io::Error::other(e.to_string()))?;
+                        page_count += 1;
+                        scanned_features += page.len();
+                        for chunk in page.chunks(CJINDEX_PARALLEL_CHUNK_SIZE) {
+                            if chunk_tx.send(chunk.to_vec()).is_err() {
+                                return Ok((page_count, scanned_features));
+                            }
+                        }
+                    }
+                    Ok((page_count, scanned_features))
+                });
+
+                s.spawn(move || {
+                    chunk_rx
+                        .into_iter()
+                        .par_bridge()
+                        .for_each_with(result_tx, |tx, chunk| {
+                            let result = Self::index_cjindex_feature_refs_chunk(
+                                input_source,
+                                &grid_layout,
+                                cityobject_types,
+                                &chunk,
+                            );
+                            let _ = tx.send(result);
+                        });
+                });
+
+                while let Ok(result) = result_rx.recv() {
+                    match result {
+                        Ok(fics) => {
+                            for fic in fics.into_iter().flatten() {
+                                indexed_features += 1;
+                                integrate_feature_in_cells(features, grid, fic);
+                            }
+                        }
+                        Err(e) => {
+                            if consumer_err.is_none() {
+                                consumer_err = Some(e);
+                            }
+                        }
+                    }
                 }
-            }
-            debug!(
-                "Indexed cjindex feature page {page_count} in {:?} ({} scanned, {} retained so far)",
-                page_started.elapsed(),
-                scanned_features,
-                indexed_features
-            );
+
+                page_loader.join().expect("page loader thread panicked")
+            },
+        );
+
+        if let Some(e) = consumer_err {
+            return Err(Box::new(e));
         }
+        let (page_count, scanned_features) = loader_outcome?;
+
         info!(
             "Indexed {} of {} scanned features into grid cells across {} pages in {:?}",
-            self.features.len(),
+            features.len(),
             scanned_features,
             page_count,
             started.elapsed()
@@ -383,28 +466,36 @@ impl World {
     }
 
     fn index_cjindex_feature_refs_chunk(
-        &self,
+        input_source: &InputSource,
+        grid_layout: &GridLayout,
+        cityobject_types: Option<&Vec<CityObjectType>>,
         feature_refs: &[cityjson_index::IndexedFeatureRef],
     ) -> Result<Vec<Option<FeatureInGridCells>>, std::io::Error> {
-        let models = Self::read_cjindex_features_thread_local(&self.input_source, feature_refs)
+        let models = Self::read_cjindex_features_thread_local(input_source, feature_refs)
             .map_err(|error| std::io::Error::other(error.to_string()))?;
         Ok(feature_refs
             .iter()
             .cloned()
             .zip(models.iter())
             .map(|(feature_ref, model)| {
-                self.index_feature_model(FeatureReference::CjIndexRef(feature_ref), model)
+                Self::index_feature_model(
+                    grid_layout,
+                    cityobject_types,
+                    FeatureReference::CjIndexRef(feature_ref),
+                    model,
+                )
             })
             .collect())
     }
 
     fn index_feature_model(
-        &self,
+        grid_layout: &GridLayout,
+        cityobject_types: Option<&Vec<CityObjectType>>,
         feature_reference: FeatureReference,
         model: &cityjson_lib::CityModel,
     ) -> Option<FeatureInGridCells> {
         let stats_started = Instant::now();
-        let stats = selected_geometry_stats(model, self.cityobject_types.as_ref());
+        let stats = selected_geometry_stats(model, cityobject_types);
         debug!(
             "selected_geometry_stats collected {} vertices for {:?} in {:?}",
             stats.selected_vertices.len(),
@@ -426,7 +517,7 @@ impl World {
         if uses_unique_assignment {
             let count_started = Instant::now();
             let (cellid, nr_vertices) =
-                count_unique_assignment_cell(model, &stats.selected_vertices, &self.grid, &bbox)?;
+                count_unique_assignment_cell(model, &stats.selected_vertices, grid_layout, &bbox)?;
             debug!(
                 "Selected unique assignment grid cell {:?} with {} vertices in {:?}",
                 cellid,
@@ -438,7 +529,7 @@ impl World {
 
         let count_started = Instant::now();
         let cell_vtx_cnt =
-            count_vertices_in_grid(model, &stats.selected_vertices, &self.grid, &bbox);
+            count_vertices_in_grid(model, &stats.selected_vertices, grid_layout, &bbox);
         debug!(
             "Counted {} grid cells for {:?} in {:?}",
             cell_vtx_cnt.len(),
@@ -449,18 +540,6 @@ impl World {
             return None;
         }
         Self::feature_to_cells(feature, cell_vtx_cnt)
-    }
-
-    fn integrate_feature_in_cells(&mut self, feature_in_cells: FeatureInGridCells) {
-        let fid = self.features.len();
-        self.features.push(feature_in_cells.feature);
-        for (cellid, cell) in feature_in_cells.cells {
-            let grid_cell = self.grid.cell_mut(&cellid);
-            grid_cell.nr_vertices += cell.nr_vertices;
-            if !grid_cell.feature_ids.contains(&fid) {
-                grid_cell.feature_ids.push(fid)
-            }
-        }
     }
 
     fn feature_to_cells(feature: Feature, cell_vtx_cnt: CellCounts) -> Option<FeatureInGridCells> {
@@ -518,6 +597,20 @@ impl World {
             Some(outdir) => File::create(outdir.join(format!("{file_name}.bincode")))?,
         };
         bincode::serialize_into(file, self)
+    }
+}
+
+fn integrate_feature_in_cells(
+    features: &mut FeatureSet,
+    grid: &mut crate::spatial_structs::SquareGrid,
+    feature_in_cells: FeatureInGridCells,
+) {
+    let fid = features.len();
+    features.push(feature_in_cells.feature);
+    for (cellid, cell) in feature_in_cells.cells {
+        let grid_cell = grid.cell_mut(&cellid);
+        grid_cell.nr_vertices += cell.nr_vertices;
+        grid_cell.feature_ids.push(fid);
     }
 }
 
@@ -737,7 +830,7 @@ fn collect_selected_vertex_indices(
 fn count_vertices_in_grid(
     model: &cityjson::v2_0::OwnedCityModel,
     selected_vertices: &[GeometryVertexIndex<u32>],
-    grid: &crate::spatial_structs::SquareGrid,
+    grid: &GridLayout,
     bbox: &Bbox,
 ) -> CellCounts {
     if selected_vertices.is_empty() {
@@ -760,7 +853,7 @@ fn count_vertices_in_grid(
 fn count_unique_assignment_cell(
     model: &cityjson::v2_0::OwnedCityModel,
     selected_vertices: &[GeometryVertexIndex<u32>],
-    grid: &crate::spatial_structs::SquareGrid,
+    grid: &GridLayout,
     bbox: &Bbox,
 ) -> Option<(CellId, usize)> {
     if selected_vertices.is_empty() {
@@ -787,7 +880,7 @@ fn count_unique_assignment_cell(
 fn count_vertex_cells(
     model: &cityjson::v2_0::OwnedCityModel,
     selected_vertices: &[GeometryVertexIndex<u32>],
-    grid: &crate::spatial_structs::SquareGrid,
+    grid: &GridLayout,
 ) -> Vec<(CellId, usize)> {
     let mut vertex_counts = Vec::with_capacity(selected_vertices.len());
     count_vertex_cells_into(model, selected_vertices, grid, &mut vertex_counts);
@@ -797,7 +890,7 @@ fn count_vertex_cells(
 fn count_vertex_cells_into(
     model: &cityjson::v2_0::OwnedCityModel,
     selected_vertices: &[GeometryVertexIndex<u32>],
-    grid: &crate::spatial_structs::SquareGrid,
+    grid: &GridLayout,
     vertex_counts: &mut Vec<(CellId, usize)>,
 ) {
     vertex_counts.clear();
@@ -850,7 +943,7 @@ fn compress_vertex_counts(vertex_counts: &mut Vec<(CellId, usize)>) {
 fn count_vertex_cells_parallel(
     model: &cityjson::v2_0::OwnedCityModel,
     selected_vertices: &[GeometryVertexIndex<u32>],
-    grid: &crate::spatial_structs::SquareGrid,
+    grid: &GridLayout,
 ) -> Vec<(CellId, usize)> {
     let vertices = model.vertices();
     selected_vertices
@@ -870,7 +963,7 @@ fn count_vertex_cells_parallel(
 
 fn max_merged_vertex_count_with_bbox(
     vertex_counts: &[(CellId, usize)],
-    grid: &crate::spatial_structs::SquareGrid,
+    grid: &GridLayout,
     bbox: &Bbox,
 ) -> Option<(CellId, usize)> {
     let (columns, rows) = grid.intersect_bbox_ranges(bbox);
@@ -952,7 +1045,7 @@ impl CellCounts {
 
     fn merge_vertex_counts_with_bbox(
         vertex_counts: Vec<(CellId, usize)>,
-        grid: &crate::spatial_structs::SquareGrid,
+        grid: &GridLayout,
         bbox: &Bbox,
     ) -> Self {
         let (columns, rows) = grid.intersect_bbox_ranges(bbox);
@@ -1152,9 +1245,11 @@ mod tests {
     ) -> (CellId, usize) {
         let stats = selected_geometry_stats(model, Some(&vec![object_type]));
         let bbox = stats.bbox.unwrap();
-        let full_counts = count_vertices_in_grid(model, &stats.selected_vertices, grid, &bbox);
+        let layout = grid.layout();
+        let full_counts = count_vertices_in_grid(model, &stats.selected_vertices, &layout, &bbox);
         let expected = unique_assignment_winner_from_full_counts(&full_counts);
-        let optimized = count_unique_assignment_cell(model, &stats.selected_vertices, grid, &bbox);
+        let optimized =
+            count_unique_assignment_cell(model, &stats.selected_vertices, &layout, &bbox);
 
         assert_eq!(optimized, expected);
         optimized.expect("unique assignment should produce a winning cell")
@@ -1386,7 +1481,7 @@ mod tests {
         let counts = count_vertices_in_grid(
             &model,
             &stats.selected_vertices,
-            &grid,
+            &grid.layout(),
             &stats.bbox.unwrap(),
         );
 
@@ -1450,7 +1545,8 @@ mod tests {
             7415,
         );
 
-        let optimized = count_vertices_in_grid(&model, &stats.selected_vertices, &grid, &bbox);
+        let layout = grid.layout();
+        let optimized = count_vertices_in_grid(&model, &stats.selected_vertices, &layout, &bbox);
         let reference =
             reference_count_vertices_in_grid(&model, &stats.selected_vertices, &grid, &bbox);
 
@@ -1527,7 +1623,8 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        let optimized = count_vertices_in_grid(&model, &selected_vertices, &grid, &bbox);
+        let layout = grid.layout();
+        let optimized = count_vertices_in_grid(&model, &selected_vertices, &layout, &bbox);
         let reference = reference_count_vertices_in_grid(&model, &selected_vertices, &grid, &bbox);
 
         assert_eq!(

@@ -479,6 +479,60 @@ pub struct SquareGrid {
     pub epsg: u16,
 }
 
+/// Lightweight, copyable view of a [`SquareGrid`]'s metadata that exposes the
+/// read-only spatial queries (`locate_point`, `intersect_bbox_ranges`). Letting
+/// workers hold a `GridLayout` by value lets the integrator hold `&mut SquareGrid`
+/// concurrently without violating Rust's borrowing rules.
+#[derive(Debug, Clone, Copy)]
+pub struct GridLayout {
+    origin: [f64; 3],
+    pub bbox: Bbox,
+    pub length: usize,
+    cellsize: u32,
+    pub epsg: u16,
+}
+
+impl GridLayout {
+    pub fn locate_point(&self, point: &[f64; 2]) -> CellId {
+        let dx = point[0] - self.origin[0];
+        let dy = point[1] - self.origin[1];
+        let max_index = self.length.saturating_sub(1);
+        let col_i = ((dx / self.cellsize as f64).floor() as isize).clamp(0, max_index as isize);
+        let row_i = ((dy / self.cellsize as f64).floor() as isize).clamp(0, max_index as isize);
+        CellId {
+            row: row_i as usize,
+            column: col_i as usize,
+        }
+    }
+
+    pub fn intersect_bbox_ranges(
+        &self,
+        bbox: &Bbox,
+    ) -> (
+        std::ops::RangeInclusive<usize>,
+        std::ops::RangeInclusive<usize>,
+    ) {
+        let [minx, miny, _, maxx, maxy, _] = *bbox;
+        let min_cellid = self.locate_point(&[minx, miny]);
+        let max_cellid = self.locate_point(&[maxx, maxy]);
+        (
+            min_cellid.column..=max_cellid.column,
+            min_cellid.row..=max_cellid.row,
+        )
+    }
+
+    pub fn intersect_bbox(&self, bbox: &Bbox) -> Vec<CellId> {
+        let mut cellids: Vec<CellId> = Vec::new();
+        let (columns, rows) = self.intersect_bbox_ranges(bbox);
+        for column in columns {
+            for row in rows.clone() {
+                cellids.push(CellId { row, column });
+            }
+        }
+        cellids
+    }
+}
+
 impl Display for SquareGrid {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -572,6 +626,19 @@ impl SquareGrid {
             cellsize,
             data: row,
             epsg,
+        }
+    }
+
+    /// A snapshot of the grid metadata needed for read-only spatial queries.
+    /// Pass this to worker threads instead of `&self` so the integrator can keep
+    /// exclusive access to the cell data.
+    pub fn layout(&self) -> GridLayout {
+        GridLayout {
+            origin: self.origin,
+            bbox: self.bbox,
+            length: self.length,
+            cellsize: self.cellsize,
+            epsg: self.epsg,
         }
     }
 
