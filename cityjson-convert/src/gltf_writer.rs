@@ -1,5 +1,6 @@
 #![allow(clippy::too_many_lines)]
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::convert::TryFrom;
 use std::fs::File;
@@ -31,6 +32,10 @@ const QUANTIZED_POSITION_STRIDE: usize = std::mem::size_of::<QuantizedPosition>(
 const QUANTIZED_NORMAL_STRIDE: usize = std::mem::size_of::<QuantizedNormal>();
 const CLIP_PLANE_EPSILON: f64 = 1.0e-12;
 const GEOGRAPHIC_CLIP_INTERSECTION_ITERATIONS: usize = 64;
+
+thread_local! {
+    static PROJ_TRANSFORM_CACHE: RefCell<HashMap<(String, String), Proj>> = RefCell::new(HashMap::new());
+}
 
 /// Parse hex color string (#RRGGBB) to RGBA f32 array [R, G, B, A]
 fn hex_to_rgba(hex: &str) -> Result<[f32; 4], anyhow::Error> {
@@ -318,7 +323,7 @@ struct ClipVertex {
 }
 
 struct GeographicClipVolume {
-    transformer: Option<Proj>,
+    transformer: Option<CachedProjTransform>,
     west: f64,
     south: f64,
     east: f64,
@@ -372,11 +377,11 @@ struct CoordinateTransform {
 enum CoordinatePlacement {
     SourceCoordinates,
     EcefRelative {
-        vertex_transformer: Option<Proj>,
+        vertex_transformer: Option<CachedProjTransform>,
         origin: [f64; 3],
     },
     Enu {
-        vertex_transformer: Option<Proj>,
+        vertex_transformer: Option<CachedProjTransform>,
         ecef_origin: [f64; 3],
         east: [f64; 3],
         north: [f64; 3],
@@ -388,6 +393,40 @@ enum CoordinatePlacement {
 struct SmoothVertexKey {
     position_bits: [u32; 3],
     feature_id: u32,
+}
+
+#[derive(Clone, Debug)]
+struct CachedProjTransform {
+    key: (String, String),
+}
+
+impl CachedProjTransform {
+    fn new(source_crs: String, target_crs: &'static str) -> Self {
+        Self {
+            key: (source_crs, target_crs.to_owned()),
+        }
+    }
+
+    fn convert(&self, point: [f64; 3]) -> Result<[f64; 3]> {
+        PROJ_TRANSFORM_CACHE.with(|cache| {
+            let mut cache = cache.borrow_mut();
+            if !cache.contains_key(&self.key) {
+                let transformer = Proj::new_known_crs(&self.key.0, &self.key.1, None)
+                    .with_context(|| {
+                        format!(
+                            "failed to create {} to {} transform",
+                            self.key.0, self.key.1
+                        )
+                    })?;
+                cache.insert(self.key.clone(), transformer);
+            }
+            let transformer = cache
+                .get(&self.key)
+                .expect("cached PROJ transform should have been inserted");
+            let transformed = transformer.convert((point[0], point[1], point[2]))?;
+            Ok([transformed.0, transformed.1, transformed.2])
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -526,7 +565,7 @@ impl CoordinateTransform {
             GeometryPlacement::SourceCoordinates => CoordinatePlacement::SourceCoordinates,
             GeometryPlacement::EcefRelative { source_crs, origin } => {
                 let source_crs = canonical_epsg_crs(source_crs)?;
-                let vertex_transformer = source_to_ecef_transformer(&source_crs)?;
+                let vertex_transformer = source_to_ecef_transformer(&source_crs);
                 CoordinatePlacement::EcefRelative {
                     vertex_transformer,
                     origin: *origin,
@@ -540,7 +579,7 @@ impl CoordinateTransform {
                 up,
             } => {
                 let source_crs = canonical_epsg_crs(source_crs)?;
-                let vertex_transformer = source_to_ecef_transformer(&source_crs)?;
+                let vertex_transformer = source_to_ecef_transformer(&source_crs);
                 CoordinatePlacement::Enu {
                     vertex_transformer,
                     ecef_origin: *ecef_origin,
@@ -610,9 +649,7 @@ impl ClipVolume {
     fn geographic_region(region: &GeographicClipRegion) -> Result<Self> {
         let source_crs = canonical_epsg_crs(&region.source_crs)?;
         let transformer = (source_crs != "EPSG:4979")
-            .then(|| Proj::new_known_crs(&source_crs, "EPSG:4979", None))
-            .transpose()
-            .context("failed to create source CRS to EPSG:4979 clip transform")?;
+            .then(|| CachedProjTransform::new(source_crs.clone(), "EPSG:4979"));
         Ok(Self::GeographicRegion(GeographicClipVolume {
             transformer,
             west: region.west,
@@ -629,12 +666,12 @@ impl ClipVolume {
                 let [x, y, z] = source_position;
                 let geographic = if let Some(transformer) = &region.transformer {
                     transformer
-                        .convert((x, y, z))
+                        .convert([x, y, z])
                         .context("failed to project position to EPSG:4979 for clipping")?
                 } else {
-                    (x, y, z)
+                    [x, y, z]
                 };
-                Ok([geographic.0, geographic.1, geographic.2])
+                Ok(geographic)
             }
         }
     }
@@ -778,20 +815,21 @@ fn canonical_epsg_crs(value: &str) -> Result<String> {
     Ok(format!("EPSG:{parsed}"))
 }
 
-fn source_to_ecef_transformer(source_crs: &str) -> Result<Option<Proj>> {
+fn source_to_ecef_transformer(source_crs: &str) -> Option<CachedProjTransform> {
     (source_crs != "EPSG:4978")
-        .then(|| Proj::new_known_crs(source_crs, "EPSG:4978", None))
-        .transpose()
-        .context("failed to create source CRS to ECEF transform")
+        .then(|| CachedProjTransform::new(source_crs.to_owned(), "EPSG:4978"))
 }
 
-fn transform_to_ecef(point: [f64; 3], vertex_transformer: Option<&Proj>) -> Result<[f64; 3]> {
+fn transform_to_ecef(
+    point: [f64; 3],
+    vertex_transformer: Option<&CachedProjTransform>,
+) -> Result<[f64; 3]> {
     let [x, y, z] = point;
     if let Some(transformer) = vertex_transformer {
         let transformed = transformer
-            .convert((x, y, z))
+            .convert([x, y, z])
             .context("failed to project position to ECEF")?;
-        Ok([transformed.0, transformed.1, transformed.2])
+        Ok(transformed)
     } else {
         Ok(point)
     }
