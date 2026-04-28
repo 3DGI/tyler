@@ -1609,8 +1609,8 @@ impl ProcessedScene {
         encoded.write(output_path.as_ref())?;
 
         debug!("GLB Summary: {}", output_path.as_ref().display());
-        debug!("  Vertices: {}", vertex_count);
-        debug!("  Indices: {}", index_count);
+        debug!("  Vertices: {vertex_count}");
+        debug!("  Indices: {index_count}");
         debug!(
             "  Local coordinate range: X [{:.2}, {:.2}], Y [{:.2}, {:.2}], Z [{:.2}, {:.2}]",
             bounds.min[0],
@@ -1672,7 +1672,7 @@ impl ProcessedScene {
             ),
             false,
             options.meshopt_compression,
-            structural_metadata,
+            structural_metadata.as_ref(),
         ))
     }
 
@@ -1762,7 +1762,7 @@ impl QuantizedScene {
             build_node_matrix(position_scale, center),
             true,
             options.meshopt_compression,
-            structural_metadata,
+            structural_metadata.as_ref(),
         ))
     }
 }
@@ -1835,7 +1835,7 @@ fn build_encoded_glb(
     node_matrix: [f32; 16],
     quantization_enabled: bool,
     meshopt_compression: bool,
-    structural_metadata: Option<StructuralMetadataExtension>,
+    structural_metadata: Option<&StructuralMetadataExtension>,
 ) -> EncodedGlb {
     let has_structural_metadata = structural_metadata.is_some();
     let mesh = json::Mesh {
@@ -1925,9 +1925,7 @@ fn build_encoded_glb(
         buffer_view.extensions = Some(meshopt_buffer_view_extension(meshopt_view));
     }
 
-    let root_extensions = structural_metadata
-        .as_ref()
-        .map(structural_metadata_root_extension);
+    let root_extensions = structural_metadata.map(structural_metadata_root_extension);
 
     EncodedGlb {
         root: json::Root {
@@ -2899,9 +2897,7 @@ fn structural_metadata_root_extension(
         STRUCTURAL_METADATA_EXTENSION.to_string(),
         structural_metadata_json(structural_metadata),
     );
-    let mut extension = json::extensions::root::Root::default();
-    extension.others = others;
-    extension
+    json::extensions::root::Root { others }
 }
 
 fn meshopt_fallback_buffer_extension() -> json::extensions::buffer::Buffer {
@@ -2910,9 +2906,7 @@ fn meshopt_fallback_buffer_extension() -> json::extensions::buffer::Buffer {
         MESHOPT_EXTENSION.to_string(),
         json_value!({ "fallback": true }),
     );
-    let mut extension = json::extensions::buffer::Buffer::default();
-    extension.others = others;
-    extension
+    json::extensions::buffer::Buffer { others }
 }
 
 fn meshopt_buffer_view_extension(
@@ -2940,9 +2934,7 @@ fn meshopt_buffer_view_extension(
 
     let mut others = JsonMap::new();
     others.insert(MESHOPT_EXTENSION.to_string(), JsonValue::Object(extension));
-    let mut buffer_view_extension = json::extensions::buffer::View::default();
-    buffer_view_extension.others = others;
-    buffer_view_extension
+    json::extensions::buffer::View { others }
 }
 
 fn mesh_feature_extensions(
@@ -2967,9 +2959,7 @@ fn mesh_feature_extensions(
             "featureIds": [feature_id]
         }),
     );
-    let mut extension = json::extensions::mesh::Primitive::default();
-    extension.others = others;
-    extension
+    json::extensions::mesh::Primitive { others }
 }
 
 fn align_length(length: usize, alignment: usize) -> usize {
