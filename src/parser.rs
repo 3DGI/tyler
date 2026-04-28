@@ -30,6 +30,7 @@ use serde::{Deserialize, Serialize};
 use crate::spatial_structs::{Bbox, Cell, CellId};
 
 const CJINDEX_PAGE_SIZE: usize = 65_536;
+const CJINDEX_PARALLEL_CHUNK_SIZE: usize = 2_048;
 const LARGE_FEATURE_VERTEX_COUNT_THRESHOLD: usize = 50_000;
 
 thread_local! {
@@ -60,6 +61,51 @@ struct SelectedGeometryStats {
     selected_vertices: Vec<GeometryVertexIndex<u32>>,
     selected_object_types: Vec<CityObjectType>,
     ignored_object_types: Vec<CityObjectType>,
+}
+
+#[derive(Default)]
+struct ExtentStats {
+    extent: Option<Bbox>,
+    nr_features: usize,
+    nr_features_ignored: usize,
+    cityobject_types_ignored: Vec<CityObjectType>,
+}
+
+impl ExtentStats {
+    fn add_selected_geometry_stats(&mut self, stats: SelectedGeometryStats) {
+        if let Some(model_bbox) = stats.bbox {
+            if let Some(current) = self.extent.as_mut() {
+                merge_bbox(current, &model_bbox);
+            } else {
+                self.extent = Some(model_bbox);
+            }
+            self.nr_features += 1;
+        } else {
+            self.nr_features_ignored += 1;
+            self.extend_ignored_types(stats.ignored_object_types);
+        }
+    }
+
+    fn merge(&mut self, other: Self) {
+        if let Some(other_extent) = other.extent {
+            if let Some(current) = self.extent.as_mut() {
+                merge_bbox(current, &other_extent);
+            } else {
+                self.extent = Some(other_extent);
+            }
+        }
+        self.nr_features += other.nr_features;
+        self.nr_features_ignored += other.nr_features_ignored;
+        self.extend_ignored_types(other.cityobject_types_ignored);
+    }
+
+    fn extend_ignored_types(&mut self, ignored_types: Vec<CityObjectType>) {
+        for cotype in ignored_types {
+            if !self.cityobject_types_ignored.contains(&cotype) {
+                self.cityobject_types_ignored.push(cotype);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,7 +185,11 @@ impl World {
             if cityobject_types.is_none() {
                 Self::extent_from_cjindex_bbox_pages(&city_index)?
             } else {
-                Self::extent_from_cjindex_features(&city_index, cityobject_types.as_ref())?
+                Self::extent_from_cjindex_features(
+                    &input_source,
+                    &city_index,
+                    cityobject_types.as_ref(),
+                )?
             };
 
         let mut extent = extent.ok_or_else(|| {
@@ -203,43 +253,49 @@ impl World {
     }
 
     fn extent_from_cjindex_features(
+        input_source: &InputSource,
         city_index: &CityIndex,
         cityobject_types: Option<&Vec<CityObjectType>>,
     ) -> Result<(Option<Bbox>, usize, usize, Vec<CityObjectType>), Box<dyn std::error::Error>> {
-        let mut extent: Option<Bbox> = None;
-        let mut nr_features = 0usize;
-        let mut nr_features_ignored = 0usize;
-        let mut cityobject_types_ignored: Vec<CityObjectType> = Vec::new();
+        let mut total = ExtentStats::default();
 
         for page_result in city_index.iter_all_feature_ref_pages(CJINDEX_PAGE_SIZE)? {
             let page = page_result?;
-            for feature in page {
-                let model = city_index.read_feature(&feature)?;
-                let stats = selected_geometry_stats(&model, cityobject_types);
-                if let Some(model_bbox) = stats.bbox {
-                    if let Some(current) = extent.as_mut() {
-                        merge_bbox(current, &model_bbox);
-                    } else {
-                        extent = Some(model_bbox);
-                    }
-                    nr_features += 1;
-                } else {
-                    nr_features_ignored += 1;
-                    for cotype in stats.ignored_object_types {
-                        if !cityobject_types_ignored.contains(&cotype) {
-                            cityobject_types_ignored.push(cotype);
-                        }
-                    }
-                }
+            let chunk_results = page
+                .par_chunks(CJINDEX_PARALLEL_CHUNK_SIZE)
+                .map(|feature_refs| {
+                    Self::extent_from_cjindex_feature_refs_chunk(
+                        input_source,
+                        feature_refs,
+                        cityobject_types,
+                    )
+                })
+                .collect::<Vec<_>>();
+            for chunk in chunk_results {
+                total.merge(chunk?);
             }
         }
 
         Ok((
-            extent,
-            nr_features,
-            nr_features_ignored,
-            cityobject_types_ignored,
+            total.extent,
+            total.nr_features,
+            total.nr_features_ignored,
+            total.cityobject_types_ignored,
         ))
+    }
+
+    fn extent_from_cjindex_feature_refs_chunk(
+        input_source: &InputSource,
+        feature_refs: &[cityjson_index::IndexedFeatureRef],
+        cityobject_types: Option<&Vec<CityObjectType>>,
+    ) -> Result<ExtentStats, std::io::Error> {
+        let models = Self::read_cjindex_features_thread_local(input_source, feature_refs)
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
+        let mut chunk = ExtentStats::default();
+        for model in models {
+            chunk.add_selected_geometry_stats(selected_geometry_stats(&model, cityobject_types));
+        }
+        Ok(chunk)
     }
 
     fn cjindex_bounds_to_world_bbox(bounds: &cityjson_index::FeatureBounds) -> Bbox {
@@ -294,23 +350,20 @@ impl World {
         let mut scanned_features = 0usize;
         let mut indexed_features = 0usize;
         let started = Instant::now();
-        for page_result in city_index.scan_feature_pages(CJINDEX_PAGE_SIZE)? {
+        for page_result in city_index.iter_all_feature_ref_pages(CJINDEX_PAGE_SIZE)? {
             let page_started = Instant::now();
             let page = page_result?;
             page_count += 1;
             scanned_features += page.len();
             let feature_in_cells = page
-                .into_par_iter()
-                .map(|feature| -> Option<FeatureInGridCells> {
-                    self.index_feature_model(
-                        FeatureReference::CjIndexRef(feature.reference),
-                        &feature.model,
-                    )
-                })
+                .par_chunks(CJINDEX_PARALLEL_CHUNK_SIZE)
+                .map(|feature_refs| self.index_cjindex_feature_refs_chunk(feature_refs))
                 .collect::<Vec<_>>();
-            for feature_in_cells in feature_in_cells.into_iter().flatten() {
-                indexed_features += 1;
-                self.integrate_feature_in_cells(feature_in_cells);
+            for chunk_result in feature_in_cells {
+                for feature_in_cells in chunk_result?.into_iter().flatten() {
+                    indexed_features += 1;
+                    self.integrate_feature_in_cells(feature_in_cells);
+                }
             }
             debug!(
                 "Indexed cjindex feature page {page_count} in {:?} ({} scanned, {} retained so far)",
@@ -327,6 +380,22 @@ impl World {
             started.elapsed()
         );
         Ok(())
+    }
+
+    fn index_cjindex_feature_refs_chunk(
+        &self,
+        feature_refs: &[cityjson_index::IndexedFeatureRef],
+    ) -> Result<Vec<Option<FeatureInGridCells>>, std::io::Error> {
+        let models = Self::read_cjindex_features_thread_local(&self.input_source, feature_refs)
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
+        Ok(feature_refs
+            .iter()
+            .cloned()
+            .zip(models.iter())
+            .map(|(feature_ref, model)| {
+                self.index_feature_model(FeatureReference::CjIndexRef(feature_ref), model)
+            })
+            .collect())
     }
 
     fn index_feature_model(
