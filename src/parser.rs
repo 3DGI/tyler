@@ -34,6 +34,7 @@ const LARGE_FEATURE_VERTEX_COUNT_THRESHOLD: usize = 50_000;
 
 thread_local! {
     static CJINDEX_THREAD_LOCAL: RefCell<Option<(PathBuf, CityIndex)>> = const { RefCell::new(None) };
+    static UNIQUE_ASSIGNMENT_VERTEX_COUNTS: RefCell<Vec<(CellId, usize)>> = const { RefCell::new(Vec::new()) };
 }
 
 #[derive(Serialize, Deserialize)]
@@ -684,7 +685,7 @@ fn count_vertices_in_grid(
         return CellCounts::default();
     }
 
-    CellCounts::merge_vertex_counts_with_bbox(vertex_counts.into_iter().collect(), grid, bbox)
+    CellCounts::merge_vertex_counts_with_bbox(vertex_counts, grid, bbox)
 }
 
 fn count_unique_assignment_cell(
@@ -697,21 +698,109 @@ fn count_unique_assignment_cell(
         return None;
     }
 
-    let vertex_counts = if selected_vertices.len() >= LARGE_FEATURE_VERTEX_COUNT_THRESHOLD {
-        count_vertex_cells_parallel(model, selected_vertices, grid)
-    } else {
-        count_vertex_cells(model, selected_vertices, grid)
-    };
-
-    if vertex_counts.is_empty() {
-        return None;
+    if selected_vertices.len() >= LARGE_FEATURE_VERTEX_COUNT_THRESHOLD {
+        let vertex_counts = count_vertex_cells_parallel(model, selected_vertices, grid);
+        if vertex_counts.is_empty() {
+            return None;
+        }
+        return max_merged_vertex_count_with_bbox(&vertex_counts, grid, bbox);
     }
 
-    max_merged_vertex_count_with_bbox(vertex_counts, grid, bbox)
+    UNIQUE_ASSIGNMENT_VERTEX_COUNTS.with_borrow_mut(|vertex_counts| {
+        count_vertex_cells_into(model, selected_vertices, grid, vertex_counts);
+        if vertex_counts.is_empty() {
+            return None;
+        }
+        max_merged_vertex_count_with_bbox(vertex_counts, grid, bbox)
+    })
+}
+
+fn count_vertex_cells(
+    model: &cityjson::v2_0::OwnedCityModel,
+    selected_vertices: &[GeometryVertexIndex<u32>],
+    grid: &crate::spatial_structs::SquareGrid,
+) -> Vec<(CellId, usize)> {
+    let mut vertex_counts = Vec::with_capacity(selected_vertices.len());
+    count_vertex_cells_into(model, selected_vertices, grid, &mut vertex_counts);
+    vertex_counts
+}
+
+fn count_vertex_cells_into(
+    model: &cityjson::v2_0::OwnedCityModel,
+    selected_vertices: &[GeometryVertexIndex<u32>],
+    grid: &crate::spatial_structs::SquareGrid,
+    vertex_counts: &mut Vec<(CellId, usize)>,
+) {
+    vertex_counts.clear();
+    let missing_capacity = selected_vertices
+        .len()
+        .saturating_sub(vertex_counts.capacity());
+    if missing_capacity > 0 {
+        vertex_counts.reserve(missing_capacity);
+    }
+
+    let vertices = model.vertices();
+    for vertex_ref in selected_vertices {
+        let Some(vertex) = vertices.get(*vertex_ref) else {
+            continue;
+        };
+        let point = [vertex.x(), vertex.y()];
+        vertex_counts.push((grid.locate_point(&point), 0));
+    }
+    compress_vertex_counts(vertex_counts);
+}
+
+fn compress_vertex_counts(vertex_counts: &mut Vec<(CellId, usize)>) {
+    if vertex_counts.is_empty() {
+        return;
+    }
+
+    vertex_counts.sort_unstable_by_key(|(cellid, _)| *cellid);
+
+    let mut read = 0;
+    let mut write = 0;
+    while read < vertex_counts.len() {
+        let cellid = vertex_counts[read].0;
+        let mut nr_vertices = 1usize;
+        read += 1;
+
+        while read < vertex_counts.len() && vertex_counts[read].0 == cellid {
+            nr_vertices += 1;
+            read += 1;
+        }
+
+        // Keep the historical scoring semantics: the first vertex in a cell
+        // starts from 2, matching BTreeMap::entry(...).or_insert(1) += 1.
+        vertex_counts[write] = (cellid, nr_vertices + 1);
+        write += 1;
+    }
+
+    vertex_counts.truncate(write);
+}
+
+fn count_vertex_cells_parallel(
+    model: &cityjson::v2_0::OwnedCityModel,
+    selected_vertices: &[GeometryVertexIndex<u32>],
+    grid: &crate::spatial_structs::SquareGrid,
+) -> Vec<(CellId, usize)> {
+    let vertices = model.vertices();
+    selected_vertices
+        .par_iter()
+        .fold(BTreeMap::new, |mut vertex_counts, vertex_ref| {
+            let Some(vertex) = vertices.get(*vertex_ref) else {
+                return vertex_counts;
+            };
+            let point = [vertex.x(), vertex.y()];
+            increment_vertex_count(&mut vertex_counts, grid.locate_point(&point));
+            vertex_counts
+        })
+        .reduce(BTreeMap::new, merge_vertex_count_maps)
+        .into_iter()
+        .collect()
 }
 
 fn max_merged_vertex_count_with_bbox(
-    vertex_counts: BTreeMap<CellId, usize>,
+    vertex_counts: &[(CellId, usize)],
     grid: &crate::spatial_structs::SquareGrid,
     bbox: &Bbox,
 ) -> Option<(CellId, usize)> {
@@ -720,7 +809,7 @@ fn max_merged_vertex_count_with_bbox(
     let max_column = *columns.end();
     let min_row = *rows.start();
     let max_row = *rows.end();
-    let mut vertex_counts = vertex_counts.into_iter().peekable();
+    let mut vertex_counts = vertex_counts.iter().copied().peekable();
     let mut best: Option<(CellId, usize)> = None;
 
     for row in min_row..=max_row {
@@ -753,42 +842,6 @@ fn update_best_cell(best: &mut Option<(CellId, usize)>, cellid: CellId, count: u
     }) {
         *best = Some((cellid, count));
     }
-}
-
-fn count_vertex_cells(
-    model: &cityjson::v2_0::OwnedCityModel,
-    selected_vertices: &[GeometryVertexIndex<u32>],
-    grid: &crate::spatial_structs::SquareGrid,
-) -> BTreeMap<CellId, usize> {
-    let vertices = model.vertices();
-    let mut vertex_counts = BTreeMap::new();
-    for vertex_ref in selected_vertices {
-        let Some(vertex) = vertices.get(*vertex_ref) else {
-            continue;
-        };
-        let point = [vertex.x(), vertex.y()];
-        increment_vertex_count(&mut vertex_counts, grid.locate_point(&point));
-    }
-    vertex_counts
-}
-
-fn count_vertex_cells_parallel(
-    model: &cityjson::v2_0::OwnedCityModel,
-    selected_vertices: &[GeometryVertexIndex<u32>],
-    grid: &crate::spatial_structs::SquareGrid,
-) -> BTreeMap<CellId, usize> {
-    let vertices = model.vertices();
-    selected_vertices
-        .par_iter()
-        .fold(BTreeMap::new, |mut vertex_counts, vertex_ref| {
-            let Some(vertex) = vertices.get(*vertex_ref) else {
-                return vertex_counts;
-            };
-            let point = [vertex.x(), vertex.y()];
-            increment_vertex_count(&mut vertex_counts, grid.locate_point(&point));
-            vertex_counts
-        })
-        .reduce(BTreeMap::new, merge_vertex_count_maps)
 }
 
 fn increment_vertex_count(vertex_counts: &mut BTreeMap<CellId, usize>, cellid: CellId) {
