@@ -2251,6 +2251,7 @@ fn build_structural_metadata_columns(
     }
 
     let mut columns = BTreeMap::new();
+    let mut property_names = BTreeSet::new();
     for (name, kind) in column_types {
         let column = match kind {
             "bool" => build_bool_metadata_column(&name, features, buffer_builder),
@@ -2260,15 +2261,49 @@ fn build_structural_metadata_columns(
             "float" => {
                 build_float_metadata_column(&name, features, buffer_builder, meshopt_compression)?
             }
-            "string" => {
-                build_string_metadata_column(&name, features, buffer_builder, meshopt_compression)?
-            }
+            "string" => match build_string_metadata_column(
+                &name,
+                features,
+                buffer_builder,
+                meshopt_compression,
+            )? {
+                Some(column) => column,
+                None => continue,
+            },
             _ => continue,
         };
-        columns.insert(name, column);
+        columns.insert(metadata_property_name(&name, &mut property_names), column);
     }
 
     Ok(columns)
+}
+
+fn metadata_property_name(name: &str, used_names: &mut BTreeSet<String>) -> String {
+    let mut sanitized = String::new();
+    for (index, character) in name.chars().enumerate() {
+        if character == '_' || character.is_ascii_alphanumeric() {
+            if index == 0 && character.is_ascii_digit() {
+                sanitized.push('_');
+            }
+            sanitized.push(character);
+        } else {
+            sanitized.push('_');
+        }
+    }
+
+    if sanitized.is_empty() {
+        sanitized.push('_');
+    }
+
+    let base = sanitized;
+    let mut candidate = base.clone();
+    let mut suffix = 1usize;
+    while used_names.contains(&candidate) {
+        candidate = format!("{base}_{suffix}");
+        suffix += 1;
+    }
+    used_names.insert(candidate.clone());
+    candidate
 }
 
 fn build_bool_metadata_column(
@@ -2359,7 +2394,7 @@ fn build_string_metadata_column(
     features: &[FeatureRecord],
     buffer_builder: &mut BufferBuilder,
     meshopt_compression: bool,
-) -> Result<StructuralMetadataColumn> {
+) -> Result<Option<StructuralMetadataColumn>> {
     let mut values = Vec::<u8>::new();
     let mut offsets = Vec::<u32>::with_capacity(features.len() + 1);
     offsets.push(0);
@@ -2370,11 +2405,15 @@ fn build_string_metadata_column(
         offsets.push(u32::try_from(values.len()).expect("string column offset within u32 range"));
     }
 
+    if values.is_empty() {
+        return Ok(None);
+    }
+
     let values_view =
         buffer_builder.push_byte_buffer_view(&values, json::buffer::Target::ArrayBuffer);
     let offsets_view =
         buffer_builder.push_metadata_scalar_buffer_view(&offsets, meshopt_compression)?;
-    Ok(StructuralMetadataColumn {
+    Ok(Some(StructuralMetadataColumn {
         property: json_value!({
             "type": "STRING",
         }),
@@ -2383,7 +2422,7 @@ fn build_string_metadata_column(
             "stringOffsets": offsets_view.value(),
             "stringOffsetType": "UINT32",
         }),
-    })
+    }))
 }
 
 impl StructuralMetadataExtension {

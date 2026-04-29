@@ -362,6 +362,105 @@ fn convert_to_glb_omits_metadata_table_when_features_have_no_attributes() {
 }
 
 #[test]
+fn convert_to_glb_omits_empty_string_metadata_columns() {
+    let model = json::from_slice(
+        br#"{
+            "type":"CityJSON",
+            "version":"2.0",
+            "CityObjects":{
+                "building-1":{
+                    "type":"Building",
+                    "attributes":{"name":""},
+                    "geometry":[{
+                        "type":"MultiSurface",
+                        "lod":"2.2",
+                        "boundaries":[[[0,1,2]]]
+                    }]
+                }
+            },
+            "vertices":[
+                [0.0,0.0,0.0],
+                [1.0,0.0,0.0],
+                [0.0,1.0,0.0]
+            ]
+        }"#,
+    )
+    .expect("inline CityJSON fixture should parse");
+    let output_path = stable_output_path("empty-string-metadata");
+
+    convert_to_glb(&model, &output_path, &ExportOptions::default())
+        .expect("GLB conversion should succeed with empty string metadata");
+
+    let glb_bytes = fs::read(&output_path).expect("test GLB should be written");
+    let root = read_glb_json(&glb_bytes);
+
+    assert!(!has_extension(&root, "EXT_structural_metadata"));
+
+    let buffer_views = root["bufferViews"]
+        .as_array()
+        .expect("glTF should contain bufferViews");
+    for (index, buffer_view) in buffer_views.iter().enumerate() {
+        assert!(
+            buffer_view["byteLength"].as_u64().unwrap() > 0,
+            "bufferView {index} should not have zero byteLength"
+        );
+    }
+}
+
+#[test]
+fn convert_to_glb_sanitizes_structural_metadata_property_names() {
+    let model = json::from_slice(
+        br#"{
+            "type":"CityJSON",
+            "version":"2.0",
+            "CityObjects":{
+                "building-1":{
+                    "type":"Building",
+                    "attributes":{
+                        "3df_id":"building-1",
+                        "3df_class":"Building"
+                    },
+                    "geometry":[{
+                        "type":"MultiSurface",
+                        "lod":"2.2",
+                        "boundaries":[[[0,1,2]]]
+                    }]
+                }
+            },
+            "vertices":[
+                [0.0,0.0,0.0],
+                [1.0,0.0,0.0],
+                [0.0,1.0,0.0]
+            ]
+        }"#,
+    )
+    .expect("inline CityJSON fixture should parse");
+    let output_path = stable_output_path("sanitized-metadata-properties");
+
+    convert_to_glb(&model, &output_path, &ExportOptions::default())
+        .expect("GLB conversion should succeed with numeric-leading metadata names");
+
+    let glb_bytes = fs::read(&output_path).expect("test GLB should be written");
+    let root = read_glb_json(&glb_bytes);
+    let properties = root["extensions"]["EXT_structural_metadata"]["schema"]["classes"]
+        ["cityobject"]["properties"]
+        .as_object()
+        .expect("metadata schema should contain sanitized properties");
+
+    assert!(properties.contains_key("_3df_id"));
+    assert!(properties.contains_key("_3df_class"));
+    assert!(!properties.contains_key("3df_id"));
+    assert!(!properties.contains_key("3df_class"));
+
+    let table_properties = root["extensions"]["EXT_structural_metadata"]["propertyTables"][0]
+        ["properties"]
+        .as_object()
+        .expect("property table should use the same sanitized names");
+    assert!(table_properties.contains_key("_3df_id"));
+    assert!(table_properties.contains_key("_3df_class"));
+}
+
+#[test]
 fn convert_to_glb_can_reproject_geometry_to_ecef() {
     let model = json::merge_feature_stream_slice(include_bytes!("data/ams_up_holes.city.jsonl"))
         .expect("fixture feature stream should parse");
