@@ -49,6 +49,14 @@ fn read_json(path: &Path) -> Value {
     serde_json::from_slice(&fs::read(path).expect("read json file")).expect("parse json file")
 }
 
+fn read_json_line_type(line: &str) -> String {
+    let value: Value = serde_json::from_str(line).expect("parse json line");
+    value["type"]
+        .as_str()
+        .expect("json line should have a string type")
+        .to_string()
+}
+
 fn read_glb_json(bytes: &[u8]) -> Value {
     assert!(bytes.len() >= 20, "glb should contain a header");
     assert_eq!(&bytes[0..4], b"glTF");
@@ -151,6 +159,79 @@ fn debug_dump_data_writes_bincode_and_intermediary_cityjson() {
         "expected intermediary CityJSON dumps under {}",
         debug_dir.join("inputs").display()
     );
+}
+
+#[test]
+fn format_cityjson_writes_cityjson_tiles() {
+    let metadata = read_fixture("resources/data/3dbag_x00.city.json");
+    let feature = read_fixture("resources/data/3dbag_feature_x71.city.jsonl");
+    let dataset = write_ndjson_dataset("format-cityjson", &metadata, &[feature]);
+    let output_dir = unique_test_dir("format-cityjson-output");
+
+    let output = run_tyler(&dataset, &output_dir, &["--format", "cityjson"]);
+    assert_success(&output, "CityJSON format run");
+
+    let mut cityjson_tiles = Vec::new();
+    collect_paths_with_suffix(&output_dir.join("t"), ".city.json", &mut cityjson_tiles);
+    assert!(
+        !cityjson_tiles.is_empty(),
+        "expected CityJSON tiles under {}",
+        output_dir.join("t").display()
+    );
+    let root = read_json(&cityjson_tiles[0]);
+    assert_eq!(root["type"], "CityJSON");
+    assert!(!output_dir.join("tileset.json").exists());
+}
+
+#[test]
+fn format_cityjsonseq_writes_feature_stream_tiles_matching_debug_shape() {
+    let metadata = read_fixture("resources/data/3dbag_x00.city.json");
+    let feature = read_fixture("resources/data/3dbag_feature_x71.city.jsonl");
+    let dataset = write_ndjson_dataset("format-cityjsonseq", &metadata, &[feature]);
+    let output_dir = unique_test_dir("format-cityjsonseq-output");
+
+    let output = run_tyler(
+        &dataset,
+        &output_dir,
+        &["--format", "cityjsonseq", "--debug-dump-data"],
+    );
+    assert_success(&output, "CityJSONSeq format run");
+
+    let mut output_streams = Vec::new();
+    collect_paths_with_suffix(&output_dir.join("t"), ".city.jsonl", &mut output_streams);
+    assert!(
+        !output_streams.is_empty(),
+        "expected CityJSONSeq tiles under {}",
+        output_dir.join("t").display()
+    );
+    let mut debug_streams = Vec::new();
+    collect_paths_with_suffix(
+        &output_dir.join("debug").join("inputs"),
+        ".city.jsonl",
+        &mut debug_streams,
+    );
+    assert!(
+        !debug_streams.is_empty(),
+        "expected debug CityJSONSeq streams under {}",
+        output_dir.join("debug").join("inputs").display()
+    );
+
+    let output_items = fs::read_to_string(&output_streams[0]).expect("read output stream");
+    let debug_items = fs::read_to_string(&debug_streams[0]).expect("read debug stream");
+    let output_types = output_items
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(read_json_line_type)
+        .collect::<Vec<_>>();
+    let debug_types = debug_items
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(read_json_line_type)
+        .collect::<Vec<_>>();
+    assert_eq!(output_types, debug_types);
+    assert_eq!(output_types.first().map(String::as_str), Some("CityJSON"));
+    assert!(output_types.iter().any(|kind| kind == "CityJSONFeature"));
+    assert!(!output_dir.join("tileset.json").exists());
 }
 
 #[test]

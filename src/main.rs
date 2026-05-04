@@ -75,31 +75,19 @@ use crate::coordinates::RootEnuFrame;
 use crate::formats::cesium3dtiles::{Tile, TileId};
 use crate::proj::Proj;
 use cityjson_lib::cityjson_types::prelude::CityObjectHandle;
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use log::{debug, info, log_enabled, warn, Level};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, clap::ValueEnum, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
 #[clap(rename_all = "lower")]
-pub enum Formats {
-    _3DTiles,
-    CityJSON,
-}
-
-impl ToString for Formats {
-    fn to_string(&self) -> String {
-        match self {
-            Formats::_3DTiles => "3DTiles".to_string(),
-            Formats::CityJSON => "CityJSON".to_string(),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-enum OutputFormatKind {
+pub enum OutputFormatKind {
+    #[value(name = "3dtiles")]
     #[default]
     Cesium3dTiles,
+    Cityjson,
+    Cityjsonseq,
 }
 
 #[derive(Default, Debug)]
@@ -442,6 +430,25 @@ fn explicit_tile_export_jobs(
                     TileClip::None
                 },
             })
+        })
+        .collect()
+}
+
+fn quadtree_leaf_tile_export_jobs(
+    world: &parser::World,
+    quadtree: &spatial_structs::QuadTree,
+) -> Vec<TileExportJob> {
+    quadtree
+        .collect_leaves()
+        .into_iter()
+        .map(|qtree_node| {
+            let coord = TileCoord::from(&qtree_node.id);
+            TileExportJob {
+                source_node_id: Some(coord.clone()),
+                content_tile_coord: coord,
+                feature_ids: collect_tile_feature_ids(world, qtree_node),
+                clip: TileClip::None,
+            }
         })
         .collect()
 }
@@ -854,13 +861,29 @@ fn build_tile_debug_cityjsonseq(
     )?;
     let base_root = cityjson_lib::json::from_slice(&world.feature_base_document)?;
     let mut feature_output = Vec::new();
-    cityjson_lib::json::write_cityjsonseq_auto_transform(
+    cityjson_convert::write_cityjsonseq(
         &mut feature_output,
         &base_root,
-        models,
-        [0.001, 0.001, 0.001],
+        &models,
+        &cityjson_convert::CityJsonSeqExportOptions::default(),
     )?;
     Ok(feature_output)
+}
+
+fn build_tile_cityjsonseq_models(
+    world: &parser::World,
+    feature_ids: &[usize],
+    object_attribute_types: &BTreeMap<String, ObjectAttributeType>,
+    include_parent_attributes: bool,
+) -> Result<Vec<cityjson_lib::CityModel>, Box<dyn std::error::Error>> {
+    let deduplicated_feature_ids = deduplicate_tile_feature_ids(world, feature_ids);
+    prepare_tile_feature_models(
+        world,
+        &deduplicated_feature_ids,
+        object_attribute_types,
+        include_parent_attributes,
+        true,
+    )
 }
 
 fn prepare_tile_feature_models(
@@ -1292,6 +1315,8 @@ struct TileWriteContext<'a> {
     source_crs: String,
     world: &'a parser::World,
     quadtree: &'a spatial_structs::QuadTree,
+    object_attribute_types: BTreeMap<String, ObjectAttributeType>,
+    include_parent_attributes: bool,
 }
 
 struct Cesium3dTilesPreparedOutput {
@@ -1303,9 +1328,36 @@ struct Cesium3dTilesPreparedOutput {
     subtrees_path: PathBuf,
 }
 
-trait OutputFormatBackend {
-    type PreparedOutput;
+struct TileFilesPreparedOutput {
+    export_jobs: Vec<TileExportJob>,
+    source_crs: String,
+}
 
+enum PreparedOutput {
+    Cesium3dTiles(Box<Cesium3dTilesPreparedOutput>),
+    Cityjson(TileFilesPreparedOutput),
+    Cityjsonseq(TileFilesPreparedOutput),
+}
+
+impl PreparedOutput {
+    fn source_crs(&self) -> &str {
+        match self {
+            PreparedOutput::Cesium3dTiles(prepared) => &prepared.source_crs,
+            PreparedOutput::Cityjson(prepared) | PreparedOutput::Cityjsonseq(prepared) => {
+                &prepared.source_crs
+            }
+        }
+    }
+
+    fn root_enu_frame(&self) -> Option<&RootEnuFrame> {
+        match self {
+            PreparedOutput::Cesium3dTiles(prepared) => Some(&prepared.root_enu_frame),
+            PreparedOutput::Cityjson(_) | PreparedOutput::Cityjsonseq(_) => None,
+        }
+    }
+}
+
+trait OutputFormatBackend: Sync {
     fn prepare(
         &self,
         cli: &crate::cli::Cli,
@@ -1314,9 +1366,9 @@ trait OutputFormatBackend {
         grid_cellsize: u32,
         geometric_error_factor: f64,
         debug_data_output_path: &Path,
-    ) -> Result<Self::PreparedOutput, Box<dyn std::error::Error>>;
+    ) -> Result<PreparedOutput, Box<dyn std::error::Error>>;
 
-    fn jobs(&self, prepared: &Self::PreparedOutput) -> Vec<TileExportJob>;
+    fn jobs(&self, prepared: &PreparedOutput) -> Vec<TileExportJob>;
 
     fn write_tile(
         &self,
@@ -1331,21 +1383,19 @@ trait OutputFormatBackend {
         quadtree: &spatial_structs::QuadTree,
         successful_jobs: &[TileExportJob],
         failed_jobs: &[TileExportJob],
-        prepared: &mut Self::PreparedOutput,
+        prepared: &mut PreparedOutput,
     ) -> Result<(), Box<dyn std::error::Error>>;
 
     fn write_manifest_only(
         &self,
         cli: &crate::cli::Cli,
-        prepared: &mut Self::PreparedOutput,
+        prepared: &mut PreparedOutput,
     ) -> Result<(), Box<dyn std::error::Error>>;
 }
 
 struct Cesium3dTilesBackend;
 
 impl OutputFormatBackend for Cesium3dTilesBackend {
-    type PreparedOutput = Cesium3dTilesPreparedOutput;
-
     fn prepare(
         &self,
         cli: &crate::cli::Cli,
@@ -1354,7 +1404,7 @@ impl OutputFormatBackend for Cesium3dTilesBackend {
         grid_cellsize: u32,
         geometric_error_factor: f64,
         debug_data_output_path: &Path,
-    ) -> Result<Cesium3dTilesPreparedOutput, Box<dyn std::error::Error>> {
+    ) -> Result<PreparedOutput, Box<dyn std::error::Error>> {
         let tileset_path = cli.output.join("tileset.json");
         let subtrees_path = cli.output.join("subtrees");
         let tileset_path_unpruned = cli.output.join("tileset_unpruned.json");
@@ -1424,17 +1474,22 @@ impl OutputFormatBackend for Cesium3dTilesBackend {
             export_jobs
         };
 
-        Ok(Cesium3dTilesPreparedOutput {
-            tileset,
-            export_jobs,
-            root_enu_frame,
-            source_crs,
-            tileset_path,
-            subtrees_path,
-        })
+        Ok(PreparedOutput::Cesium3dTiles(Box::new(
+            Cesium3dTilesPreparedOutput {
+                tileset,
+                export_jobs,
+                root_enu_frame,
+                source_crs,
+                tileset_path,
+                subtrees_path,
+            },
+        )))
     }
 
-    fn jobs(&self, prepared: &Cesium3dTilesPreparedOutput) -> Vec<TileExportJob> {
+    fn jobs(&self, prepared: &PreparedOutput) -> Vec<TileExportJob> {
+        let PreparedOutput::Cesium3dTiles(prepared) = prepared else {
+            return Vec::new();
+        };
         prepared.export_jobs.clone()
     }
 
@@ -1517,8 +1572,11 @@ impl OutputFormatBackend for Cesium3dTilesBackend {
         quadtree: &spatial_structs::QuadTree,
         successful_jobs: &[TileExportJob],
         failed_jobs: &[TileExportJob],
-        prepared: &mut Cesium3dTilesPreparedOutput,
+        prepared: &mut PreparedOutput,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let PreparedOutput::Cesium3dTiles(prepared) = prepared else {
+            return Err("3D Tiles backend received incompatible prepared output".into());
+        };
         info!("Pruning tileset of {} failed tiles", failed_jobs.len());
         for (i, failed) in failed_jobs.iter().enumerate() {
             debug!(
@@ -1548,8 +1606,11 @@ impl OutputFormatBackend for Cesium3dTilesBackend {
     fn write_manifest_only(
         &self,
         cli: &crate::cli::Cli,
-        prepared: &mut Cesium3dTilesPreparedOutput,
+        prepared: &mut PreparedOutput,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let PreparedOutput::Cesium3dTiles(prepared) = prepared else {
+            return Err("3D Tiles backend received incompatible prepared output".into());
+        };
         if cli.cesium3dtiles_implicit {
             let content_tile_ids = content_tile_ids_from_jobs(&prepared.export_jobs);
             let subtrees = make_implicit_subtrees(
@@ -1566,9 +1627,153 @@ impl OutputFormatBackend for Cesium3dTilesBackend {
     }
 }
 
-fn output_format_backend(kind: OutputFormatKind) -> Cesium3dTilesBackend {
+struct CityjsonBackend;
+
+impl OutputFormatBackend for CityjsonBackend {
+    fn prepare(
+        &self,
+        _cli: &crate::cli::Cli,
+        world: &parser::World,
+        quadtree: &spatial_structs::QuadTree,
+        _grid_cellsize: u32,
+        _geometric_error_factor: f64,
+        _debug_data_output_path: &Path,
+    ) -> Result<PreparedOutput, Box<dyn std::error::Error>> {
+        Ok(PreparedOutput::Cityjson(TileFilesPreparedOutput {
+            export_jobs: quadtree_leaf_tile_export_jobs(world, quadtree),
+            source_crs: format!("EPSG:{}", world.crs.to_epsg()?),
+        }))
+    }
+
+    fn jobs(&self, prepared: &PreparedOutput) -> Vec<TileExportJob> {
+        let PreparedOutput::Cityjson(prepared) = prepared else {
+            return Vec::new();
+        };
+        prepared.export_jobs.clone()
+    }
+
+    fn write_tile(
+        &self,
+        job: &TileExportJob,
+        model: &cityjson_lib::CityModel,
+        context: &TileWriteContext<'_>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let output_file = context
+            .output_tiles_dir
+            .join(job.content_tile_coord.to_string())
+            .with_extension("city.json");
+        cityjson_convert::convert_to_cityjson(
+            model,
+            &output_file,
+            &cityjson_convert::JsonExportOptions::default(),
+        )?;
+        Ok(())
+    }
+
+    fn finalize(
+        &self,
+        _cli: &crate::cli::Cli,
+        _quadtree: &spatial_structs::QuadTree,
+        _successful_jobs: &[TileExportJob],
+        failed_jobs: &[TileExportJob],
+        _prepared: &mut PreparedOutput,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        info!("Skipped {} failed CityJSON tile outputs", failed_jobs.len());
+        Ok(())
+    }
+
+    fn write_manifest_only(
+        &self,
+        _cli: &crate::cli::Cli,
+        _prepared: &mut PreparedOutput,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        Ok(())
+    }
+}
+
+struct CityjsonseqBackend;
+
+impl OutputFormatBackend for CityjsonseqBackend {
+    fn prepare(
+        &self,
+        _cli: &crate::cli::Cli,
+        world: &parser::World,
+        quadtree: &spatial_structs::QuadTree,
+        _grid_cellsize: u32,
+        _geometric_error_factor: f64,
+        _debug_data_output_path: &Path,
+    ) -> Result<PreparedOutput, Box<dyn std::error::Error>> {
+        Ok(PreparedOutput::Cityjsonseq(TileFilesPreparedOutput {
+            export_jobs: quadtree_leaf_tile_export_jobs(world, quadtree),
+            source_crs: format!("EPSG:{}", world.crs.to_epsg()?),
+        }))
+    }
+
+    fn jobs(&self, prepared: &PreparedOutput) -> Vec<TileExportJob> {
+        let PreparedOutput::Cityjsonseq(prepared) = prepared else {
+            return Vec::new();
+        };
+        prepared.export_jobs.clone()
+    }
+
+    fn write_tile(
+        &self,
+        job: &TileExportJob,
+        _model: &cityjson_lib::CityModel,
+        context: &TileWriteContext<'_>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let output_file = context
+            .output_tiles_dir
+            .join(job.content_tile_coord.to_string())
+            .with_extension("city.jsonl");
+        let models = build_tile_cityjsonseq_models(
+            context.world,
+            &job.feature_ids,
+            &context.object_attribute_types,
+            context.include_parent_attributes,
+        )?;
+        if models.is_empty() {
+            return Err("tile CityJSONSeq preparation removed all CityObjects".into());
+        }
+        let base_root = cityjson_lib::json::from_slice(&context.world.feature_base_document)?;
+        cityjson_convert::convert_to_cityjsonseq(
+            &base_root,
+            &models,
+            &output_file,
+            &cityjson_convert::CityJsonSeqExportOptions::default(),
+        )?;
+        Ok(())
+    }
+
+    fn finalize(
+        &self,
+        _cli: &crate::cli::Cli,
+        _quadtree: &spatial_structs::QuadTree,
+        _successful_jobs: &[TileExportJob],
+        failed_jobs: &[TileExportJob],
+        _prepared: &mut PreparedOutput,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        info!(
+            "Skipped {} failed CityJSONSeq tile outputs",
+            failed_jobs.len()
+        );
+        Ok(())
+    }
+
+    fn write_manifest_only(
+        &self,
+        _cli: &crate::cli::Cli,
+        _prepared: &mut PreparedOutput,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        Ok(())
+    }
+}
+
+fn output_format_backend(kind: OutputFormatKind) -> Box<dyn OutputFormatBackend> {
     match kind {
-        OutputFormatKind::Cesium3dTiles => Cesium3dTilesBackend,
+        OutputFormatKind::Cesium3dTiles => Box::new(Cesium3dTilesBackend),
+        OutputFormatKind::Cityjson => Box::new(CityjsonBackend),
+        OutputFormatKind::Cityjsonseq => Box::new(CityjsonseqBackend),
     }
 }
 
@@ -1813,7 +2018,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         quadtree.export_bincode(Some("quadtree"), Some(&debug_data_output_path))?;
     }
 
-    let output_format = OutputFormatKind::default();
+    let output_format = cli.format;
     let backend = output_format_backend(output_format);
     let mut prepared_output = backend.prepare(
         &cli,
@@ -1828,7 +2033,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Export each tile by merging its selected CityJSONFeature stream in memory.
     let path_output_tiles = cli.output.join("t");
     let path_features_input_dir = debug_data_output_path.join("inputs");
-    if !cli.debug_cesium3dtiles_tileset_only {
+    if output_format != OutputFormatKind::Cesium3dTiles && cli.debug_cesium3dtiles_tileset_only {
+        warn!("--debug-3dtiles-tileset-only is ignored for non-3D Tiles output formats");
+    }
+    if output_format != OutputFormatKind::Cesium3dTiles || !cli.debug_cesium3dtiles_tileset_only {
         fs::create_dir_all(&path_output_tiles)?;
         info!("Created output directory {:#?}", &path_output_tiles);
         if should_dump_debug_data(&cli) {
@@ -1836,20 +2044,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!("Created output directory {:#?}", &path_features_input_dir);
         }
 
-        let geometry_placement = cityjson_convert::GeometryPlacement::Enu {
-            source_crs: prepared_output.source_crs.clone(),
-            ecef_origin: prepared_output.root_enu_frame.ecef_origin,
-            east: prepared_output.root_enu_frame.east,
-            north: prepared_output.root_enu_frame.north,
-            up: prepared_output.root_enu_frame.up,
+        let geometry_placement = if let Some(root_enu_frame) = prepared_output.root_enu_frame() {
+            cityjson_convert::GeometryPlacement::Enu {
+                source_crs: prepared_output.source_crs().to_string(),
+                ecef_origin: root_enu_frame.ecef_origin,
+                east: root_enu_frame.east,
+                north: root_enu_frame.north,
+                up: root_enu_frame.up,
+            }
+        } else {
+            cityjson_convert::GeometryPlacement::SourceCoordinates
         };
         let export_options = build_glb_export_options(&cli, geometry_placement, None);
         let tile_write_context = TileWriteContext {
             output_tiles_dir: &path_output_tiles,
             export_options,
-            source_crs: prepared_output.source_crs.clone(),
+            source_crs: prepared_output.source_crs().to_string(),
             world: &world,
             quadtree: &quadtree,
+            object_attribute_types: object_attribute_types.clone(),
+            include_parent_attributes: cli.include_parent_attributes,
         };
         let object_attribute_types = object_attribute_types.clone();
         let tiles_len = export_jobs.len();

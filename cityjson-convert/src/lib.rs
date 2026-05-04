@@ -15,10 +15,27 @@ mod proj;
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::fs::File;
+use std::io::Write;
 use std::path::Path;
 
 use anyhow::Result;
 use cityjson_lib::CityModel;
+
+pub type JsonExportOptions = cityjson_lib::json::WriteOptions;
+
+#[derive(Clone, Copy, Debug)]
+pub struct CityJsonSeqExportOptions {
+    pub scale: [f64; 3],
+}
+
+impl Default for CityJsonSeqExportOptions {
+    fn default() -> Self {
+        Self {
+            scale: [0.001, 0.001, 0.001],
+        }
+    }
+}
 
 #[derive(Clone, Debug, Default)]
 pub enum GeometryPlacement {
@@ -92,4 +109,85 @@ pub fn convert_to_glb<P: AsRef<Path>>(
         fs::create_dir_all(parent)?;
     }
     gltf_writer::write_city_model_glb(model, output, options)
+}
+
+/// Converts a `CityJSON` model to a `CityJSON` file.
+///
+/// # Errors
+///
+/// Returns an error when the output directory cannot be created or `CityJSON`
+/// writing fails.
+pub fn convert_to_cityjson<P: AsRef<Path>>(
+    model: &CityModel,
+    output: P,
+    options: &JsonExportOptions,
+) -> Result<()> {
+    let output = output.as_ref();
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut file = File::create(output)?;
+    let mut buffer = Vec::new();
+    cityjson_lib::json::to_writer_with_options(&mut buffer, model, *options)?;
+    let mut root: serde_json::Value = serde_json::from_slice(&buffer)?;
+    if root.get("type").and_then(serde_json::Value::as_str) == Some("CityJSONFeature") {
+        if let Some(root) = root.as_object_mut() {
+            root.insert(
+                "type".to_string(),
+                serde_json::Value::String("CityJSON".to_string()),
+            );
+            root.insert(
+                "version".to_string(),
+                serde_json::Value::String("2.0".to_string()),
+            );
+            root.remove("id");
+        }
+    }
+    if options.pretty {
+        serde_json::to_writer_pretty(&mut file, &root)?;
+    } else {
+        serde_json::to_writer(&mut file, &root)?;
+    }
+    file.write_all(b"\n")?;
+    Ok(())
+}
+
+/// Converts feature models to a `CityJSONSeq` file.
+///
+/// # Errors
+///
+/// Returns an error when the output directory cannot be created or `CityJSONSeq`
+/// writing fails.
+pub fn convert_to_cityjsonseq<P: AsRef<Path>>(
+    base_root: &CityModel,
+    feature_models: &[CityModel],
+    output: P,
+    options: &CityJsonSeqExportOptions,
+) -> Result<()> {
+    let output = output.as_ref();
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut file = File::create(output)?;
+    write_cityjsonseq(&mut file, base_root, feature_models, options)
+}
+
+/// Writes feature models to a `CityJSONSeq` writer.
+///
+/// # Errors
+///
+/// Returns an error when `CityJSONSeq` writing fails.
+pub fn write_cityjsonseq<W: Write>(
+    writer: &mut W,
+    base_root: &CityModel,
+    feature_models: &[CityModel],
+    options: &CityJsonSeqExportOptions,
+) -> Result<()> {
+    cityjson_lib::json::write_cityjsonseq_auto_transform_refs(
+        writer,
+        base_root,
+        feature_models.iter(),
+        options.scale,
+    )?;
+    Ok(())
 }

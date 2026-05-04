@@ -25,9 +25,9 @@ pub struct Cli {
     /// Directory for the output.
     #[arg(short, long)]
     pub output: PathBuf,
-    // /// Output format.
-    // #[arg(long, value_enum)]
-    // pub format: crate::Formats,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t)]
+    pub format: crate::OutputFormatKind,
     /// The CityObject type to include
     /// (https://www.cityjson.org/specs/2.0.1/#city-objects).
     /// You can specify it multiple times.

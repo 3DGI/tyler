@@ -1,8 +1,12 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
 
-use cityjson_convert::{convert_to_glb, ExportOptions, GeographicClipRegion, GeometryPlacement};
+use cityjson_convert::{
+    convert_to_cityjson, convert_to_cityjsonseq, convert_to_glb, CityJsonSeqExportOptions,
+    ExportOptions, GeographicClipRegion, GeometryPlacement, JsonExportOptions,
+};
 use cityjson_lib::json;
 use serde_json::Value;
 
@@ -11,6 +15,13 @@ fn stable_output_path(name: &str) -> PathBuf {
         .join("tests")
         .join("output")
         .join(format!("{name}.glb"))
+}
+
+fn stable_output_path_with_suffix(name: &str, suffix: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("output")
+        .join(format!("{name}.{suffix}"))
 }
 
 fn read_glb_json(bytes: &[u8]) -> Value {
@@ -28,6 +39,106 @@ fn read_glb_json(bytes: &[u8]) -> Value {
     assert_eq!(&bytes[16..20], b"JSON");
 
     serde_json::from_slice(&bytes[20..20 + json_length]).expect("GLB JSON chunk should parse")
+}
+
+fn read_json_lines(path: &PathBuf) -> Vec<Value> {
+    fs::read_to_string(path)
+        .expect("read json lines")
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| serde_json::from_str(line).expect("json line should parse"))
+        .collect()
+}
+
+#[test]
+fn convert_to_cityjson_writes_parseable_cityjson() {
+    let model =
+        json::merge_feature_stream_slice(include_bytes!("data/multi_feature_types.city.jsonl"))
+            .expect("fixture should merge");
+    let output_path = stable_output_path_with_suffix("convert_to_cityjson", "city.json");
+
+    convert_to_cityjson(&model, &output_path, &JsonExportOptions::default())
+        .expect("CityJSON conversion should succeed");
+
+    let root: Value =
+        serde_json::from_slice(&fs::read(&output_path).expect("read CityJSON output"))
+            .expect("CityJSON output should parse");
+    assert_eq!(root["type"], "CityJSON");
+}
+
+#[test]
+fn convert_to_cityjsonseq_writes_header_and_features() {
+    let feature_a = json::from_feature_slice(
+        include_bytes!("data/multi_feature_types.city.jsonl")
+            .split(|b| *b == b'\n')
+            .next()
+            .unwrap(),
+    )
+    .expect("first feature should parse");
+    let feature_b = json::from_feature_slice(
+        include_bytes!("data/multi_feature_types.city.jsonl")
+            .split(|b| *b == b'\n')
+            .nth(1)
+            .unwrap(),
+    )
+    .expect("second feature should parse");
+    let features = vec![feature_a.clone(), feature_b];
+    let output_path = stable_output_path_with_suffix("convert_to_cityjsonseq", "city.jsonl");
+
+    convert_to_cityjsonseq(
+        &feature_a,
+        &features,
+        &output_path,
+        &CityJsonSeqExportOptions::default(),
+    )
+    .expect("CityJSONSeq conversion should succeed");
+
+    let items = read_json_lines(&output_path);
+    assert_eq!(items[0]["type"], "CityJSON");
+    assert_eq!(items[1]["type"], "CityJSONFeature");
+    assert_eq!(items[2]["type"], "CityJSONFeature");
+}
+
+#[test]
+fn cjconvert_can_write_cityjson_and_cityjsonseq() {
+    let cityjson_output = stable_output_path_with_suffix("cjconvert_cityjson", "city.json");
+    let cityjsonseq_output = stable_output_path_with_suffix("cjconvert_cityjsonseq", "city.jsonl");
+    let cityjson_input = stable_output_path_with_suffix("cjconvert_input", "city.json");
+    let model =
+        json::merge_feature_stream_slice(include_bytes!("data/multi_feature_types.city.jsonl"))
+            .expect("fixture should merge");
+    convert_to_cityjson(&model, &cityjson_input, &JsonExportOptions::default())
+        .expect("write cjconvert input");
+
+    let cityjson_status = Command::new(env!("CARGO_BIN_EXE_cjconvert"))
+        .arg(&cityjson_input)
+        .arg("--output")
+        .arg(&cityjson_output)
+        .arg("--format")
+        .arg("cityjson")
+        .status()
+        .expect("run cjconvert cityjson");
+    assert!(cityjson_status.success());
+    let root: Value =
+        serde_json::from_slice(&fs::read(&cityjson_output).expect("read cjconvert CityJSON"))
+            .expect("parse cjconvert CityJSON");
+    assert_eq!(root["type"], "CityJSON");
+
+    let cityjsonseq_status = Command::new(env!("CARGO_BIN_EXE_cjconvert"))
+        .arg(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/data/multi_feature_types.city.jsonl"),
+        )
+        .arg("--output")
+        .arg(&cityjsonseq_output)
+        .arg("--format")
+        .arg("cityjsonseq")
+        .status()
+        .expect("run cjconvert cityjsonseq");
+    assert!(cityjsonseq_status.success());
+    let items = read_json_lines(&cityjsonseq_output);
+    assert_eq!(items[0]["type"], "CityJSON");
+    assert_eq!(items[1]["type"], "CityJSONFeature");
 }
 
 #[allow(clippy::cast_possible_truncation)]
