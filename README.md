@@ -13,6 +13,8 @@ uses [cityjson-index](https://github.com/3DGI/cityjson/tree/main/crates/cityjson
 As output, *tyler* can create:
 
 - [3D Tiles v1.1](https://docs.ogc.org/cs/22-025r4/22-025r4.html)
+- tiled `CityJSON`
+- tiled `CityJSONSeq`
 
 Details of the 3D Tiles output:
 
@@ -109,6 +111,20 @@ For large `cjindex` datasets, Tyler processes the extent in chunks and reuses
 the dataset index while it works. The practical requirement is still the same:
 give Tyler a dataset root that `cjindex` can resolve.
 
+### Output formats
+
+Tyler writes 3D Tiles by default. Select another output format with `--format`:
+
+- `3dtiles`: writes a 3D Tiles tileset and `.glb` tile content.
+- `cityjson`: writes one merged `CityJSON` document per non-empty tile.
+- `cityjsonseq`: writes one `CityJSONSeq` stream per non-empty tile, with a
+  `CityJSON` header and one `CityJSONFeature` item per selected source feature.
+
+The tiled `CityJSON` and `CityJSONSeq` outputs use the same grid, quadtree,
+feature filtering, LoD selection, attribute filtering and parent-attribute
+inheritance path as the 3D Tiles output. They do not write `tileset.json`,
+`subtrees/`, or 3D Tiles metadata.
+
 ### Exporting 3D Tiles
 
 An example command for generating 3D Tiles.
@@ -131,9 +147,44 @@ tyler \
     --grid-maxz=300
 ```
 
+### Exporting CityJSON
+
+Use `--format cityjson` to write tiled `CityJSON` documents.
+
+```shell
+tyler \
+    /data \
+    --output /cityjson-tiles \
+    --format cityjson \
+    --object-type Building \
+    --object-type BuildingPart
+```
+
+The output tiles are written under `t/<level>/<x>/<y>.city.json`.
+Each tile is a merged `CityJSON` document containing the selected features for
+that tile.
+
+### Exporting CityJSONSeq
+
+Use `--format cityjsonseq` to write tiled `CityJSONSeq` streams.
+
+```shell
+tyler \
+    /data \
+    --output /cityjsonseq-tiles \
+    --format cityjsonseq \
+    --object-type Building \
+    --object-type BuildingPart
+```
+
+The output tiles are written under `t/<level>/<x>/<y>.city.jsonl`.
+Each tile stream starts with a `CityJSON` header, followed by one
+`CityJSONFeature` item per selected source feature. This is the same stream
+shape used by `--debug-dump-data`.
+
 #### Input data
 
-`tyler` accepts a single `input` dataset directory with regulart CityJSON files, CityJSONSeq files, or the legacy `feature-files` layout.
+`tyler` accepts a single `input` dataset directory with regular CityJSON files, CityJSONSeq files, or the legacy `feature-files` layout.
 
 For example:
 
@@ -164,6 +215,8 @@ cjio combined.city.json upgrade save combined/combined_upg.city.json
 The output is written to the directory set in `--output`.
 For 3D Tiles output, it will contain a `tileset.json` file and `t/` directory with the glTF files.
 In case of implicit tiling, also a `subtrees/` directory is written with the subtrees.
+For `--format cityjson`, it will contain a `t/` directory with `.city.json` tile files.
+For `--format cityjsonseq`, it will contain a `t/` directory with `.city.jsonl` tile files.
 
 For `cjindex` datasets, Tyler writes a derived metadata file under `metadata/`. Per-tile CityJSONFeature streams are kept in memory by default. To inspect them, pass `--debug-dump-data`; Tyler then
 writes `debug/inputs/<tile>.city.jsonl`.
@@ -360,8 +413,10 @@ Profiling Dependencies:
 - [x] Integrate the glTF converter
 - [x] Integrate cjlib
 - [x] Read regular CityJSON files, not only CityJSONFeatures
+- [x] Additional export formats:
+    - [x] CityJSON
+    - [x] CityJSONSeq
 - [ ] Additional export formats:
-    - [ ] CityJSON
     - [ ] Wavefront OBJ
     - [ ] GeoPackage
 
