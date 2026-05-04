@@ -96,6 +96,12 @@ impl ToString for Formats {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum OutputFormatKind {
+    #[default]
+    Cesium3dTiles,
+}
+
 #[derive(Default, Debug)]
 struct DebugData {
     world: Option<PathBuf>,
@@ -110,15 +116,65 @@ struct PreparedInput {
     feature_base_document: Vec<u8>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-struct TileExportJob {
-    source_tile: Option<Tile>,
-    source_tile_id: Option<TileId>,
-    content_tile_id: TileId,
-    feature_ids: Vec<usize>,
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+struct TileCoord {
+    level: u16,
+    x: usize,
+    y: usize,
 }
 
-#[derive(Clone, Copy, Debug)]
+impl TileCoord {
+    fn new(level: u16, x: usize, y: usize) -> Self {
+        Self { level, x, y }
+    }
+}
+
+impl std::fmt::Display for TileCoord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}/{}", self.level, self.x, self.y)
+    }
+}
+
+impl From<&spatial_structs::QuadTreeNodeId> for TileCoord {
+    fn from(value: &spatial_structs::QuadTreeNodeId) -> Self {
+        Self::new(value.level, value.x, value.y)
+    }
+}
+
+impl From<&TileCoord> for spatial_structs::QuadTreeNodeId {
+    fn from(value: &TileCoord) -> Self {
+        Self::new(value.x, value.y, value.level)
+    }
+}
+
+impl From<&TileId> for TileCoord {
+    fn from(value: &TileId) -> Self {
+        Self::new(value.level, value.x, value.y)
+    }
+}
+
+impl From<&TileCoord> for TileId {
+    fn from(value: &TileCoord) -> Self {
+        Self::new(value.x, value.y, value.level)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+enum TileClip {
+    None,
+    SourceBbox,
+    GeographicRegion(GeographicBounds),
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct TileExportJob {
+    source_node_id: Option<TileCoord>,
+    content_tile_coord: TileCoord,
+    feature_ids: Vec<usize>,
+    clip: TileClip,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 struct GeographicBounds {
     west: f64,
     south: f64,
@@ -366,6 +422,7 @@ fn explicit_tile_export_jobs(
     world: &parser::World,
     quadtree: &spatial_structs::QuadTree,
     tileset: &formats::cesium3dtiles::Tileset,
+    clip_to_tile_bounds: bool,
 ) -> Vec<TileExportJob> {
     tileset
         .collect_leaves()
@@ -376,10 +433,14 @@ fn explicit_tile_export_jobs(
             let qtree_node = quadtree.node(&qtree_nodeid)?;
             let feature_ids = collect_tile_feature_ids(world, qtree_node);
             Some(TileExportJob {
-                source_tile: Some(tile.clone()),
-                source_tile_id: Some(tile.id.clone()),
-                content_tile_id: tile.id,
+                source_node_id: Some((&qtree_nodeid).into()),
+                content_tile_coord: (&tile.id).into(),
                 feature_ids,
+                clip: if clip_to_tile_bounds {
+                    TileClip::SourceBbox
+                } else {
+                    TileClip::None
+                },
             })
         })
         .collect()
@@ -391,6 +452,7 @@ fn geographic_implicit_tile_export_jobs(
     tileset: &formats::cesium3dtiles::Tileset,
     root_region: GeographicBounds,
     transformer: &Proj,
+    clip_to_tile_bounds: bool,
 ) -> Result<Vec<TileExportJob>, Box<dyn std::error::Error>> {
     let mut feature_content_tiles: HashMap<usize, HashSet<TileId>> = HashMap::new();
     let mut feature_geographic_bounds: HashMap<usize, GeographicBounds> = HashMap::new();
@@ -458,14 +520,23 @@ fn geographic_implicit_tile_export_jobs(
             let mut feature_ids: Vec<usize> = feature_ids.into_iter().collect();
             feature_ids.sort_unstable();
             TileExportJob {
-                source_tile: None,
-                source_tile_id: None,
-                content_tile_id,
+                source_node_id: None,
+                content_tile_coord: (&content_tile_id).into(),
                 feature_ids,
+                clip: if clip_to_tile_bounds {
+                    TileClip::GeographicRegion(geographic_bounds_for_tile(
+                        root_region,
+                        &content_tile_id,
+                    ))
+                } else {
+                    TileClip::None
+                },
             }
         })
         .collect();
-    jobs.sort_by(|lhs, rhs| lhs.content_tile_id.cmp(&rhs.content_tile_id));
+    jobs.sort_by(|lhs, rhs| {
+        TileId::from(&lhs.content_tile_coord).cmp(&TileId::from(&rhs.content_tile_coord))
+    });
     info!(
         "Geographic implicit tiling assigned {} source features to {} content tiles ({} feature-tile assignments, {} before ancestor deduplication)",
         world.features.len(),
@@ -614,17 +685,6 @@ fn bbox_corners(bbox: &spatial_structs::Bbox) -> [[f64; 3]; 8] {
         [bbox[3], bbox[4], bbox[2]],
         [bbox[3], bbox[4], bbox[5]],
     ]
-}
-
-fn tiles_results_successful_content_tile_ids(
-    all_content_tile_ids: &[TileId],
-    failed_content_tile_ids: &HashSet<TileId>,
-) -> Vec<TileId> {
-    all_content_tile_ids
-        .iter()
-        .filter(|tile_id| !failed_content_tile_ids.contains(*tile_id))
-        .cloned()
-        .collect()
 }
 
 fn read_tile_feature_models(
@@ -1226,6 +1286,377 @@ fn write_debug_tile_input(
     Ok(path_tile_ndjson)
 }
 
+struct TileWriteContext<'a> {
+    output_tiles_dir: &'a Path,
+    export_options: cityjson_convert::ExportOptions,
+    source_crs: String,
+    world: &'a parser::World,
+    quadtree: &'a spatial_structs::QuadTree,
+}
+
+struct Cesium3dTilesPreparedOutput {
+    tileset: formats::cesium3dtiles::Tileset,
+    export_jobs: Vec<TileExportJob>,
+    root_enu_frame: RootEnuFrame,
+    source_crs: String,
+    tileset_path: PathBuf,
+    subtrees_path: PathBuf,
+}
+
+trait OutputFormatBackend {
+    type PreparedOutput;
+
+    fn prepare(
+        &self,
+        cli: &crate::cli::Cli,
+        world: &parser::World,
+        quadtree: &spatial_structs::QuadTree,
+        grid_cellsize: u32,
+        geometric_error_factor: f64,
+        debug_data_output_path: &Path,
+    ) -> Result<Self::PreparedOutput, Box<dyn std::error::Error>>;
+
+    fn jobs(&self, prepared: &Self::PreparedOutput) -> Vec<TileExportJob>;
+
+    fn write_tile(
+        &self,
+        job: &TileExportJob,
+        model: &cityjson_lib::CityModel,
+        context: &TileWriteContext<'_>,
+    ) -> Result<(), Box<dyn std::error::Error>>;
+
+    fn finalize(
+        &self,
+        cli: &crate::cli::Cli,
+        quadtree: &spatial_structs::QuadTree,
+        successful_jobs: &[TileExportJob],
+        failed_jobs: &[TileExportJob],
+        prepared: &mut Self::PreparedOutput,
+    ) -> Result<(), Box<dyn std::error::Error>>;
+
+    fn write_manifest_only(
+        &self,
+        cli: &crate::cli::Cli,
+        prepared: &mut Self::PreparedOutput,
+    ) -> Result<(), Box<dyn std::error::Error>>;
+}
+
+struct Cesium3dTilesBackend;
+
+impl OutputFormatBackend for Cesium3dTilesBackend {
+    type PreparedOutput = Cesium3dTilesPreparedOutput;
+
+    fn prepare(
+        &self,
+        cli: &crate::cli::Cli,
+        world: &parser::World,
+        quadtree: &spatial_structs::QuadTree,
+        grid_cellsize: u32,
+        geometric_error_factor: f64,
+        debug_data_output_path: &Path,
+    ) -> Result<Cesium3dTilesPreparedOutput, Box<dyn std::error::Error>> {
+        let tileset_path = cli.output.join("tileset.json");
+        let subtrees_path = cli.output.join("subtrees");
+        let tileset_path_unpruned = cli.output.join("tileset_unpruned.json");
+        let subtrees_path_unpruned = cli.output.join("subtrees_unpruned");
+        info!("Generating 3D Tiles tileset");
+        let root_enu_frame = compute_root_enu_frame(world, quadtree)?;
+        let tileset = formats::cesium3dtiles::Tileset::from_quadtree(
+            quadtree,
+            world,
+            geometric_error_factor,
+            grid_cellsize,
+            cli.grid_minz,
+            cli.grid_maxz,
+            cli.cesium3dtiles_content_bv_from_tile,
+            cli.cesium3dtiles_content_add_bv,
+            &root_enu_frame,
+        );
+
+        if cli.debug_dump_grid {
+            info!(
+                "Exporting the explicit tileset to TSV files to {:?}",
+                debug_data_output_path
+            );
+            tileset.export(Some(debug_data_output_path))?;
+        }
+
+        let source_crs = format!("EPSG:{}", world.crs.to_epsg()?);
+        let source_to_geographic = Proj::new_known_crs(&source_crs, "EPSG:4979", None)?;
+        let root_geographic_bounds =
+            geographic_bounds_from_source_bbox(&quadtree.bbox(&world.grid), &source_to_geographic)?;
+
+        let export_jobs = if cli.cesium3dtiles_implicit {
+            let export_jobs = geographic_implicit_tile_export_jobs(
+                world,
+                quadtree,
+                &tileset,
+                root_geographic_bounds,
+                &source_to_geographic,
+                cli.cesium3dtiles_content_clip_to_tile_bounds,
+            )?;
+            let content_tile_ids = content_tile_ids_from_jobs(&export_jobs);
+            let mut tileset_implicit = tileset.clone();
+            info!("Converting to geographic implicit tiling");
+            let subtrees = make_implicit_subtrees(
+                &mut tileset_implicit,
+                &content_tile_ids,
+                &subtrees_path_unpruned,
+            );
+
+            if cli.debug_cesium3dtiles_tileset_only || should_dump_debug_data(cli) {
+                info!("Writing unpruned 3D Tiles tileset");
+                tileset_implicit.to_file(&tileset_path_unpruned)?;
+                info!("Writing unpruned subtrees for implicit tiling");
+                write_subtrees(&subtrees_path_unpruned, &subtrees)?;
+            }
+
+            export_jobs
+        } else {
+            let export_jobs = explicit_tile_export_jobs(
+                world,
+                quadtree,
+                &tileset,
+                cli.cesium3dtiles_content_clip_to_tile_bounds,
+            );
+            info!("Writing unpruned 3D Tiles tileset");
+            tileset.to_file(&tileset_path_unpruned)?;
+            export_jobs
+        };
+
+        Ok(Cesium3dTilesPreparedOutput {
+            tileset,
+            export_jobs,
+            root_enu_frame,
+            source_crs,
+            tileset_path,
+            subtrees_path,
+        })
+    }
+
+    fn jobs(&self, prepared: &Cesium3dTilesPreparedOutput) -> Vec<TileExportJob> {
+        prepared.export_jobs.clone()
+    }
+
+    fn write_tile(
+        &self,
+        job: &TileExportJob,
+        model: &cityjson_lib::CityModel,
+        context: &TileWriteContext<'_>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let content_tile_id = TileId::from(&job.content_tile_coord);
+        let file_name = content_tile_id.to_string();
+        let output_file = context
+            .output_tiles_dir
+            .join(&file_name)
+            .with_extension("glb");
+        let mut export_options = context.export_options.clone();
+        match job.clip {
+            TileClip::None => {}
+            TileClip::SourceBbox => {
+                let source_node_id = job
+                    .source_node_id
+                    .as_ref()
+                    .ok_or("source bbox clipping requires a source node ID")?;
+                let qtree_nodeid: spatial_structs::QuadTreeNodeId = source_node_id.into();
+                let qtree_node = context
+                    .quadtree
+                    .node(&qtree_nodeid)
+                    .ok_or_else(|| format!("did not find tile {} in quadtree", source_node_id))?;
+                export_options.clip_bbox = Some(qtree_node.bbox(&context.world.grid));
+            }
+            TileClip::GeographicRegion(bounds) => {
+                export_options.clip_geographic_region =
+                    Some(cityjson_convert::GeographicClipRegion {
+                        source_crs: context.source_crs.clone(),
+                        west: bounds.west,
+                        south: bounds.south,
+                        east: bounds.east,
+                        north: bounds.north,
+                    });
+            }
+        }
+
+        let convert_started = Instant::now();
+        cityjson_convert::convert_to_glb(model, &output_file, &export_options)?;
+        debug!(
+            "Converted tile {} to GLB in {:?}",
+            content_tile_id,
+            convert_started.elapsed()
+        );
+        if !output_file.exists() {
+            return Err(format!("{} was not created", output_file.display()).into());
+        }
+        match output_file.metadata() {
+            Ok(metadata) if metadata.len() == 0 => {
+                debug!(
+                    "Tile {} conversion produced empty GLB at {}",
+                    content_tile_id,
+                    output_file.display()
+                );
+                if let Err(error) = fs::remove_file(&output_file) {
+                    warn!(
+                        "Failed to remove empty GLB for tile {} at {}: {}",
+                        content_tile_id,
+                        output_file.display(),
+                        error
+                    );
+                }
+                Err("conversion produced an empty GLB".into())
+            }
+            Ok(_) => Ok(()),
+            Err(error) => {
+                Err(format!("could not inspect {}: {}", output_file.display(), error).into())
+            }
+        }
+    }
+
+    fn finalize(
+        &self,
+        cli: &crate::cli::Cli,
+        quadtree: &spatial_structs::QuadTree,
+        successful_jobs: &[TileExportJob],
+        failed_jobs: &[TileExportJob],
+        prepared: &mut Cesium3dTilesPreparedOutput,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        info!("Pruning tileset of {} failed tiles", failed_jobs.len());
+        for (i, failed) in failed_jobs.iter().enumerate() {
+            debug!(
+                "{}, removing failed from the tileset: {}",
+                i, failed.content_tile_coord
+            );
+        }
+        if cli.cesium3dtiles_implicit {
+            let content_tile_ids = content_tile_ids_from_jobs(successful_jobs);
+            let subtrees = make_implicit_subtrees(
+                &mut prepared.tileset,
+                &content_tile_ids,
+                &prepared.subtrees_path,
+            );
+            info!("Writing subtrees for implicit tiling");
+            write_subtrees(&prepared.subtrees_path, &subtrees)?;
+        } else {
+            let failed_tiles = failed_source_tiles(&prepared.tileset, failed_jobs);
+            prepared.tileset.prune(&failed_tiles, quadtree);
+            write_external_tilesets_if_needed(cli, &mut prepared.tileset)?;
+        }
+        info!("Writing 3D Tiles tileset");
+        prepared.tileset.to_file(&prepared.tileset_path)?;
+        Ok(())
+    }
+
+    fn write_manifest_only(
+        &self,
+        cli: &crate::cli::Cli,
+        prepared: &mut Cesium3dTilesPreparedOutput,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if cli.cesium3dtiles_implicit {
+            let content_tile_ids = content_tile_ids_from_jobs(&prepared.export_jobs);
+            let subtrees = make_implicit_subtrees(
+                &mut prepared.tileset,
+                &content_tile_ids,
+                &prepared.subtrees_path,
+            );
+            info!("Writing subtrees for implicit tiling");
+            write_subtrees(&prepared.subtrees_path, &subtrees)?;
+        }
+        info!("Writing 3D Tiles tileset");
+        prepared.tileset.to_file(&prepared.tileset_path)?;
+        Ok(())
+    }
+}
+
+fn output_format_backend(kind: OutputFormatKind) -> Cesium3dTilesBackend {
+    match kind {
+        OutputFormatKind::Cesium3dTiles => Cesium3dTilesBackend,
+    }
+}
+
+fn content_tile_ids_from_jobs(jobs: &[TileExportJob]) -> Vec<TileId> {
+    jobs.iter()
+        .map(|job| TileId::from(&job.content_tile_coord))
+        .collect()
+}
+
+fn make_implicit_subtrees(
+    tileset: &mut formats::cesium3dtiles::Tileset,
+    content_tile_ids: &[TileId],
+    subtrees_path: &Path,
+) -> Vec<(TileId, Vec<u8>)> {
+    let components: Vec<_> = subtrees_path
+        .components()
+        .map(|comp| comp.as_os_str())
+        .collect();
+    let subtrees_dir_option = components.last().cloned().unwrap().to_str();
+    tileset.make_implicit_from_content_tile_ids(content_tile_ids, subtrees_dir_option)
+}
+
+fn write_subtrees(
+    subtrees_path: &Path,
+    subtrees: &[(TileId, Vec<u8>)],
+) -> Result<(), Box<dyn std::error::Error>> {
+    fs::create_dir_all(subtrees_path)?;
+    for (subtree_id, subtree_bytes) in subtrees {
+        fs::create_dir_all(subtrees_path.join(format!("{}/{}", subtree_id.level, subtree_id.x)))?;
+        let out_path = subtrees_path
+            .join(&subtree_id.to_string())
+            .with_extension("subtree");
+        let mut subtree_file = File::create(&out_path)
+            .unwrap_or_else(|_| panic!("could not create {:?} for writing", &out_path));
+        if let Err(_e) = subtree_file.write_all(subtree_bytes) {
+            warn!("Failed to write subtree {} content", subtree_id);
+        }
+    }
+    Ok(())
+}
+
+fn failed_source_tiles(
+    tileset: &formats::cesium3dtiles::Tileset,
+    failed_jobs: &[TileExportJob],
+) -> Vec<Tile> {
+    let failed_source_ids = failed_jobs
+        .iter()
+        .filter_map(|failed| failed.source_node_id.as_ref().map(TileId::from))
+        .collect::<HashSet<_>>();
+    tileset
+        .collect_leaves()
+        .into_iter()
+        .filter(|tile| failed_source_ids.contains(&tile.id))
+        .cloned()
+        .collect()
+}
+
+fn write_external_tilesets_if_needed(
+    cli: &crate::cli::Cli,
+    tileset: &mut formats::cesium3dtiles::Tileset,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let available_levels = tileset.available_levels();
+    if available_levels <= 5 {
+        return Ok(());
+    }
+    let mut split_at_level = 0;
+    for level in (0..available_levels).rev() {
+        let subtree_depth: u32 = (available_levels - level) as u32;
+        let nr_tiles_subtree = (4_usize.pow(subtree_depth) - 1) / 3;
+        let ancestor_tree_depth: u32 = (available_levels - (available_levels - level)) as u32;
+        let nr_tiles_ancestor = (4_usize.pow(ancestor_tree_depth) - 1) / 3;
+        if nr_tiles_ancestor < nr_tiles_subtree {
+            split_at_level = level;
+            break;
+        }
+    }
+    info!(
+        "Splitting the explicit tileset into external tilesets at level {}",
+        split_at_level
+    );
+    let external_tilesets = tileset.split(split_at_level);
+    for (filename, child_tileset) in &external_tilesets {
+        let tileset_path = cli.output.join(filename);
+        child_tileset.to_file(&tileset_path)?;
+    }
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
 
@@ -1382,102 +1813,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         quadtree.export_bincode(Some("quadtree"), Some(&debug_data_output_path))?;
     }
 
-    // 3D Tiles
-
-    let tileset_path = cli.output.join("tileset.json");
-    let subtrees_path = cli.output.join("subtrees");
-    let tileset_path_unpruned = cli.output.join("tileset_unpruned.json");
-    let subtrees_path_unpruned = cli.output.join("subtrees_unpruned");
-    info!("Generating 3D Tiles tileset");
-    let root_enu_frame = compute_root_enu_frame(&world, &quadtree)?;
-    let mut tileset = formats::cesium3dtiles::Tileset::from_quadtree(
-        &quadtree,
+    let output_format = OutputFormatKind::default();
+    let backend = output_format_backend(output_format);
+    let mut prepared_output = backend.prepare(
+        &cli,
         &world,
-        geometric_error_factor,
+        &quadtree,
         grid_cellsize,
-        cli.grid_minz,
-        cli.grid_maxz,
-        cli.cesium3dtiles_content_bv_from_tile,
-        cli.cesium3dtiles_content_add_bv,
-        &root_enu_frame,
-    );
-
-    if cli.debug_dump_grid {
-        info!(
-            "Exporting the explicit tileset to TSV files to {:?}",
-            &debug_data_output_path
-        );
-        tileset.export(Some(&debug_data_output_path))?;
-    }
-
-    let source_crs = format!("EPSG:{}", world.crs.to_epsg()?);
-    let source_to_geographic = Proj::new_known_crs(&source_crs, "EPSG:4979", None)?;
-    let root_geographic_bounds =
-        geographic_bounds_from_source_bbox(&quadtree.bbox(&world.grid), &source_to_geographic)?;
-
-    let export_jobs = match cli.cesium3dtiles_implicit {
-        true => {
-            let export_jobs = geographic_implicit_tile_export_jobs(
-                &world,
-                &quadtree,
-                &tileset,
-                root_geographic_bounds,
-                &source_to_geographic,
-            )?;
-            let content_tile_ids: Vec<TileId> = export_jobs
-                .iter()
-                .map(|job| job.content_tile_id.clone())
-                .collect();
-            let mut tileset_implicit = tileset.clone();
-            info!("Converting to geographic implicit tiling");
-            let components: Vec<_> = subtrees_path_unpruned
-                .components()
-                .map(|comp| comp.as_os_str())
-                .collect();
-            let subtrees_dir_option = components.last().cloned().unwrap().to_str();
-            let subtrees = tileset_implicit
-                .make_implicit_from_content_tile_ids(&content_tile_ids, subtrees_dir_option);
-
-            if cli.debug_cesium3dtiles_tileset_only || should_dump_debug_data(&cli) {
-                info!("Writing unpruned 3D Tiles tileset");
-                tileset_implicit.to_file(&tileset_path_unpruned)?;
-
-                info!("Writing unpruned subtrees for implicit tiling");
-                fs::create_dir_all(&subtrees_path_unpruned)?;
-                for (subtree_id, subtree_bytes) in &subtrees {
-                    fs::create_dir_all(
-                        subtrees_path_unpruned
-                            .join(format!("{}/{}", subtree_id.level, subtree_id.x)),
-                    )
-                    .unwrap();
-                    let out_path = subtrees_path_unpruned
-                        .join(&subtree_id.to_string())
-                        .with_extension("subtree");
-                    let mut subtree_file = File::create(&out_path)
-                        .unwrap_or_else(|_| panic!("could not create {:?} for writing", &out_path));
-                    if let Err(_e) = subtree_file.write_all(subtree_bytes) {
-                        warn!("Failed to write subtree {} content", subtree_id);
-                    }
-                }
-            }
-
-            export_jobs
-        }
-        false => {
-            let export_jobs = explicit_tile_export_jobs(&world, &quadtree, &tileset);
-
-            info!("Writing unpruned 3D Tiles tileset");
-            tileset.to_file(&tileset_path_unpruned)?;
-
-            export_jobs
-        }
-    };
+        geometric_error_factor,
+        &debug_data_output_path,
+    )?;
+    let export_jobs = backend.jobs(&prepared_output);
 
     // Export each tile by merging its selected CityJSONFeature stream in memory.
     let path_output_tiles = cli.output.join("t");
     let path_features_input_dir = debug_data_output_path.join("inputs");
-    // TODO: need to refactor this parallel loop somehow that it does not only read the
-    //  3d tiles tiles, but also works with cityjson output
     if !cli.debug_cesium3dtiles_tileset_only {
         fs::create_dir_all(&path_output_tiles)?;
         info!("Created output directory {:#?}", &path_output_tiles);
@@ -1487,32 +1837,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let geometry_placement = cityjson_convert::GeometryPlacement::Enu {
-            source_crs: source_crs.clone(),
-            ecef_origin: root_enu_frame.ecef_origin,
-            east: root_enu_frame.east,
-            north: root_enu_frame.north,
-            up: root_enu_frame.up,
+            source_crs: prepared_output.source_crs.clone(),
+            ecef_origin: prepared_output.root_enu_frame.ecef_origin,
+            east: prepared_output.root_enu_frame.east,
+            north: prepared_output.root_enu_frame.north,
+            up: prepared_output.root_enu_frame.up,
         };
         let export_options = build_glb_export_options(&cli, geometry_placement, None);
+        let tile_write_context = TileWriteContext {
+            output_tiles_dir: &path_output_tiles,
+            export_options,
+            source_crs: prepared_output.source_crs.clone(),
+            world: &world,
+            quadtree: &quadtree,
+        };
         let object_attribute_types = object_attribute_types.clone();
         let tiles_len = export_jobs.len();
-        let all_content_tile_ids: Vec<TileId> = export_jobs
-            .iter()
-            .map(|job| job.content_tile_id.clone())
-            .collect();
-        let tiles_failed_iter = export_jobs.into_par_iter().map(|job| {
+        let tiles_failed_iter = export_jobs.par_iter().map(|job| {
             if job.feature_ids.is_empty() {
-                // The Tileset.prune() method removes the empty tiles from the tileset,
-                //  so skipping the tile conversion without failure is ok if it's empty.
                 debug!(
                     "Tile is empty ({}), skipping conversion",
-                    job.content_tile_id
+                    job.content_tile_coord
                 );
                 return None;
             }
-            let tileid_string = job.content_tile_id.to_string();
-            let file_name = tileid_string;
-            let output_file = path_output_tiles.join(&file_name).with_extension("glb");
+            let file_name = job.content_tile_coord.to_string();
             let model = match build_tile_model_from_feature_ids(
                 &world,
                 &job.feature_ids,
@@ -1523,9 +1872,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Err(error) => {
                     warn!(
                         "Failed to build CityJSON model for tile {}: {}",
-                        job.content_tile_id, error
+                        job.content_tile_coord, error
                     );
-                    return Some(job);
+                    return Some(job.clone());
                 }
             };
             if should_dump_debug_data(&cli) {
@@ -1539,9 +1888,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Err(error) => {
                         warn!(
                             "Failed to build debug CityJSONFeature stream for tile {}: {}",
-                            job.content_tile_id, error
+                            job.content_tile_coord, error
                         );
-                        return Some(job);
+                        return Some(job.clone());
                     }
                 };
                 if let Err(error) = write_debug_tile_input(
@@ -1551,85 +1900,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ) {
                     warn!(
                         "Failed to write debug CityJSONFeature stream for tile {}: {}",
-                        job.content_tile_id, error
+                        job.content_tile_coord, error
                     );
-                    return Some(job);
+                    return Some(job.clone());
                 }
             }
             debug!(
                 "Prepared merged CityJSON model for tile {} with {} CityObjects and {} vertices",
-                job.content_tile_id,
+                job.content_tile_coord,
                 model.cityobjects().len(),
                 model.vertices().len()
             );
-            let mut tile_export_options = export_options.clone();
-            if cli.cesium3dtiles_content_clip_to_tile_bounds {
-                if cli.cesium3dtiles_implicit {
-                    let tile_bounds =
-                        geographic_bounds_for_tile(root_geographic_bounds, &job.content_tile_id);
-                    tile_export_options.clip_geographic_region =
-                        Some(cityjson_convert::GeographicClipRegion {
-                            source_crs: source_crs.clone(),
-                            west: tile_bounds.west,
-                            south: tile_bounds.south,
-                            east: tile_bounds.east,
-                            north: tile_bounds.north,
-                        });
-                } else if let Some(source_tile_id) = &job.source_tile_id {
-                    let qtree_nodeid: spatial_structs::QuadTreeNodeId = source_tile_id.into();
-                    let qtree_node = quadtree.node(&qtree_nodeid).unwrap_or_else(|| {
-                        panic!("did not find tile {} in quadtree", source_tile_id)
-                    });
-                    tile_export_options.clip_bbox = Some(qtree_node.bbox(&world.grid));
-                }
-            }
-            let convert_started = Instant::now();
-            if let Err(error) =
-                cityjson_convert::convert_to_glb(&model, &output_file, &tile_export_options)
-            {
-                warn!("Tile {} conversion failed: {}", job.content_tile_id, error);
-                return Some(job);
-            }
-            debug!(
-                "Converted tile {} to GLB in {:?}",
-                job.content_tile_id,
-                convert_started.elapsed()
-            );
-            if !output_file.exists() {
+            if let Err(error) = backend.write_tile(job, &model, &tile_write_context) {
                 warn!(
-                    "Tile {} conversion failed: {} was not created",
-                    job.content_tile_id,
-                    output_file.display()
+                    "Tile {} conversion failed: {}",
+                    job.content_tile_coord, error
                 );
-                return Some(job);
-            }
-            match output_file.metadata() {
-                Ok(metadata) if metadata.len() == 0 => {
-                    debug!(
-                        "Tile {} conversion produced empty GLB at {}",
-                        job.content_tile_id,
-                        output_file.display()
-                    );
-                    if let Err(error) = fs::remove_file(&output_file) {
-                        warn!(
-                            "Failed to remove empty GLB for tile {} at {}: {}",
-                            job.content_tile_id,
-                            output_file.display(),
-                            error
-                        );
-                    }
-                    return Some(job);
-                }
-                Ok(_) => {}
-                Err(error) => {
-                    warn!(
-                        "Tile {} conversion failed: could not inspect {}: {}",
-                        job.content_tile_id,
-                        output_file.display(),
-                        error
-                    );
-                    return Some(job);
-                }
+                return Some(job.clone());
             }
 
             None
@@ -1654,119 +1941,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         let tiles_failed: Vec<TileExportJob> = tiles_results.into_iter().flatten().collect();
+        let failed_content_tile_coords: HashSet<TileCoord> = tiles_failed
+            .iter()
+            .map(|failed| failed.content_tile_coord.clone())
+            .collect();
+        let tiles_successful: Vec<TileExportJob> = export_jobs
+            .iter()
+            .filter(|job| !failed_content_tile_coords.contains(&job.content_tile_coord))
+            .cloned()
+            .collect();
         info!("Done");
-
-        info!("Pruning tileset of {} failed tiles", tiles_failed.len());
-        for (i, failed) in tiles_failed.iter().enumerate() {
-            debug!(
-                "{}, removing failed from the tileset: {}",
-                i, failed.content_tile_id
-            );
-        }
-        if cli.cesium3dtiles_implicit {
-            let failed_content_tile_ids: HashSet<TileId> = tiles_failed
-                .iter()
-                .map(|failed| failed.content_tile_id.clone())
-                .collect();
-            let content_tile_ids: Vec<TileId> = tiles_results_successful_content_tile_ids(
-                &all_content_tile_ids,
-                &failed_content_tile_ids,
-            );
-            let components: Vec<_> = subtrees_path
-                .components()
-                .map(|comp| comp.as_os_str())
-                .collect();
-            let subtrees_dir_option = components.last().cloned().unwrap().to_str();
-            let subtrees =
-                tileset.make_implicit_from_content_tile_ids(&content_tile_ids, subtrees_dir_option);
-            info!("Writing subtrees for implicit tiling");
-            fs::create_dir_all(&subtrees_path)?;
-            for (subtree_id, subtree_bytes) in subtrees {
-                fs::create_dir_all(
-                    subtrees_path.join(format!("{}/{}", subtree_id.level, subtree_id.x)),
-                )
-                .unwrap();
-                let out_path = subtrees_path
-                    .join(&subtree_id.to_string())
-                    .with_extension("subtree");
-                let mut subtree_file = File::create(&out_path)
-                    .unwrap_or_else(|_| panic!("could not create {:?} for writing", &out_path));
-                if let Err(_e) = subtree_file.write_all(&subtree_bytes) {
-                    warn!("Failed to write subtree {} content", subtree_id);
-                }
-            }
-        } else {
-            let failed_tiles: Vec<Tile> = tiles_failed
-                .into_iter()
-                .filter_map(|failed| failed.source_tile)
-                .collect();
-            // Remove tiles that failed the gltf conversion
-            tileset.prune(&failed_tiles, &quadtree);
-            let available_levels = tileset.available_levels();
-            // A five level deep tree is still managable in size.
-            if available_levels > 5 {
-                // Try to find the split where each child tileset starts to have more tiles in their
-                // tree, than the ancestor tree. This way, the main tileset is smaller in size than
-                // the child tilesets, so it loads faster. This method is not very accurate, because
-                // it doesn't account for the actual number of tiles on each level, it only
-                // calculates with the theoretical maximum.
-                let mut split_at_level = 0;
-                for level in (0..available_levels).rev() {
-                    let subtree_depth: u32 = (available_levels - level) as u32;
-                    let nr_tiles_subtree = (4_usize.pow(subtree_depth) - 1) / 3;
-                    let ancestor_tree_depth: u32 =
-                        (available_levels - (available_levels - level)) as u32;
-                    let nr_tiles_ancestor = (4_usize.pow(ancestor_tree_depth) - 1) / 3;
-                    if nr_tiles_ancestor < nr_tiles_subtree {
-                        split_at_level = level;
-                        break;
-                    }
-                }
-                info!(
-                    "Splitting the explicit tileset into external tilesets at level {}",
-                    split_at_level
-                );
-                let external_tilesets = tileset.split(split_at_level);
-                for (filename, child_tileset) in &external_tilesets {
-                    let tileset_path = cli.output.join(filename);
-                    child_tileset.to_file(&tileset_path)?;
-                }
-            }
-        }
-        info!("Writing 3D Tiles tileset");
-        tileset.to_file(&tileset_path)?;
+        backend.finalize(
+            &cli,
+            &quadtree,
+            &tiles_successful,
+            &tiles_failed,
+            &mut prepared_output,
+        )?;
     } else {
-        if cli.cesium3dtiles_implicit {
-            let content_tile_ids: Vec<TileId> = export_jobs
-                .iter()
-                .map(|job| job.content_tile_id.clone())
-                .collect();
-            let components: Vec<_> = subtrees_path
-                .components()
-                .map(|comp| comp.as_os_str())
-                .collect();
-            let subtrees_dir_option = components.last().cloned().unwrap().to_str();
-            let subtrees =
-                tileset.make_implicit_from_content_tile_ids(&content_tile_ids, subtrees_dir_option);
-            info!("Writing subtrees for implicit tiling");
-            fs::create_dir_all(&subtrees_path)?;
-            for (subtree_id, subtree_bytes) in subtrees {
-                fs::create_dir_all(
-                    subtrees_path.join(format!("{}/{}", subtree_id.level, subtree_id.x)),
-                )
-                .unwrap();
-                let out_path = subtrees_path
-                    .join(&subtree_id.to_string())
-                    .with_extension("subtree");
-                let mut subtree_file = File::create(&out_path)
-                    .unwrap_or_else(|_| panic!("could not create {:?} for writing", &out_path));
-                if let Err(_e) = subtree_file.write_all(&subtree_bytes) {
-                    warn!("Failed to write subtree {} content", subtree_id);
-                }
-            }
-        }
-        info!("Writing 3D Tiles tileset");
-        tileset.to_file(&tileset_path)?;
+        backend.write_manifest_only(&cli, &mut prepared_output)?;
     }
 
     Ok(())
@@ -1797,6 +1990,61 @@ mod tests {
 
     fn build_quadtree(world: &parser::World) -> spatial_structs::QuadTree {
         spatial_structs::QuadTree::from_world(world, spatial_structs::QuadTreeCapacity::Objects(1))
+    }
+
+    fn indexed_resource_world(prefix: &str) -> (parser::World, spatial_structs::QuadTree) {
+        let dataset_dir = unique_test_dir(prefix);
+        let metadata =
+            fs::read_to_string(resource_path("3dbag_x00.city.json")).expect("read metadata");
+        let feature = fs::read_to_string(resource_path("3dbag_feature_x71.city.jsonl"))
+            .expect("read feature");
+        let ndjson_source = dataset_dir.join("source.city.jsonl");
+        fs::write(&ndjson_source, format!("{metadata}\n{feature}\n")).expect("write ndjson source");
+
+        let resolved =
+            cityjson_index::resolve_dataset(&dataset_dir, None).expect("resolve ndjson dataset");
+        let mut city_index =
+            cityjson_index::CityIndex::open(resolved.storage_layout(), &resolved.index_path)
+                .expect("open index");
+        city_index.reindex().expect("reindex ndjson dataset");
+        let feature_base_document = derive_base_document(&city_index).expect("derive base doc");
+        let metadata_path = dataset_dir.join("metadata.city.json");
+        fs::write(&metadata_path, &feature_base_document).expect("write metadata");
+
+        let feature_filter = build_feature_filter(None, &BTreeMap::new());
+        let mut world = parser::World::from_cjindex(
+            parser::InputSource::from_cjindex_resolved(&resolved),
+            metadata_path,
+            feature_base_document,
+            200,
+            None,
+            feature_filter,
+            None,
+            None,
+        )
+        .expect("build cjindex ndjson world");
+        world.index_with_grid().expect("index cjindex ndjson world");
+        let quadtree = build_quadtree(&world);
+        (world, quadtree)
+    }
+
+    fn resource_tileset(
+        world: &parser::World,
+        quadtree: &spatial_structs::QuadTree,
+    ) -> formats::cesium3dtiles::Tileset {
+        let root_enu_frame =
+            compute_root_enu_frame(world, quadtree).expect("compute root ENU frame");
+        formats::cesium3dtiles::Tileset::from_quadtree(
+            quadtree,
+            world,
+            1.0,
+            200,
+            None,
+            None,
+            false,
+            true,
+            &root_enu_frame,
+        )
     }
 
     fn feature_root_id(model: &cityjson_lib::CityModel) -> Option<String> {
@@ -3171,6 +3419,105 @@ mod tests {
         let model = build_tile_model(&world, &quadtree).expect("build tile model");
         assert!(!model.cityobjects().is_empty());
         assert!(!model.vertices().is_empty());
+    }
+
+    #[test]
+    fn tile_coord_converts_to_quadtree_node_and_3d_tile_id() {
+        let coord = TileCoord::new(3, 4, 5);
+
+        let qtree_node_id = spatial_structs::QuadTreeNodeId::from(&coord);
+        assert_eq!(qtree_node_id.level, 3);
+        assert_eq!(qtree_node_id.x, 4);
+        assert_eq!(qtree_node_id.y, 5);
+        assert_eq!(TileCoord::from(&qtree_node_id), coord);
+
+        let tile_id = TileId::from(&coord);
+        assert_eq!(tile_id, TileId::new(4, 5, 3));
+        assert_eq!(TileCoord::from(&tile_id), coord);
+    }
+
+    #[test]
+    fn explicit_quadtree_leaf_job_generation_uses_leaf_nodes() {
+        let (world, quadtree) = indexed_resource_world("explicit-leaf-jobs");
+        let tileset = resource_tileset(&world, &quadtree);
+
+        let jobs = explicit_tile_export_jobs(&world, &quadtree, &tileset, true);
+        let leaves = tileset.collect_leaves();
+
+        assert_eq!(jobs.len(), leaves.len());
+        assert!(jobs
+            .iter()
+            .all(|job| matches!(job.clip, TileClip::SourceBbox)));
+        for job in jobs {
+            let source_node_id = job
+                .source_node_id
+                .as_ref()
+                .expect("explicit jobs should keep source node IDs");
+            let qtree_node_id = spatial_structs::QuadTreeNodeId::from(source_node_id);
+            let qtree_node = quadtree
+                .node(&qtree_node_id)
+                .expect("job source node should exist in quadtree");
+            assert_eq!(
+                job.feature_ids,
+                collect_tile_feature_ids(&world, qtree_node)
+            );
+            assert_eq!(job.content_tile_coord, *source_node_id);
+        }
+    }
+
+    #[test]
+    fn failed_job_pruning_input_uses_explicit_source_tiles() {
+        let (world, quadtree) = indexed_resource_world("failed-pruning-input");
+        let tileset = resource_tileset(&world, &quadtree);
+        let jobs = explicit_tile_export_jobs(&world, &quadtree, &tileset, false);
+        let failed_job = jobs
+            .iter()
+            .find(|job| job.source_node_id.is_some())
+            .expect("expected an explicit tile job")
+            .clone();
+        let expected_tile_id = TileId::from(failed_job.source_node_id.as_ref().unwrap());
+
+        let failed_tiles = failed_source_tiles(&tileset, &[failed_job]);
+
+        assert_eq!(failed_tiles.len(), 1);
+        assert_eq!(failed_tiles[0].id, expected_tile_id);
+    }
+
+    #[test]
+    fn geographic_implicit_jobs_are_sorted_and_non_overlapping() {
+        let (world, quadtree) = indexed_resource_world("geographic-implicit-jobs");
+        let tileset = resource_tileset(&world, &quadtree);
+        let source_crs = format!("EPSG:{}", world.crs.to_epsg().expect("EPSG code"));
+        let source_to_geographic =
+            Proj::new_known_crs(&source_crs, "EPSG:4979", None).expect("source CRS transform");
+        let root_geographic_bounds =
+            geographic_bounds_from_source_bbox(&quadtree.bbox(&world.grid), &source_to_geographic)
+                .expect("root geographic bounds");
+
+        let jobs = geographic_implicit_tile_export_jobs(
+            &world,
+            &quadtree,
+            &tileset,
+            root_geographic_bounds,
+            &source_to_geographic,
+            true,
+        )
+        .expect("geographic implicit jobs");
+
+        assert!(!jobs.is_empty());
+        let content_tile_ids = content_tile_ids_from_jobs(&jobs);
+        assert!(content_tile_ids.windows(2).all(|pair| pair[0] <= pair[1]));
+        for (index, candidate) in content_tile_ids.iter().enumerate() {
+            assert!(!content_tile_ids
+                .iter()
+                .enumerate()
+                .any(|(ancestor_index, ancestor)| {
+                    ancestor_index != index && tile_id_is_ancestor_of(ancestor, candidate)
+                }));
+        }
+        assert!(jobs
+            .iter()
+            .all(|job| matches!(job.clip, TileClip::GeographicRegion(_))));
     }
 
     #[test]
