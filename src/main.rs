@@ -1867,6 +1867,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --- Begin argument parsing
     let cli = crate::cli::Cli::parse();
+    cli.validate_parameter_combinations(&[cli.format])?;
     debug!("{:?}", &cli);
     info!("tyler version: {}", clap::crate_version!());
     if !cli.output.is_dir() {

@@ -244,6 +244,35 @@ pub struct Cli {
     // pub exe_python: Option<PathBuf>,
 }
 
+impl Cli {
+    /// Central gate for rejecting CLI option combinations that are incompatible
+    /// with one or more selected output formats.
+    ///
+    /// This validation must run after clap parsing but before output directory
+    /// creation, input inspection, indexing, grid construction, or tile
+    /// processing. It intentionally accepts a format slice so future
+    /// multi-format CLI support can validate every selected format with the
+    /// same mechanism.
+    ///
+    /// The gate may start as a no-op until format-specific rules are added.
+    #[allow(clippy::unused_self)]
+    pub fn validate_parameter_combinations(
+        &self,
+        formats: &[crate::OutputFormatKind],
+    ) -> Result<(), String> {
+        for &format in formats {
+            Self::validate_parameter_combinations_for_format(format)?;
+        }
+        Ok(())
+    }
+
+    fn validate_parameter_combinations_for_format(
+        _format: crate::OutputFormatKind,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+}
+
 fn existing_canonical_path(s: &str) -> Result<PathBuf, String> {
     if let Ok(c) = Path::new(s).canonicalize() {
         if c.exists() {
@@ -275,6 +304,7 @@ fn hex_color(s: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::Cli;
+    use crate::OutputFormatKind;
     use clap::{CommandFactory, Parser};
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -413,6 +443,35 @@ mod tests {
                 .canonicalize()
                 .unwrap()
         );
+    }
+
+    #[test]
+    fn validation_accepts_default_format() {
+        let cli = Cli::try_parse_from(dataset_args()).unwrap();
+
+        assert!(cli.validate_parameter_combinations(&[cli.format]).is_ok());
+    }
+
+    #[test]
+    fn validation_accepts_explicit_non_default_format() {
+        let mut args = dataset_args();
+        args.extend(["--format".to_string(), "cityjson".to_string()]);
+        let cli = Cli::try_parse_from(args).unwrap();
+
+        assert!(cli.validate_parameter_combinations(&[cli.format]).is_ok());
+    }
+
+    #[test]
+    fn validation_accepts_multiple_formats_directly() {
+        let cli = Cli::try_parse_from(dataset_args()).unwrap();
+
+        assert!(cli
+            .validate_parameter_combinations(&[
+                OutputFormatKind::Cesium3dTiles,
+                OutputFormatKind::Cityjson,
+                OutputFormatKind::Cityjsonseq,
+            ])
+            .is_ok());
     }
 
     #[test]
