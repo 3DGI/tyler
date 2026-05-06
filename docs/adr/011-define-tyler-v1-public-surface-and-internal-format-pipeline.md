@@ -98,8 +98,10 @@ Common CLI options cover:
 - logging, including logging to a file
 - explicit job control and parallelism
 
-Format-specific options are only valid for compatible formats. Tyler validates
-them before input processing starts. Invalid combinations, missing required
+Format-specific options are only valid for compatible formats.
+Format-specific options are prefixed with the selected format name, following the existing `--3dtiles-*` convention.
+Candidate prefixes for v1.0 include: `--cityjson-*`, `--cityjsonseq-*`, `--obj-*`, and `--gpkg-*`.
+Tyler validates them before input processing starts. Invalid combinations, missing required
 format options, ignored options, and conflicting options fail during
 configuration validation rather than after index resolution or tile work.
 
@@ -112,6 +114,16 @@ Short examples of the intended v1.0 CLI shape. Existing option names are kept
 where v0.4.1 already has them; repeated `--format`, `--format obj`,
 `--format gpkg`, `--jobs`, and `--log-file` are part of the future v1.0
 surface described by this ADR.
+
+Common CLI parameters have short versions for convenience:
+
+- `-v` for `--version`,
+- `-h` for `--help`,
+- `-i` for `--input`,
+- `-o` for `--output`,
+- `-f` for `--format`,
+- `-j` for `--jobs`,
+- `-l` for `--log-file`
 
 ```sh
 tyler data/amsterdam.city.jsonl \
@@ -249,10 +261,8 @@ private implementation details of the GLB writer when OBJ, GPKG, or future
 writers need the same format-level behavior. Tiling-driven preparation such as
 clipping remains in Tyler before the `CityModel` reaches `cityjson-convert`.
 
-The PROJ dependency boundary will be split so `proj` / `proj-sys` can be used as
-a standalone dependency by both Tyler and `cityjson-lib`. CRS handling should not
-force all callers through the Tyler binary, and `cityjson-lib` should not depend
-on conversion-only internals to perform CRS-aware model work.
+The PROJ dependency will be moved to `cityjson-lib` and implemenent `cityjson_lib::ops::reproject`.
+The `cityjson_lib::ops::reproject` applies the coordinate transformation on the `CityModel.vertices`.
 
 Logging to a file and explicit job control are v1.0 operational controls. They
 are configured before the pipeline starts and are available across orchestration,
