@@ -8,91 +8,211 @@ Proposed
 
 Tyler v1.0 introduces multiple tabular or partly tabular outputs for
 CityJSON-compatible data. CSV and TSV are geometry-less tabular outputs.
-GeoPackage stores feature geometries with relational attributes. Future
-CityArrow and CityParquet outputs can preserve more nested structure while
-serving the same analytical use cases.
+GeoPackage stores feature geometries with relational attributes.
+`cityjson-rs` already includes `cityjson-arrow` and `cityjson-parquet` crates
+that convert CityModels into canonical nested and tabular Arrow or Parquet
+encodings for analytical use cases.
 
-Without a shared schema decision, each writer could infer CityJSON attributes
-independently. That would make the same selected CityObjects expose different
-non-geometry columns in CSV, TSV, GeoPackage, CityArrow, and CityParquet. It
-would also encourage older GIS-oriented behavior where any complex attribute is
-serialized as JSON text, even when it has a stable typed structure that can be
-projected into queryable fields.
-
-The `cityjson-arrow` projection semantics provide the right logical direction:
-infer a stable schema from CityJSON values, preserve typed nested data where it
-is compatible, widen numeric values consistently, and use an explicit JSON
-fallback only for heterogeneous or otherwise incompatible paths.
+Tyler needs a concrete tabular contract so CSV, TSV, and GeoPackage do not each
+invent their own attribute columns. The contract should follow the existing
+`cityjson-arrow` direction: typed nested values remain typed when they have a
+stable shape, numeric values widen consistently, and JSON text is an explicit
+fallback for heterogeneous or otherwise incompatible paths.
 
 ## Decision
 
-Tyler will define one logical CityJSON tabular projection schema shared by all
-tabular outputs. CSV, TSV, GeoPackage, and future CityArrow or CityParquet
-writers encode that logical projection in format-appropriate physical forms.
+Tyler will use the logical row schemas below for tabular outputs. CSV, TSV, and
+GeoPackage encode the same logical fields in format-appropriate physical forms.
+The schema aligns with the existing CityArrow and CityParquet projection
+semantics in `cityjson-rs`; it does not define those formats as future
+Tyler-only work.
 
-The shared projection applies to CityModel, CityObject, Geometry, and Semantic
-tabular projections. All of them use the same attribute projection rules; only
-their row identity, geometry handling, and physical encoding differ by output
-format.
+### Logical Row Schemas
 
-### Logical Projection Namespaces
+Tyler's shared projection defines these logical row types:
 
-The logical schema contains these namespaces when the source data and selected
-output expose them:
+#### `cityobjects`
 
-- `citymodel` or `metadata` attributes for geometry-less model-level output
-- `cityobject.attributes`
-- `cityobject.extra`
-- `geometry.extra`, if Tyler exposes geometry-level extra data
-- `semantic.attributes`
-- `address`, when present
+One row per selected CityObject. This is the base schema for CSV and TSV.
 
-Each namespace projects its values recursively. Nested objects become logical
-struct fields, not JSON text by default.
+| Logical field | Type | Required | Source |
+|---------------|------|----------|--------|
+| `cityobject_id` | `Utf8` | yes | CityJSON object key |
+| `cityobject_ix` | `UInt64` | yes | stable export ordinal |
+| `cityobject_type` | `Utf8` | yes | CityObject `type` |
+| `bbox` | `FixedList<Float64, 6>` | no | computed or source bbox, if available |
+| `attributes` | `Struct{...}` | no | CityObject `attributes` |
+| `extra` | `Struct{...}` | no | extension/custom CityObject members not represented by fixed fields |
 
-### Logical Value Vocabulary
+The fixed fields match the CityArrow `cityobjects` table conceptually. Tyler
+may omit `cityobject_ix` from user-facing CSV/TSV only when no downstream join
+or relation output needs it; internally it remains the stable row identity.
 
-The logical value vocabulary is aligned with `cityjson-arrow`:
+#### `features`
 
-| Logical value | Meaning |
-|---------------|---------|
-| `Null` | Null-only path |
-| `Boolean` | Boolean values |
-| `UInt64` | Non-negative integer values that require unsigned range |
-| `Int64` | Signed integer values |
-| `Float64` | Floating-point values or integer/float widened numeric values |
-| `Utf8` | String values |
-| `GeometryRef` | Geometry references where a projection needs them |
-| `List<T>` | Homogeneous lists with a projected item type |
-| `Struct{...}` | Objects with recursively projected fields |
-| `Json` | Explicit fallback after inference finds heterogeneous or incompatible values |
+One row per exported feature geometry. This is the base schema for GeoPackage
+feature layers and extends `cityobjects` with geometry identity.
+
+| Logical field | Type | Required | Source |
+|---------------|------|----------|--------|
+| `feature_id` | `UInt64` | yes | stable feature row ordinal |
+| `cityobject_id` | `Utf8` | yes | owning CityObject id |
+| `cityobject_ix` | `UInt64` | yes | owning CityObject ordinal |
+| `cityobject_type` | `Utf8` | yes | owning CityObject type |
+| `geometry_ix` | `UInt64` | yes | geometry index within the CityObject |
+| `geometry_type` | `Utf8` | yes | CityJSON geometry type |
+| `lod` | `Utf8` | no | CityJSON LoD value |
+| `geom` | format geometry | yes | physical geometry column, if the format stores geometry |
+| `attributes` | `Struct{...}` | no | owning CityObject `attributes` |
+| `extra` | `Struct{...}` | no | owning CityObject extension/custom members |
+| `geometry_extra` | `Struct{...}` | no | geometry extension/custom members, if exposed |
+
+GeoPackage uses this row schema with the physical columns required by
+[ADR 012](012-define-cityjson-to-geopackage-schema-mapping.md), including
+`id INTEGER PRIMARY KEY` and `geom`.
+
+#### `semantic_surfaces`
+
+One row per exported semantic surface when Tyler splits semantics.
+
+| Logical field | Type | Required | Source |
+|---------------|------|----------|--------|
+| `semantic_id` | `UInt64` | yes | stable semantic row ordinal |
+| `cityobject_id` | `Utf8` | yes | owning CityObject id |
+| `cityobject_ix` | `UInt64` | yes | owning CityObject ordinal |
+| `geometry_ix` | `UInt64` | yes | owning geometry index |
+| `surface_ix` | `UInt64` | yes | semantic surface index within the geometry |
+| `semantic_type` | `Utf8` | yes | semantic object `type` |
+| `geom` | format geometry | yes | semantic geometry, if materialized |
+| `attributes` | `Struct{...}` | no | semantic surface `attributes` |
+
+### Projected Field Types
+
+Nested CityJSON values are projected recursively into this value vocabulary,
+aligned with `cityjson-arrow`:
+
+| Logical type | Meaning | Flat physical type |
+|--------------|---------|--------------------|
+| `Null` | null-only path | no standalone column unless needed for a nullable typed path |
+| `Boolean` | boolean values | `BOOLEAN` or text `true`/`false` |
+| `UInt64` | non-negative integers | unsigned integer where available, otherwise integer/text if needed |
+| `Int64` | signed integers | integer |
+| `Float64` | floats or widened int/float paths | real number |
+| `Utf8` | string values | text |
+| `FixedList<T, N>` | fixed-length homogeneous list | native fixed list if available, otherwise compact JSON text |
+| `List<T>` | homogeneous list values | native list if available, otherwise compact JSON text |
+| `Struct{...}` | object values with projected child fields | flattened child columns |
+| `Json` | heterogeneous or incompatible values | compact JSON text |
 
 Numeric inference follows the same widening direction as `cityjson-arrow`.
 Compatible integer paths stay integer where possible. Mixed integer and
 floating-point paths widen to `Float64`. Heterogeneous paths that cannot be
 represented by a stable typed projection become `Json`.
 
-Lists are projected only when they have a usable homogeneous item policy for
-the selected logical path. Otherwise, the path uses the explicit `Json`
-fallback. The fallback is a logical category, not permission for every writer to
-blindly serialize all arrays and objects.
+Lists are projected as `List<T>` only when all present list values have a
+homogeneous item type after numeric widening. Lists with incompatible item
+types, mixed scalar/list/object shapes, or unstable nested list shapes become
+`Json`.
+
+### Flattened Column Names
+
+Flat formats use the field namespace plus the nested path, joined by `__`.
+Fixed identity columns are not prefixed.
+
+| Logical path | Flat column |
+|--------------|-------------|
+| `attributes.measuredHeight` | `attributes__measuredHeight` |
+| `attributes.metrics.height` | `attributes__metrics__height` |
+| `extra.creationDate` | `extra__creationDate` |
+| `geometry_extra.source.id` | `geometry_extra__source__id` |
+| `attributes.address.street` | `attributes__address__street` |
+
+Writers must escape path segments deterministically before joining them. The
+escape rule is: replace `%` with `%25` and replace literal `__` with `%5F%5F`.
+If the resulting column conflicts with a fixed column or another projected
+path, append `__2`, `__3`, and so on until it is unique.
 
 ### Physical Encodings
 
 Physical formats encode the same logical fields differently:
 
-- CSV and TSV use flattened columns. JSON text is used only for logical `Json`
-  fields or for unsupported list/object physical cells.
+- CSV and TSV write one `cityobjects` row per selected CityObject. They use
+  flattened columns. JSON text is used only for logical `Json` fields or for
+  logical `List<T>` and `FixedList<T, N>` fields because CSV/TSV have no native
+  list cell type.
 - GeoPackage uses flattened SQLite columns plus its `geom` column. The
-  non-geometry logical fields match geometry-less tabular output for the same
-  selected CityObjects.
-- CityArrow and CityParquet use nested Arrow or Parquet fields where supported,
-  plus any transport or package metadata needed by those formats.
+  non-geometry logical fields in each feature layer match the `cityobjects`
+  projection for the owning CityObject. `List<T>` and `FixedList<T, N>` fields
+  become compact JSON `TEXT` unless ADR 012 defines a row-expansion policy for
+  that path.
+- The existing CityArrow and CityParquet encodings in `cityjson-rs` use nested
+  Arrow or Parquet fields where supported, plus any transport or package
+  metadata needed by those formats.
 
-Flattened physical encodings must use deterministic names for nested paths.
-For example, `cityobject.attributes.metrics.height` can become a column such as
-`attributes__metrics__height` in a GeoPackage feature table. Name conflicts are
-escaped or prefixed deterministically by the writer.
+### Examples
+
+Given these two CityObjects:
+
+```json
+{
+  "b-1": {
+    "type": "Building",
+    "attributes": {
+      "measuredHeight": 12,
+      "name": "Library",
+      "metrics": { "roofSlope": 0.25 },
+      "tags": ["public", "education"],
+      "mixed": [607, false, 28.47]
+    }
+  },
+  "b-2": {
+    "type": "Building",
+    "attributes": {
+      "measuredHeight": 14.5,
+      "name": null,
+      "metrics": { "roofSlope": 0 },
+      "tags": ["office"]
+    }
+  }
+}
+```
+
+The inferred logical `attributes` struct is:
+
+```text
+attributes: Struct{
+  measuredHeight: Float64,
+  name: Utf8,
+  metrics: Struct{
+    roofSlope: Float64
+  },
+  tags: List<Utf8>,
+  mixed: Json
+}
+```
+
+CSV/TSV columns become:
+
+| cityobject_id | cityobject_type | attributes__measuredHeight | attributes__name | attributes__metrics__roofSlope | attributes__tags | attributes__mixed |
+|---------------|-----------------|----------------------------|------------------|--------------------------------|------------------|-------------------|
+| `b-1` | `Building` | `12.0` | `Library` | `0.25` | `["public","education"]` | `[607,false,28.47]` |
+| `b-2` | `Building` | `14.5` | null | `0.0` | `["office"]` | null |
+
+GeoPackage feature layers use the same non-geometry columns on each exported
+geometry row, plus their required feature columns:
+
+| id | cityobject_id | cityobject_type | geometry_type | lod | attributes__measuredHeight | attributes__metrics__roofSlope | geom |
+|----|---------------|-----------------|---------------|-----|----------------------------|--------------------------------|------|
+| `1` | `b-1` | `Building` | `Solid` | `2.2` | `12.0` | `0.25` | `MultiPolygonZ(...)` |
+
+CityArrow/CityParquet keep the same projection nested instead of flattening it:
+
+```text
+cityobjects.attributes.measuredHeight: Float64
+cityobjects.attributes.metrics.roofSlope: Float64
+cityobjects.attributes.tags: List<Utf8>
+cityobjects.attributes.mixed: Json
+```
 
 Addresses use the same projection rules as other attributes. A stable address
 object can therefore produce typed projected fields. It only becomes compact
@@ -103,8 +223,9 @@ format cannot represent a projected field directly.
 
 Good:
 
-- CSV, TSV, GeoPackage, and future CityArrow or CityParquet outputs expose the
-  same logical non-geometry fields for the same selected CityObjects.
+- Tyler's CSV, TSV, and GeoPackage outputs expose logical non-geometry fields
+  that align with the existing CityArrow and CityParquet schema direction for
+  the same selected CityObjects.
 - Nested attributes such as `{ "metrics": { "height": 12.5 } }` become typed,
   queryable projected fields instead of JSON blobs.
 - Numeric widening and nullable behavior are consistent across tabular outputs.
@@ -116,8 +237,10 @@ Trade-offs:
 - Writers need a shared projection inference layer instead of local one-off
   JSON-to-column mappings.
 - Flattened formats need deterministic path naming and conflict handling.
-- Some list and heterogeneous value paths still become JSON text, but only
-  through the explicit `Json` fallback category.
+- Flat formats may write valid `List<T>` and `FixedList<T, N>` values as JSON
+  text because they have no native list cell type.
+- Heterogeneous value paths still become JSON text, but only through the
+  explicit `Json` fallback category.
 
 Neutral:
 

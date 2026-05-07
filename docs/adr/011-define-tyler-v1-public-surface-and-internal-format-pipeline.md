@@ -210,9 +210,9 @@ The geometry-less tabular output of the attributes could be powerful in combinat
 Could be the last step in a piped data processing chain of citymodel reshaping and subsetting in the command line, where the result piped into a parquet file that can be queried with generic data
 analysis tools.
 
-GeoPackage, CSV, TSV, and future CityArrow or CityParquet outputs should share
-the same logical attribute schema. Physical formats may encode that logical
-projection differently.
+CityArrow and CityParquet already provide the reference projection direction;
+Tyler's CSV, TSV, and GeoPackage outputs should align with that logical schema.
+Physical formats may encode that logical projection differently.
 
 #### GeoPackage
 
