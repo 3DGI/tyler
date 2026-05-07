@@ -197,6 +197,56 @@ tyler data/region.city.json \
   --3dtiles-content-clip-to-tile-bounds
 ```
 
+### Mapping of CityModel to Output Formats
+
+#### Comma Separated Values (CSV) or Tab Separated Values (TSV)
+
+Geometry-less output of the CityModel, CityObject, and Semantic attributes in the input.
+The tabular output enables easy processing by spreadsheets and other standard data analysis tools.
+
+The geometry-less tabular output of the attributes could be powerful in combination with a generic parquet format for enabling efficient analytics on large datasets.
+Could be the last step in a piped data processing chain of citymodel reshaping and subsetting in the command line, where the result piped into a parquet file that can be queried with generic data
+analysis tools.
+
+The GeoPackage format below should reuse the same schema for storing the attributes.
+
+#### GeoPackage
+
+The GeoPackage mapping can be generalized to other GIS formats that store geometries as Simple Features in a tabular format.
+
+GeoPackage specs: https://www.geopackage.org/spec/
+
+CityJSON concepts:
+
+- Transform: Gpkg coordinates are real-world coordinates, not quantized coordinates, and the `transfrom` parameters are not included in the output.
+- Appearance: Dropped entirely. We could consider adding QGIS layer style definitions to the output if appearance (materials) is present in the input, or `--color-*` is set.
+- Metadata: Dropped entirely. We could consider using the Metadata gpkg extension to store the metadata in the output, see https://www.geopackage.org/spec/#extension_metadata . The CRS is embedded
+  in the GeoPackage file.
+- Geometry templates: GeometryInstance-es are inlined (or resolved) into real geometries.
+- Semantics: Only relevant for LoD2 and above. By default the semantic objects are dropped. If the `--gpkg-split-semantics` option is set, then the semantic objects (points, lines, surfaces) are split
+  into separate features, each with its own geometry and attributes. Semantics hieararchy is preserved via a separate relation layer.
+- Geometries: Each geometry in a CityObject is a separate feature in the same table for the CityObject type. If `--gpkg-split-lod` is set, then each LoD is a separate layer per CityObject type.
+- CityObjects: Each CityObject type is a separate layer. CityObject hierarchy is preserved via a separate relation layer.
+- Extensions: Extended properties are inlined into the attributes.
+
+**3DCityDB v5 schema**
+
+An interesting reference is the [3DCityDB v5 schema](https://docs.3dcitydb.org/1.3/3dcitydb/relational-schema/), which encodes the hierarchical structure of a CityGML model into a set of tables and
+Simple Features.
+
+However, there are a few concepts in 3DCityDB that are not relevant for a GeoPackage output.
+
+- SRS: The GeoPackage output is in a single CRS and the CRS is embedded in the GeoPackage file.
+- Geometry templates: The GeoPackage format does not support geometry templates.
+- Appearance: The GeoPackage format does not support appearances.
+- Codelist: There are no codelists in CityJSON.
+- Address: Follows a strict schema in 3DCityDB, it is a JSON object in CityJSON. Probably should be stringified in GeoPackage.
+- ADE: Application Domain Extensions (CityGML) or Extensions (CityJSON) have their own schema. The GeoPakcage output probably inlines the Extended attributes with the regular attributes.
+
+### CLI parameter matrix
+
+CLI parameter matrix of functionality per output format.
+
 ### Internal Architecture
 
 `main` will be refactored into orchestration. It will coordinate these phases:
