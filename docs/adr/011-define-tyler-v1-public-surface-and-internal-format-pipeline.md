@@ -216,32 +216,19 @@ The GeoPackage mapping can be generalized to other GIS formats that store geomet
 
 GeoPackage specs: https://www.geopackage.org/spec/
 
-CityJSON concepts:
+The detailed CityJSON-to-GeoPackage schema mapping is defined in
+[ADR 012](012-define-cityjson-to-geopackage-schema-mapping.md). In summary,
+GeoPackage output is GIS-first: coordinates are written as real-world XYZ
+coordinates in one declared CRS, feature layers are split into homogeneous
+CityObject type and geometry-family layers, CityJSON geometry templates are
+resolved, solids are exported as boundary `MultiPolygonZ` features, and
+CityObject hierarchy is preserved in a separate relation table.
 
-- Transform: Gpkg coordinates are real-world coordinates, not quantized coordinates, and the `transfrom` parameters are not included in the output.
-- Appearance: Dropped entirely. We could consider adding QGIS layer style definitions to the output if appearance (materials) is present in the input, or `--color-*` is set.
-- Metadata: Dropped entirely. We could consider using the Metadata gpkg extension to store the metadata in the output, see https://www.geopackage.org/spec/#extension_metadata . The CRS is embedded
-  in the GeoPackage file.
-- Geometry templates: GeometryInstance-es are inlined (or resolved) into real geometries.
-- Semantics: Only relevant for LoD2 and above. By default the semantic objects are dropped. If the `--gpkg-split-semantics` option is set, then the semantic objects (points, lines, surfaces) are split
-  into separate features, each with its own geometry and attributes. Semantics hieararchy is preserved via a separate relation layer.
-- Geometries: Each geometry in a CityObject is a separate feature in the same table for the CityObject type. If `--gpkg-split-lod` is set, then each LoD is a separate layer per CityObject type.
-- CityObjects: Each CityObject type is a separate layer. CityObject hierarchy is preserved via a separate relation layer.
-- Extensions: Extended properties are inlined into the attributes.
-
-**3DCityDB v5 schema**
-
-An interesting reference is the [3DCityDB v5 schema](https://docs.3dcitydb.org/1.3/3dcitydb/relational-schema/), which encodes the hierarchical structure of a CityGML model into a set of tables and
-Simple Features.
-
-However, there are a few concepts in 3DCityDB that are not relevant for a GeoPackage output.
-
-- SRS: The GeoPackage output is in a single CRS and the CRS is embedded in the GeoPackage file.
-- Geometry templates: The GeoPackage format does not support geometry templates.
-- Appearance: The GeoPackage format does not support appearances.
-- Codelist: There are no codelists in CityJSON.
-- Address: Follows a strict schema in 3DCityDB, it is a JSON object in CityJSON. Probably should be stringified in GeoPackage.
-- ADE: Application Domain Extensions (CityGML) or Extensions (CityJSON) have their own schema. The GeoPakcage output probably inlines the Extended attributes with the regular attributes.
+By default, appearance and metadata are dropped except for CRS metadata.
+Semantic primitives are dropped unless `--gpkg-split-semantics` is set, in
+which case they are exported into separate feature layers with a semantic
+relation table. CityJSON extension attributes are inlined into normal attribute
+columns where scalar and stored as JSON text where complex.
 
 ### CLI parameter matrix
 
