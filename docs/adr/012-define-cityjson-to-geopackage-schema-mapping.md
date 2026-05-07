@@ -16,6 +16,8 @@ This mapping is informed by:
 
 - the CityJSON 2.0.2 specification: https://www.cityjson.org/specs/2.0.2/
 - the GeoPackage Encoding Standard: https://www.geopackage.org/spec/
+- the shared CityJSON tabular projection schema:
+  [ADR 013](013-define-shared-cityjson-tabular-projection-schema.md)
 - the 3DCityDB v5 relational schema:
   https://docs.3dcitydb.org/1.3/3dcitydb/relational-schema/
 
@@ -130,29 +132,48 @@ The registered geometry column in `gpkg_geometry_columns` is always `geom`.
 
 ### Attribute Mapping
 
-CityObject attributes are copied onto every exported geometry row for that
-CityObject. Attribute columns are inferred per output layer.
+Each GeoPackage feature row keeps the identity and geometry columns defined
+above. CityObject, semantic, address, and supported extension attribute columns
+are derived from the shared CityJSON tabular projection schema in
+[ADR 013](013-define-shared-cityjson-tabular-projection-schema.md).
 
-| JSON value | GeoPackage type     |
-|------------|---------------------|
-| string     | `TEXT`              |
-| integer    | `INTEGER`           |
-| number     | `REAL`              |
-| boolean    | `BOOLEAN`           |
-| null       | `NULL`              |
-| array      | compact JSON `TEXT` |
-| object     | compact JSON `TEXT` |
+CityObject projected fields are copied onto every exported geometry row for
+that CityObject. Attribute columns are inferred per output layer from the shared
+logical projection, not from a GeoPackage-specific JSON-to-column mapping.
 
-If an attribute is absent for a row, write `NULL`. If an attribute name conflicts
-with a required column, prefix the attribute column with `attr_`.
+GeoPackage encodes the shared logical projection with these physical rules:
 
-CityJSON extension attributes follow the same rules. Scalar extension values
-become normal columns. Complex extension values are compact JSON text.
-Extension-defined CityObject types are exported like normal CityObject types.
+- scalar projected fields become normal SQLite columns
+- nested struct paths become deterministic flattened columns, such as
+  `attributes__metrics__height`
+- absent values become `NULL`
+- name conflicts with required columns or with other projected paths are
+  escaped or prefixed deterministically
+- fields projected as logical `Json` become compact JSON `TEXT`
+- lists are expanded only when the shared projection defines a usable scalar or
+  list policy for that path; otherwise they use the explicit `Json` fallback
+  category and become compact JSON `TEXT`
 
-CityJSON addresses are stored as compact JSON text in an `address_json` column.
-No address subtable is created by default because CityJSON addresses are JSON
-objects rather than the strict relational address schema used by 3DCityDB.
+The intended scalar mapping is:
+
+| Logical value | GeoPackage type |
+|---------------|-----------------|
+| `Boolean`     | `BOOLEAN`       |
+| `UInt64`      | `INTEGER`       |
+| `Int64`       | `INTEGER`       |
+| `Float64`     | `REAL`          |
+| `Utf8`        | `TEXT`          |
+| `GeometryRef` | `TEXT`          |
+| `Json`        | `TEXT`          |
+
+`Null` contributes nullability but does not by itself require a non-null
+physical type. Extension-defined CityObject types are exported like normal
+CityObject types.
+
+CityJSON addresses use the same projection rules as other attributes. A stable
+address object can produce typed flattened address columns. It only becomes
+compact JSON `TEXT` when the address path is inferred as logical `Json` or
+cannot be represented by the GeoPackage physical rules.
 
 ### CityObject Hierarchy
 
@@ -211,8 +232,8 @@ Semantic feature layers include:
 | `cityobject_id` | `TEXT NOT NULL`         | Source CityObject id                  |
 | `geom`          | layer-specific geometry | Registered GeoPackage geometry column |
 
-Semantic scalar properties are flattened into columns using the same attribute
-rules as CityObjects. CityJSON semantic properties are scalar values.
+Semantic properties are flattened into columns using the same shared projection
+rules as CityObjects.
 
 When semantic splitting is enabled, create a non-spatial attributes table:
 

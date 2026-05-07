@@ -201,14 +201,18 @@ tyler data/region.city.json \
 
 #### Comma Separated Values (CSV) or Tab Separated Values (TSV)
 
-Geometry-less output of the CityModel, CityObject, and Semantic attributes in the input.
+Geometry-less output uses the shared CityJSON tabular projection schema defined
+in [ADR 013](013-define-shared-cityjson-tabular-projection-schema.md) for
+CityModel, CityObject, and Semantic attributes in the input.
 The tabular output enables easy processing by spreadsheets and other standard data analysis tools.
 
 The geometry-less tabular output of the attributes could be powerful in combination with a generic parquet format for enabling efficient analytics on large datasets.
 Could be the last step in a piped data processing chain of citymodel reshaping and subsetting in the command line, where the result piped into a parquet file that can be queried with generic data
 analysis tools.
 
-The GeoPackage format below should reuse the same schema for storing the attributes.
+GeoPackage, CSV, TSV, and future CityArrow or CityParquet outputs should share
+the same logical attribute schema. Physical formats may encode that logical
+projection differently.
 
 #### GeoPackage
 
@@ -217,7 +221,9 @@ The GeoPackage mapping can be generalized to other GIS formats that store geomet
 GeoPackage specs: https://www.geopackage.org/spec/
 
 The detailed CityJSON-to-GeoPackage schema mapping is defined in
-[ADR 012](012-define-cityjson-to-geopackage-schema-mapping.md). In summary,
+[ADR 012](012-define-cityjson-to-geopackage-schema-mapping.md), using the shared
+tabular projection from
+[ADR 013](013-define-shared-cityjson-tabular-projection-schema.md). In summary,
 GeoPackage output is GIS-first: coordinates are written as real-world XYZ
 coordinates in one declared CRS, feature layers are split into homogeneous
 CityObject type and geometry-family layers, CityJSON geometry templates are
@@ -227,8 +233,10 @@ CityObject hierarchy is preserved in a separate relation table.
 By default, appearance and metadata are dropped except for CRS metadata.
 Semantic primitives are dropped unless `--gpkg-split-semantics` is set, in
 which case they are exported into separate feature layers with a semantic
-relation table. CityJSON extension attributes are inlined into normal attribute
-columns where scalar and stored as JSON text where complex.
+relation table. CityObject, semantic, address, and supported extension
+attributes are encoded from the shared logical tabular projection, with JSON
+text used only for fields projected as explicit `Json` or for physical cells a
+format cannot otherwise represent.
 
 ### CLI parameter matrix
 
