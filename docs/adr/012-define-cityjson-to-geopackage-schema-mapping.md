@@ -307,6 +307,8 @@ This mapping defines the behavior of these GeoPackage-specific options:
 
 The 3DBAG CityJSON file looks like this: https://gist.github.com/balazsdukai/e1c8a32ec7933ded2e29cf75d47cea5f
 
+The converted GeoPackage looks like this, using the `--gpkg-split-lod` and `--gpkg-split-semantics` behavior: https://github.com/user-attachments/files/27520157/one-3dbag.gpkg-tables.zip
+
 ## Consequences
 
 Good:
