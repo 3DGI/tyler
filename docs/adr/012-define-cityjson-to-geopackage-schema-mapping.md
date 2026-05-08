@@ -243,11 +243,11 @@ semantic_relations
 
 Columns:
 
-| Column      | Type                  | Description                                      |
-|-------------|-----------------------|--------------------------------------------------|
-| `id`        | `INTEGER PRIMARY KEY` | Row id                                           |
-| `parent_id` | `TEXT NOT NULL`       | Parent semantic id                               |
-| `child_id`  | `TEXT NOT NULL`       | Child semantic id                                |
+| Column      | Type                  | Description        |
+|-------------|-----------------------|--------------------|
+| `id`        | `INTEGER PRIMARY KEY` | Row id             |
+| `parent_id` | `TEXT NOT NULL`       | Parent semantic id |
+| `child_id`  | `TEXT NOT NULL`       | Child semantic id  |
 
 Register this table in `gpkg_contents` with `data_type = 'attributes'`.
 
@@ -300,6 +300,12 @@ This mapping defines the behavior of these GeoPackage-specific options:
 | `--gpkg-split-semantics`  | Export semantic primitives as separate feature layers             |
 | `--gpkg-include-metadata` | Store CityJSON metadata using the GeoPackage metadata extension   |
 | `--color-*`               | Generate optional QGIS style definitions when style export exists |
+
+## Examples
+
+### 3DBAG
+
+The 3DBAG CityJSON file looks like this: https://gist.github.com/balazsdukai/e1c8a32ec7933ded2e29cf75d47cea5f
 
 ## Consequences
 

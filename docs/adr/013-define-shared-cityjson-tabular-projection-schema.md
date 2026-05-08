@@ -35,14 +35,14 @@ Tyler's shared projection defines these logical row types:
 
 One row per selected CityObject. This is the base schema for CSV and TSV.
 
-| Logical field | Type | Required | Source |
-|---------------|------|----------|--------|
-| `cityobject_id` | `Utf8` | yes | CityJSON object key |
-| `cityobject_ix` | `UInt64` | yes | stable export ordinal |
-| `cityobject_type` | `Utf8` | yes | CityObject `type` |
-| `bbox` | `FixedList<Float64, 6>` | no | computed or source bbox, if available |
-| `attributes` | `Struct{...}` | no | CityObject `attributes` |
-| `extra` | `Struct{...}` | no | extension/custom CityObject members not represented by fixed fields |
+| Logical field     | Type                    | Required | Source                                                              |
+|-------------------|-------------------------|----------|---------------------------------------------------------------------|
+| `cityobject_id`   | `Utf8`                  | yes      | CityJSON object key                                                 |
+| `cityobject_ix`   | `UInt64`                | yes      | stable export ordinal                                               |
+| `cityobject_type` | `Utf8`                  | yes      | CityObject `type`                                                   |
+| `bbox`            | `FixedList<Float64, 6>` | no       | computed or source bbox, if available                               |
+| `attributes`      | `Struct{...}`           | no       | CityObject `attributes`                                             |
+| `extra`           | `Struct{...}`           | no       | extension/custom CityObject members not represented by fixed fields |
 
 The fixed fields match the CityArrow `cityobjects` table conceptually. Tyler
 may omit `cityobject_ix` from user-facing CSV/TSV only when no downstream join
@@ -53,19 +53,19 @@ or relation output needs it; internally it remains the stable row identity.
 One row per exported feature geometry. This is the base schema for GeoPackage
 feature layers and extends `cityobjects` with geometry identity.
 
-| Logical field | Type | Required | Source |
-|---------------|------|----------|--------|
-| `feature_id` | `UInt64` | yes | stable feature row ordinal |
-| `cityobject_id` | `Utf8` | yes | owning CityObject id |
-| `cityobject_ix` | `UInt64` | yes | owning CityObject ordinal |
-| `cityobject_type` | `Utf8` | yes | owning CityObject type |
-| `geometry_ix` | `UInt64` | yes | geometry index within the CityObject |
-| `geometry_type` | `Utf8` | yes | CityJSON geometry type |
-| `lod` | `Utf8` | no | CityJSON LoD value |
-| `geom` | format geometry | yes | physical geometry column, if the format stores geometry |
-| `attributes` | `Struct{...}` | no | owning CityObject `attributes` |
-| `extra` | `Struct{...}` | no | owning CityObject extension/custom members |
-| `geometry_extra` | `Struct{...}` | no | geometry extension/custom members, if exposed |
+| Logical field     | Type            | Required | Source                                                  |
+|-------------------|-----------------|----------|---------------------------------------------------------|
+| `feature_id`      | `UInt64`        | yes      | stable feature row ordinal                              |
+| `cityobject_id`   | `Utf8`          | yes      | owning CityObject id                                    |
+| `cityobject_ix`   | `UInt64`        | yes      | owning CityObject ordinal                               |
+| `cityobject_type` | `Utf8`          | yes      | owning CityObject type                                  |
+| `geometry_ix`     | `UInt64`        | yes      | geometry index within the CityObject                    |
+| `geometry_type`   | `Utf8`          | yes      | CityJSON geometry type                                  |
+| `lod`             | `Utf8`          | no       | CityJSON LoD value                                      |
+| `geom`            | format geometry | yes      | physical geometry column, if the format stores geometry |
+| `attributes`      | `Struct{...}`   | no       | owning CityObject `attributes`                          |
+| `extra`           | `Struct{...}`   | no       | owning CityObject extension/custom members              |
+| `geometry_extra`  | `Struct{...}`   | no       | geometry extension/custom members, if exposed           |
 
 GeoPackage uses this row schema with the physical columns required by
 [ADR 012](012-define-cityjson-to-geopackage-schema-mapping.md), including
@@ -75,34 +75,34 @@ GeoPackage uses this row schema with the physical columns required by
 
 One row per exported semantic surface when Tyler splits semantics.
 
-| Logical field | Type | Required | Source |
-|---------------|------|----------|--------|
-| `semantic_id` | `UInt64` | yes | stable semantic row ordinal |
-| `cityobject_id` | `Utf8` | yes | owning CityObject id |
-| `cityobject_ix` | `UInt64` | yes | owning CityObject ordinal |
-| `geometry_ix` | `UInt64` | yes | owning geometry index |
-| `surface_ix` | `UInt64` | yes | semantic surface index within the geometry |
-| `semantic_type` | `Utf8` | yes | semantic object `type` |
-| `geom` | format geometry | yes | semantic geometry, if materialized |
-| `attributes` | `Struct{...}` | no | semantic surface `attributes` |
+| Logical field   | Type            | Required | Source                                     |
+|-----------------|-----------------|----------|--------------------------------------------|
+| `semantic_id`   | `UInt64`        | yes      | stable semantic row ordinal                |
+| `cityobject_id` | `Utf8`          | yes      | owning CityObject id                       |
+| `cityobject_ix` | `UInt64`        | yes      | owning CityObject ordinal                  |
+| `geometry_ix`   | `UInt64`        | yes      | owning geometry index                      |
+| `surface_ix`    | `UInt64`        | yes      | semantic surface index within the geometry |
+| `semantic_type` | `Utf8`          | yes      | semantic object `type`                     |
+| `geom`          | format geometry | yes      | semantic geometry, if materialized         |
+| `attributes`    | `Struct{...}`   | no       | semantic surface `attributes`              |
 
 ### Projected Field Types
 
 Nested CityJSON values are projected recursively into this value vocabulary,
 aligned with `cityjson-arrow`:
 
-| Logical type | Meaning | Flat physical type |
-|--------------|---------|--------------------|
-| `Null` | null-only path | no standalone column unless needed for a nullable typed path |
-| `Boolean` | boolean values | `BOOLEAN` or text `true`/`false` |
-| `UInt64` | non-negative integers | unsigned integer where available, otherwise integer/text if needed |
-| `Int64` | signed integers | integer |
-| `Float64` | floats or widened int/float paths | real number |
-| `Utf8` | string values | text |
-| `FixedList<T, N>` | fixed-length homogeneous list | native fixed list if available, otherwise compact JSON text |
-| `List<T>` | homogeneous list values | native list if available, otherwise compact JSON text |
-| `Struct{...}` | object values with projected child fields | flattened child columns |
-| `Json` | heterogeneous or incompatible values | compact JSON text |
+| Logical type      | Meaning                                   | Flat physical type                                                 |
+|-------------------|-------------------------------------------|--------------------------------------------------------------------|
+| `Null`            | null-only path                            | no standalone column unless needed for a nullable typed path       |
+| `Boolean`         | boolean values                            | `BOOLEAN` or text `true`/`false`                                   |
+| `UInt64`          | non-negative integers                     | unsigned integer where available, otherwise integer/text if needed |
+| `Int64`           | signed integers                           | integer                                                            |
+| `Float64`         | floats or widened int/float paths         | real number                                                        |
+| `Utf8`            | string values                             | text                                                               |
+| `FixedList<T, N>` | fixed-length homogeneous list             | native fixed list if available, otherwise compact JSON text        |
+| `List<T>`         | homogeneous list values                   | native list if available, otherwise compact JSON text              |
+| `Struct{...}`     | object values with projected child fields | flattened child columns                                            |
+| `Json`            | heterogeneous or incompatible values      | compact JSON text                                                  |
 
 Numeric inference follows the same widening direction as `cityjson-arrow`.
 Compatible integer paths stay integer where possible. Mixed integer and
@@ -119,12 +119,12 @@ types, mixed scalar/list/object shapes, or unstable nested list shapes become
 Flat formats use the field namespace plus the nested path, joined by `__`.
 Fixed identity columns are not prefixed.
 
-| Logical path | Flat column |
-|--------------|-------------|
-| `attributes.measuredHeight` | `attributes__measuredHeight` |
+| Logical path                | Flat column                   |
+|-----------------------------|-------------------------------|
+| `attributes.measuredHeight` | `attributes__measuredHeight`  |
 | `attributes.metrics.height` | `attributes__metrics__height` |
-| `extra.creationDate` | `extra__creationDate` |
-| `geometry_extra.source.id` | `geometry_extra__source__id` |
+| `extra.creationDate`        | `extra__creationDate`         |
+| `geometry_extra.source.id`  | `geometry_extra__source__id`  |
 | `attributes.address.street` | `attributes__address__street` |
 
 Writers must escape path segments deterministically before joining them. The
@@ -160,9 +160,11 @@ Given these two CityObjects:
     "attributes": {
       "measuredHeight": 12,
       "name": "Library",
-      "metrics": { "roofSlope": 0.25 },
-      "tags": ["public", "education"],
-      "mixed": [607, false, 28.47]
+      "metrics": {
+        "roofSlope": 0.25
+      },
+      "tags": [ "public", "education" ],
+      "mixed": [ 607, false, 28.47 ]
     }
   },
   "b-2": {
@@ -170,8 +172,10 @@ Given these two CityObjects:
     "attributes": {
       "measuredHeight": 14.5,
       "name": null,
-      "metrics": { "roofSlope": 0 },
-      "tags": ["office"]
+      "metrics": {
+        "roofSlope": 0
+      },
+      "tags": [ "office" ]
     }
   }
 }
@@ -193,17 +197,17 @@ attributes: Struct{
 
 CSV/TSV columns become:
 
-| cityobject_id | cityobject_type | attributes__measuredHeight | attributes__name | attributes__metrics__roofSlope | attributes__tags | attributes__mixed |
-|---------------|-----------------|----------------------------|------------------|--------------------------------|------------------|-------------------|
-| `b-1` | `Building` | `12.0` | `Library` | `0.25` | `["public","education"]` | `[607,false,28.47]` |
-| `b-2` | `Building` | `14.5` | null | `0.0` | `["office"]` | null |
+| cityobject_id | cityobject_type | attributes__measuredHeight | attributes__name | attributes__metrics__roofSlope | attributes__tags         | attributes__mixed   |
+|---------------|-----------------|----------------------------|------------------|--------------------------------|--------------------------|---------------------|
+| `b-1`         | `Building`      | `12.0`                     | `Library`        | `0.25`                         | `["public","education"]` | `[607,false,28.47]` |
+| `b-2`         | `Building`      | `14.5`                     | null             | `0.0`                          | `["office"]`             | null                |
 
 GeoPackage feature layers use the same non-geometry columns on each exported
 geometry row, plus their required feature columns:
 
-| id | cityobject_id | cityobject_type | geometry_type | lod | attributes__measuredHeight | attributes__metrics__roofSlope | geom |
-|----|---------------|-----------------|---------------|-----|----------------------------|--------------------------------|------|
-| `1` | `b-1` | `Building` | `Solid` | `2.2` | `12.0` | `0.25` | `MultiPolygonZ(...)` |
+| id  | cityobject_id | cityobject_type | geometry_type | lod   | attributes__measuredHeight | attributes__metrics__roofSlope | geom                 |
+|-----|---------------|-----------------|---------------|-------|----------------------------|--------------------------------|----------------------|
+| `1` | `b-1`         | `Building`      | `Solid`       | `2.2` | `12.0`                     | `0.25`                         | `MultiPolygonZ(...)` |
 
 CityArrow/CityParquet keep the same projection nested instead of flattening it:
 
@@ -218,6 +222,43 @@ Addresses use the same projection rules as other attributes. A stable address
 object can therefore produce typed projected fields. It only becomes compact
 JSON text when the address path is inferred as logical `Json` or when a physical
 format cannot represent a projected field directly.
+
+#### 3DBAG
+
+The 3DBAG CityJSON file looks like this: https://gist.github.com/balazsdukai/e1c8a32ec7933ded2e29cf75d47cea5f
+
+Default output:
+
+| cityobject\_id                   | cityobject\_type | attributes\_\_identificatie    | attributes\_\_oorspronkelijkbouwjaar | attributes\_\_status | attributes\_\_b3\_dak\_type | attributes\_\_b3\_h\_dak\_max |
+|:---------------------------------|:-----------------|:-------------------------------|:-------------------------------------|:---------------------|:----------------------------|:------------------------------|
+| NL.IMBAG.Pand.0935100000021359-0 | BuildingPart     | null                           | null                                 | null                 | null                        | null                          |
+| NL.IMBAG.Pand.0935100000021359   | Building         | NL.IMBAG.Pand.0935100000021359 | 1975                                 | Pand in gebruik      | slanted                     | 66.181999                     |
+
+Output with `split-semantics` enabled creates a separate semantics table:
+
+| semantic\_id | cityobject\_id                   | cityobject\_ix | geometry\_ix | surface\_ix | semantic\_type | attributes\_\_on\_footprint\_edge | attributes\_\_b3\_h\_dak\_50p | attributes\_\_b3\_h\_dak\_70p | attributes\_\_b3\_h\_dak\_max | attributes\_\_b3\_h\_dak\_min | attributes\_\_b3\_azimut | attributes\_\_b3\_hellingshoek |
+|:-------------|:---------------------------------|:---------------|:-------------|:------------|:---------------|:----------------------------------|:------------------------------|:------------------------------|:------------------------------|:------------------------------|:-------------------------|:-------------------------------|
+| 0            | NL.IMBAG.Pand.0935100000021359-0 | 0              | 0            | 0           | GroundSurface  | null                              | null                          | null                          | null                          | null                          | null                     | null                           |
+| 1            | NL.IMBAG.Pand.0935100000021359-0 | 0              | 0            | 1           | WallSurface    | true                              | null                          | null                          | null                          | null                          | null                     | null                           |
+| 2            | NL.IMBAG.Pand.0935100000021359-0 | 0              | 0            | 2           | WallSurface    | null                              | null                          | null                          | null                          | null                          | null                     | null                           |
+| 3            | NL.IMBAG.Pand.0935100000021359-0 | 0              | 0            | 3           | RoofSurface    | null                              | 63.628269                     | 64.645882                     | 66.424767                     | 60.808277                     | null                     | null                           |
+| 4            | NL.IMBAG.Pand.0935100000021359-0 | 0              | 1            | 0           | GroundSurface  | null                              | null                          | null                          | null                          | null                          | null                     | null                           |
+| 5            | NL.IMBAG.Pand.0935100000021359-0 | 0              | 1            | 1           | WallSurface    | true                              | null                          | null                          | null                          | null                          | null                     | null                           |
+| 6            | NL.IMBAG.Pand.0935100000021359-0 | 0              | 1            | 2           | WallSurface    | null                              | null                          | null                          | null                          | null                          | null                     | null                           |
+| 7            | NL.IMBAG.Pand.0935100000021359-0 | 0              | 1            | 3           | RoofSurface    | null                              | 63.628269                     | 64.645882                     | 66.424767                     | 60.808277                     | null                     | null                           |
+| 8            | NL.IMBAG.Pand.0935100000021359-0 | 0              | 2            | 0           | GroundSurface  | null                              | null                          | null                          | null                          | null                          | null                     | null                           |
+| 9            | NL.IMBAG.Pand.0935100000021359-0 | 0              | 2            | 1           | WallSurface    | true                              | null                          | null                          | null                          | null                          | null                     | null                           |
+| 10           | NL.IMBAG.Pand.0935100000021359-0 | 0              | 2            | 2           | WallSurface    | null                              | null                          | null                          | null                          | null                          | null                     | null                           |
+| 11           | NL.IMBAG.Pand.0935100000021359-0 | 0              | 2            | 3           | RoofSurface    | null                              | 63.558567                     | 64.689850                     | 66.424767                     | 60.808277                     | 263.904449               | 39.630585                      |
+| 12           | NL.IMBAG.Pand.0935100000021359-0 | 0              | 2            | 4           | RoofSurface    | null                              | 63.826801                     | 64.835037                     | 66.424767                     | 61.332588                     | 83.800995                | 39.800274                      |
+
+**Notes**
+
+- Perhaps we should omit semantics without attributes from the semantics table output? Or make it an `--tsv-omit-null-rows` option?
+- Should we include the cityobject/semantic hierarchy in the output?
+- I think we can omit the `cityjson_ix` field entirely from the TSV output.
+- What to do with the Metadata in the TSV output? Separate file with just the Metadata fields? Tyler could append the Metadata of each TSV-tile to a single Metadata file, and perhaps even include the
+  WKT of the file extent for each tile.
 
 ## Consequences
 

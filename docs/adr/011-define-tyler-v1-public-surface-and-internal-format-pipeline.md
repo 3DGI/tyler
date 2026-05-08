@@ -81,6 +81,7 @@ The `--format` option selects output backends. Tyler v1.0 supports:
 - `cityjsonseq`
 - `obj`
 - `gpkg`
+- `tsv`
 
 `--format` may be passed more than once in a single run when the selected
 formats share the same tiling scheme. Tyler builds one extent/grid/quadtree plan
@@ -417,6 +418,8 @@ Implementation validation:
   `just test` for targeted validation while implementing
 - if future validation needs commands not covered by these recipes, add or
   update Justfile recipes first and reference those recipes here
+- CityJSON schema-valid fake data is generated with the [cityjson-fake](https://github.com/3DGI/cityjson-rs/tree/main/crates/cityjson-fake) crate. The cityjson-fake tool can generate fake CityJSON
+  data in any shape and size; however, geometries are dummy values. It will be most useful for testing that `cityjson-convert` supports the full CityJSON schema.
 
 ## Notes
 
