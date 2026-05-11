@@ -252,13 +252,14 @@ Output with `split-semantics` enabled creates a separate semantics table:
 | 11           | NL.IMBAG.Pand.0935100000021359-0 | 0              | 2            | 3           | RoofSurface    | null                              | 63.558567                     | 64.689850                     | 66.424767                     | 60.808277                     | 263.904449               | 39.630585                      |
 | 12           | NL.IMBAG.Pand.0935100000021359-0 | 0              | 2            | 4           | RoofSurface    | null                              | 63.826801                     | 64.835037                     | 66.424767                     | 61.332588                     | 83.800995                | 39.800274                      |
 
-**Notes**
+**Notes on TSV output**
 
-- Perhaps we should omit semantics without attributes from the semantics table output? Or make it an `--tsv-omit-null-rows` option?
-- Should we include the cityobject/semantic hierarchy in the output?
-- I think we can omit the `cityjson_ix` field entirely from the TSV output.
-- What to do with the Metadata in the TSV output? Separate file with just the Metadata fields? Tyler could append the Metadata of each TSV-tile to a single Metadata file, and perhaps even include the
-  WKT of the file extent for each tile.
+- CityObject and Semantics without values in any of the attributes are excluded from the output by default. The flag `--tsv-include-null-rows` includes all objects in the output, even those without
+  attributes values.
+- CityObject and Semantic hierarchy is opt-in with the `--tsv-include-hierarchy` flag.
+- The `--tsv-include-cityjson-ordinal` flag adds the `cityjson_ix` field to the TSV output.
+- Metadata is opt-in with `--tsv-include-metadata` flag. When set, a separate file with just the Metadata fields is written. Tyler appends the Metadata of each TSV-tile to a single Metadata file, and
+  includes the WKT of the file extent for each tile.
 
 ## Consequences
 
