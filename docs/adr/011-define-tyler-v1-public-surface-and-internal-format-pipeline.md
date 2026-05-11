@@ -111,6 +111,8 @@ users select datasets, filters, tiling controls, operational controls, and outpu
 formats. Tyler decides which intermediate work can be shared by the selected
 formats.
 
+### Examples
+
 Short examples of the intended v1.0 CLI shape. Existing option names are kept
 where v0.4.1 already has them; repeated `--format`, `--format obj`,
 `--format gpkg`, `--jobs`, and `--log-file` are part of the future v1.0
@@ -196,6 +198,74 @@ tyler data/region.city.json \
   --output out/invalid-cityjson \
   --format cityjson \
   --3dtiles-content-clip-to-tile-bounds
+```
+
+#### 3DBAG
+
+The current commands for generating the 3DBAG data.
+
+3D Tiles:
+
+```sh
+RUST_LOG=error \
+RAYON_NUM_THREADS=20 \
+tyler \
+--output /data/3dtiles_test_geof \
+--metadata /data/metadata.json \
+--features /data/bouwlagen_features \
+--object-type Building \
+--object-type BuildingPart \
+--lod-building-part 2.2 \
+--lod-building 2.2 \
+--qtree-capacity=280000 \
+--grid-minz="-50" \
+--grid-maxz="400" \
+--3dtiles-metadata-class building \
+--object-attribute=b3_bouwlagen:int --object-attribute=b3_dak_type:string --object-attribute=b3_extrusie:string --object-attribute=b3_h_maaiveld:float --object-attribute=b3_h_nok:float --object-attribute=b3_is_glas_dak:bool --object-attribute=b3_kas_warenhuis:bool --object-attribute=b3_mutatie_ahn3_ahn4:bool --object-attribute=b3_mutatie_ahn4_ahn5:bool --object-attribute=b3_n_nok:int --object-attribute=b3_n_vlakken:int --object-attribute=b3_nodata_fractie_ahn3:float --object-attribute=b3_nodata_fractie_ahn4:float --object-attribute=b3_nodata_fractie_ahn5:float --object-attribute=b3_nodata_radius_ahn3:float --object-attribute=b3_nodata_radius_ahn4:float --object-attribute=b3_nodata_radius_ahn5:float --object-attribute=b3_opp_buitenmuur:float --object-attribute=b3_opp_dak_plat:float --object-attribute=b3_opp_dak_schuin:float --object-attribute=b3_opp_grond:float --object-attribute=b3_opp_scheidingsmuur:float --object-attribute=b3_puntdichtheid_ahn3:float --object-attribute=b3_puntdichtheid_ahn4:float --object-attribute=b3_puntdichtheid_ahn5:float --object-attribute=b3_pw_bron:string --object-attribute=b3_pw_datum:string --object-attribute=b3_pw_onvoldoende:bool --object-attribute=b3_pw_selectie_reden:string --object-attribute=b3_rmse_lod12:float --object-attribute=b3_rmse_lod13:float --object-attribute=b3_rmse_lod22:float --object-attribute=b3_t_run:int --object-attribute=b3_val3dity_lod12:string --object-attribute=b3_val3dity_lod13:string --object-attribute=b3_val3dity_lod22:string --object-attribute=b3_volume_lod12:float --object-attribute=b3_volume_lod13:float --object-attribute=b3_volume_lod22:float --object-attribute=identificatie:string --object-attribute=oorspronkelijkbouwjaar:int --object-attribute=status:string \
+> tyler_geof.log 2>&1
+```
+
+The Tyler v1.0 commands for generating the 3DBAG data.
+
+3DTiles and OBJ formats are created per LoD 1.2, 1.3, and 2.2.
+
+```sh
+tyler \
+--jobs 20 \
+--log-file tyler_geof.log \
+--log-level error \
+--format 3dtiles \
+--format obj \
+--output /data/3dtiles_test_geof \
+--input /data/bouwlagen_features \
+--object-type Building \
+--object-type BuildingPart \
+--lod-building-part 2.2 \
+--lod-building 2.2 \
+--qtree-capacity=280000 \
+--grid-minz="-50" \
+--grid-maxz="400" \
+--3dtiles-metadata-class building \
+--object-attributes=b3_bouwlagen:int,b3_dak_type:string,b3_extrusie:string,b3_h_maaiveld:float,b3_h_nok:float,b3_is_glas_dak:bool,b3_kas_warenhuis:bool,b3_mutatie_ahn3_ahn4:bool,b3_mutatie_ahn4_ahn5:bool,b3_n_nok:int,b3_n_vlakken:int,b3_nodata_fractie_ahn3:float,b3_nodata_fractie_ahn4:float,b3_nodata_fractie_ahn5:float,b3_nodata_radius_ahn3:float,b3_nodata_radius_ahn4:float,b3_nodata_radius_ahn5:float,b3_opp_buitenmuur:float,b3_opp_dak_plat:float,b3_opp_dak_schuin:float,b3_opp_grond:float,b3_opp_scheidingsmuur:float,b3_puntdichtheid_ahn3:float,b3_puntdichtheid_ahn4:float,b3_puntdichtheid_ahn5:float,b3_pw_bron:string,b3_pw_datum:string,b3_pw_onvoldoende:bool,b3_pw_selectie_reden:string,b3_rmse_lod12:float,b3_rmse_lod13:float,b3_rmse_lod22:float,b3_t_run:int,b3_val3dity_lod12:string,b3_val3dity_lod13:string,b3_val3dity_lod22:string,b3_volume_lod12:float,b3_volume_lod13:float,b3_volume_lod22:float,identificatie:string,oorspronkelijkbouwjaar:int,status:string
+```
+
+CityJSON and GPKG and TSV formats are created with all LoD-s within one file.
+
+```sh
+tyler \
+--jobs 20 \
+--log-file tyler_geof.log \
+--log-level error \
+--format cityjson \
+--format gpkg \
+--format tsv \
+--output /data/3dtiles_test_geof \
+--input /data/bouwlagen_features \
+--qtree-capacity=280000 \
+--gpkg-split-semantics \
+--gpkg-split-lod \
+--tsv-omit-null-rows \
+--object-attributes=b3_bouwlagen:int,b3_dak_type:string,b3_extrusie:string,b3_h_maaiveld:float,b3_h_nok:float,b3_is_glas_dak:bool,b3_kas_warenhuis:bool,b3_mutatie_ahn3_ahn4:bool,b3_mutatie_ahn4_ahn5:bool,b3_n_nok:int,b3_n_vlakken:int,b3_nodata_fractie_ahn3:float,b3_nodata_fractie_ahn4:float,b3_nodata_fractie_ahn5:float,b3_nodata_radius_ahn3:float,b3_nodata_radius_ahn4:float,b3_nodata_radius_ahn5:float,b3_opp_buitenmuur:float,b3_opp_dak_plat:float,b3_opp_dak_schuin:float,b3_opp_grond:float,b3_opp_scheidingsmuur:float,b3_puntdichtheid_ahn3:float,b3_puntdichtheid_ahn4:float,b3_puntdichtheid_ahn5:float,b3_pw_bron:string,b3_pw_datum:string,b3_pw_onvoldoende:bool,b3_pw_selectie_reden:string,b3_rmse_lod12:float,b3_rmse_lod13:float,b3_rmse_lod22:float,b3_t_run:int,b3_val3dity_lod12:string,b3_val3dity_lod13:string,b3_val3dity_lod22:string,b3_volume_lod12:float,b3_volume_lod13:float,b3_volume_lod22:float,identificatie:string,oorspronkelijkbouwjaar:int,status:string
 ```
 
 ### Mapping of CityModel to Output Formats
