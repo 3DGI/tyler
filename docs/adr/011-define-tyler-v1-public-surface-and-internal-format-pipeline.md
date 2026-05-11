@@ -228,6 +228,8 @@ tyler \
 The Tyler v1.0 commands for generating the 3DBAG data.
 
 3DTiles and OBJ formats are created per LoD 1.2, 1.3, and 2.2.
+The OBJ format does not support attributes, so the `--object-attributes` option is ignored.
+We only include the `BuildingPart` type in both formats, and use the `--include-parent-attributes` option to include the attributes of the `Building` type, in case of the 3DTiles format.
 
 ```sh
 tyler \
@@ -238,13 +240,12 @@ tyler \
 --format obj \
 --output /data/3dtiles_test_geof \
 --input /data/bouwlagen_features \
---object-type Building \
 --object-type BuildingPart \
 --lod-building-part 2.2 \
---lod-building 2.2 \
 --qtree-capacity=280000 \
 --grid-minz="-50" \
 --grid-maxz="400" \
+--include-parent-attributes \
 --3dtiles-metadata-class building \
 --object-attributes=b3_bouwlagen:int,b3_dak_type:string,b3_extrusie:string,b3_h_maaiveld:float,b3_h_nok:float,b3_is_glas_dak:bool,b3_kas_warenhuis:bool,b3_mutatie_ahn3_ahn4:bool,b3_mutatie_ahn4_ahn5:bool,b3_n_nok:int,b3_n_vlakken:int,b3_nodata_fractie_ahn3:float,b3_nodata_fractie_ahn4:float,b3_nodata_fractie_ahn5:float,b3_nodata_radius_ahn3:float,b3_nodata_radius_ahn4:float,b3_nodata_radius_ahn5:float,b3_opp_buitenmuur:float,b3_opp_dak_plat:float,b3_opp_dak_schuin:float,b3_opp_grond:float,b3_opp_scheidingsmuur:float,b3_puntdichtheid_ahn3:float,b3_puntdichtheid_ahn4:float,b3_puntdichtheid_ahn5:float,b3_pw_bron:string,b3_pw_datum:string,b3_pw_onvoldoende:bool,b3_pw_selectie_reden:string,b3_rmse_lod12:float,b3_rmse_lod13:float,b3_rmse_lod22:float,b3_t_run:int,b3_val3dity_lod12:string,b3_val3dity_lod13:string,b3_val3dity_lod22:string,b3_volume_lod12:float,b3_volume_lod13:float,b3_volume_lod22:float,identificatie:string,oorspronkelijkbouwjaar:int,status:string
 ```
