@@ -42,10 +42,13 @@ The milestone issues describe several connected changes:
 - Format-specific options must be validated as configuration, before input
   indexing or tile materialization begins.
 - Tyler should prepare the per-tile `CityModel` boundary, including feature
-  selection, clipping, filtering, attribute selection, and other tiling-driven
-  model shaping before conversion begins.
+  selection by tile membership, filtering, attribute selection, and other
+  tiling-driven model shaping before conversion begins. Mesh-level geometric
+  clipping at tile boundaries is not part of this stage; it remains a
+  post-triangulation step inside `cityjson-convert`.
 - `cityjson-convert` should own pure format conversion and serialization from a
-  prepared `CityModel` into the requested output format.
+  prepared `CityModel` into the requested output format, including the
+  mesh-level seam clipping required for seamless 3D Tiles content.
 - Operational controls such as file logging and explicit job control are part
   of the v1.0 surface, not profiling-only developer switches.
 
@@ -351,10 +354,14 @@ Tyler remains responsible for tiling. Its ownership includes:
 - constructing grids and quadtrees
 - assigning features to tiles
 - assembling per-tile `CityModel` values
-- preparing those tile models for output, including tiling-driven clipping,
-  LoD filtering, object-type filtering, attribute selection, and semantic,
-  material, or color annotations needed by the output configuration
+- preparing those tile models for output, including feature-level tile
+  membership, LoD filtering, object-type filtering, attribute selection, and
+  semantic, material, or color annotations needed by the output configuration
 - coordinating shared work across output backends
+
+Tyler does not perform per-vertex geometric clipping against tile bounds. It
+selects whole features whose extent overlaps the tile and hands the resulting
+`CityModel` to `cityjson-convert` in source CRS.
 
 `cityjson-convert` is responsible for pure conversion and serialization of a
 prepared `CityModel` into output formats. Its ownership includes:
@@ -368,6 +375,12 @@ prepared `CityModel` into output formats. Its ownership includes:
   and nullable attributes
 - format-local mesh construction required by a target format, such as
   triangulating CityJSON surfaces for mesh-based serialization
+- post-triangulation mesh-level clipping against an optional clip volume
+  (source-CRS bounding box or geographic region), used by the 3D Tiles path to
+  produce seamless tile content. The geographic-region mode is CRS-aware and
+  uses bisection against EPSG:4979 planes; it is only invoked when the 3D Tiles
+  backend requests it. Other writers never receive a clip volume and never pull
+  the geographic clipper into their path.
 - serializing color or material information that is already present in the
   prepared model
 
@@ -375,8 +388,14 @@ Shared format-conversion primitives will be moved out of format-specific writers
 into reusable `cityjson-convert` modules when they are pure serialization
 concerns. In particular, mesh construction and attribute encoding should not be
 private implementation details of the GLB writer when OBJ, GPKG, or future
-writers need the same format-level behavior. Tiling-driven preparation such as
-clipping remains in Tyler before the `CityModel` reaches `cityjson-convert`.
+writers need the same format-level behavior. Tiling-driven preparation that
+operates on whole features — selection, filtering, attribute shaping — stays in
+Tyler before the `CityModel` reaches `cityjson-convert`. Mesh-level operations
+such as triangulation and tile-seam clipping stay in `cityjson-convert` because
+they require the triangulated mesh and, for 3D Tiles geographic regions, a
+CRS-aware intersection. Clipping is therefore expressed as a post-triangulation
+step parameterized by an optional clip volume, not as a Tyler-level
+`CityModel` transformation.
 
 The PROJ dependency will be moved to `cityjson-lib` and implemenent `cityjson_lib::ops::reproject`.
 The `cityjson_lib::ops::reproject` applies the coordinate transformation on the `CityModel.vertices`.
@@ -474,11 +493,13 @@ Implementation validation:
 - add integration coverage showing compatible backends can share one tile plan
 - add writer-level tests in `cityjson-convert` for CityJSON, CityJSONSeq, OBJ,
   GPKG, and GLB conversion from tile `CityModel` inputs
-- keep Tyler tests for tiling-driven model preparation, including clipping,
-  filtering, LoD selection, and attribute selection
+- keep Tyler tests for tiling-driven model preparation, including feature-level
+  tile membership, filtering, LoD selection, and attribute selection
 - keep `cityjson-convert` tests for pure format conversion, including mesh
-  construction, format-specific attribute encoding, semantic color/material
-  serialization, CRS-sensitive serialization behavior, and GPKG typing
+  construction, post-triangulation clipping against source-CRS bounding boxes
+  and 3D Tiles geographic regions, format-specific attribute encoding, semantic
+  color/material serialization, CRS-sensitive serialization behavior, and GPKG
+  typing
 - compare representative single-format `--format 3dtiles` runs against v0.4.1
   and confirm wall time, CPU utilization, and peak memory are maintained or
   improved for equivalent inputs and options
