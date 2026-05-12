@@ -397,8 +397,26 @@ CRS-aware intersection. Clipping is therefore expressed as a post-triangulation
 step parameterized by an optional clip volume, not as a Tyler-level
 `CityModel` transformation.
 
-The PROJ dependency will be moved to `cityjson-lib` and implemenent `cityjson_lib::ops::reproject`.
-The `cityjson_lib::ops::reproject` applies the coordinate transformation on the `CityModel.vertices`.
+The PROJ dependency lives in `cityjson-lib` and is the single point in the
+workspace that links the native PROJ library. `cityjson-lib::ops` exposes two
+complementary primitives:
+
+- `ops::reproject(model, target_crs)` — bulk operation that applies a coordinate
+  transformation to every vertex of a `CityModel`. Tyler uses this when a
+  backend needs the prepared model in a non-source CRS.
+- `ops::Transformer` — a reusable, cached `source_crs → target_crs` pipeline
+  returned by `ops::transformer(source, target)`. It exposes a
+  `transform(&self, [f64; 3]) -> Result<[f64; 3]>` method for ad-hoc per-point
+  transformation in hot paths. `cityjson-convert` uses this inside its
+  geographic-region clipper, which calls the transformer once per bisection
+  step against EPSG:4979 tile planes, and inside its ECEF/ENU placement path,
+  which transforms every output vertex.
+
+`cityjson-convert` depends on `cityjson-lib` rather than on PROJ directly, so
+the workspace has exactly one crate that links the native PROJ library. The
+pipeline cache for repeated `(source, target)` pairs lives inside
+`cityjson-lib` so both bulk reprojection and clipper-style per-point use share
+one cache.
 
 Logging to a file and explicit job control are v1.0 operational controls. They
 are configured before the pipeline starts and are available across orchestration,
@@ -469,6 +487,28 @@ Neutral:
   GLB writer. That preserves the current local implementation, but it prevents
   other mesh or tabular format writers from using the same pure conversion
   semantics and encourages duplicate serialization code.
+
+- Let `cityjson-convert` depend on PROJ directly so its geographic-region
+  clipper can call the transformer in its bisection loop without going through
+  `cityjson-lib`. That would duplicate the native PROJ dependency across two
+  workspace crates, double the native-build and security-review surface, and
+  force both crates to agree on PROJ version and initialization quirks. The
+  same need is served by exposing a `Transformer` primitive from `cityjson-lib`
+  alongside `ops::reproject`.
+
+- Expose only `ops::reproject` from `cityjson-lib` and have it transform the
+  whole `CityModel` ahead of time. That covers Tyler's bulk reprojection case
+  but does not serve the geographic clipper, which needs per-point
+  transformation inside a bisection loop on synthetic clip-edge midpoints that
+  do not belong to any `CityModel`. A point-by-point primitive is required in
+  addition to the bulk one.
+
+- Move the geographic clipper down into `cityjson-lib` next to `reproject` so
+  the only consumer of low-level PROJ access lives in the same crate. That
+  drags mesh-level concepts (triangulated geometry, tile-seam clipping) into
+  the CityJSON data library and blurs the layering the ADR is otherwise
+  tightening. The clipper stays in `cityjson-convert` and consumes the
+  `Transformer` primitive.
 
 - Treat logging-to-file and job control as post-v1.0 operational polish. They
   affect reproducibility and runtime behavior for large datasets, so they belong
