@@ -104,7 +104,7 @@ Common CLI options cover:
 
 Format-specific options are only valid for compatible formats.
 Format-specific options are prefixed with the selected format name, following the existing `--3dtiles-*` convention.
-Candidate prefixes for v1.0 include: `--cityjson-*`, `--cityjsonseq-*`, `--obj-*`, and `--gpkg-*`.
+Candidate prefixes for v1.0 include: `--cityjson-*`, `--cityjsonseq-*`, `--obj-*`, `--gpkg-*`, and `--tsv-*`.
 Tyler validates them before input processing starts. Invalid combinations, missing required
 format options, ignored options, and conflicting options fail during
 configuration validation rather than after index resolution or tile work.
@@ -268,7 +268,7 @@ tyler \
 --qtree-capacity=280000 \
 --gpkg-split-semantics \
 --gpkg-split-lod \
---tsv-omit-null-rows \
+--tsv-include-null-rows \
 --object-attributes=b3_bouwlagen:int,b3_dak_type:string,b3_extrusie:string,b3_h_maaiveld:float,b3_h_nok:float,b3_is_glas_dak:bool,b3_kas_warenhuis:bool,b3_mutatie_ahn3_ahn4:bool,b3_mutatie_ahn4_ahn5:bool,b3_n_nok:int,b3_n_vlakken:int,b3_nodata_fractie_ahn3:float,b3_nodata_fractie_ahn4:float,b3_nodata_fractie_ahn5:float,b3_nodata_radius_ahn3:float,b3_nodata_radius_ahn4:float,b3_nodata_radius_ahn5:float,b3_opp_buitenmuur:float,b3_opp_dak_plat:float,b3_opp_dak_schuin:float,b3_opp_grond:float,b3_opp_scheidingsmuur:float,b3_puntdichtheid_ahn3:float,b3_puntdichtheid_ahn4:float,b3_puntdichtheid_ahn5:float,b3_pw_bron:string,b3_pw_datum:string,b3_pw_onvoldoende:bool,b3_pw_selectie_reden:string,b3_rmse_lod12:float,b3_rmse_lod13:float,b3_rmse_lod22:float,b3_t_run:int,b3_val3dity_lod12:string,b3_val3dity_lod13:string,b3_val3dity_lod22:string,b3_volume_lod12:float,b3_volume_lod13:float,b3_volume_lod22:float,identificatie:string,oorspronkelijkbouwjaar:int,status:string
 ```
 
@@ -315,7 +315,65 @@ format cannot otherwise represent.
 
 ### CLI parameter matrix
 
-CLI parameter matrix of functionality per output format.
+Legend:
+
+- `yes`: supported and effective
+- `ignored`: accepted by the CLI, but this backend does not consume it
+- `n/a`: accepted by the CLI, but this argument does not impact that backend's output
+
+The matrix below covers every non-shorthand CLI argument in the v1.0 surface.
+The common shorthand controls (`--input`, `--output`, `--format`, `--jobs`, and
+`--log-file`) are intentionally omitted because the document already defines the
+short forms above.
+
+The dedicated backend-local families in these ADRs are `--3dtiles-*`,
+`--gpkg-*`, and `--tsv-*`. `cityjson`, `cityjsonseq`, and `obj` do not define
+their own backend-local flag families here; they participate through the shared
+tiling/debug controls and the shared `--lod-*` and `--color-*` selectors.
+Shared tiling controls such as `--grid-cellsize`, `--grid-minz`,
+`--grid-maxz`, and `--qtree-capacity` are marked `yes` because they shape the
+shared tile plan before backend serialization.
+Non-target cells default to `ignored` in this matrix because Tyler is designed
+to share one tiling run across multiple output formats; `n/a` is reserved for
+flags that do not change that backend's output at all.
+
+| Family        | Flag                                    | 3dtiles | cityjson | cityjsonseq | obj     | gpkg    | tsv     |
+|---------------|-----------------------------------------|---------|----------|-------------|---------|---------|---------|
+| shared        | `--object-type`                         | yes     | yes      | yes         | yes     | yes     | yes     |
+| shared        | `--object-attributes`                   | yes     | yes      | yes         | ignored | yes     | yes     |
+| shared        | `--include-parent-attributes`           | yes     | yes      | yes         | ignored | yes     | yes     |
+| shared        | `--smooth-normals`                      | yes     | ignored  | ignored     | ignored | ignored | ignored |
+| shared        | `--grid-cellsize`                       | yes     | yes      | yes         | yes     | yes     | yes     |
+| shared        | `--debug-load-grid`                     | yes     | yes      | yes         | yes     | yes     | yes     |
+| shared        | `--grid-minz`                           | yes     | n/a      | n/a         | n/a     | n/a     | n/a     |
+| shared        | `--grid-maxz`                           | yes     | n/a      | n/a         | n/a     | n/a     | n/a     |
+| shared        | `--debug-dump-grid`                     | yes     | yes      | yes         | yes     | yes     | yes     |
+| shared        | `--debug-dump-grid-features`            | yes     | yes      | yes         | yes     | yes     | yes     |
+| shared        | `--debug-load-data`                     | yes     | yes      | yes         | yes     | yes     | yes     |
+| shared        | `--qtree-capacity`                      | yes     | yes      | yes         | yes     | yes     | yes     |
+| shared        | `--debug-dump-data`                     | yes     | yes      | yes         | yes     | yes     | yes     |
+| `--3dtiles-*` | `--3dtiles-metadata-class`              | yes     | ignored  | ignored     | ignored | ignored | ignored |
+| `--3dtiles-*` | `--3dtiles-implicit`                    | yes     | ignored  | ignored     | ignored | ignored | ignored |
+| `--3dtiles-*` | `--debug-3dtiles-tileset-only`          | yes     | ignored  | ignored     | ignored | ignored | ignored |
+| `--3dtiles-*` | `--3dtiles-content-bv-from-tile`        | yes     | ignored  | ignored     | ignored | ignored | ignored |
+| `--3dtiles-*` | `--3dtiles-content-clip-to-tile-bounds` | yes     | ignored  | ignored     | ignored | ignored | ignored |
+| `--3dtiles-*` | `--3dtiles-content-add-bv`              | yes     | ignored  | ignored     | ignored | ignored | ignored |
+| `--3dtiles-*` | `--3dtiles-geometric-error-factor`      | yes     | ignored  | ignored     | ignored | ignored | ignored |
+| `--gpkg-*`    | `--gpkg-split-lod`                      | ignored | ignored  | ignored     | ignored | yes     | ignored |
+| `--gpkg-*`    | `--gpkg-split-semantics`                | ignored | ignored  | ignored     | ignored | yes     | ignored |
+| `--gpkg-*`    | `--gpkg-include-metadata`               | ignored | ignored  | ignored     | ignored | yes     | ignored |
+| `--tsv-*`     | `--tsv-include-null-rows`               | ignored | ignored  | ignored     | ignored | ignored | yes     |
+| `--tsv-*`     | `--tsv-include-hierarchy`               | ignored | ignored  | ignored     | ignored | ignored | yes     |
+| `--tsv-*`     | `--tsv-include-cityjson-ordinal`        | ignored | ignored  | ignored     | ignored | ignored | yes     |
+| `--tsv-*`     | `--tsv-include-metadata`                | ignored | ignored  | ignored     | ignored | ignored | yes     |
+| selector      | `--lod-*`                               | yes     | yes      | yes         | yes     | yes     | yes     |
+| selector      | `--color-*`                             | yes     | ignored  | ignored     | ignored | yes     | ignored |
+
+The `--lod-*` family covers the type-specific LoD selectors such as
+`--lod-building`, `--lod-building-part`, `--lod-road`, and so on.
+
+The `--color-*` family covers the type-specific color selectors such as
+`--color-building`, `--color-building-part`, `--color-road`, and so on.
 
 ### Internal Architecture
 
