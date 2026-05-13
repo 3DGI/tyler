@@ -14,6 +14,7 @@
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
+use log::info;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
@@ -244,6 +245,32 @@ pub struct Cli {
     // pub exe_python: Option<PathBuf>,
 }
 
+#[derive(Clone, Copy)]
+struct NoEffectInfoRule {
+    flag: &'static str,
+    n_a_formats: &'static [crate::OutputFormatKind],
+    is_present: fn(&Cli) -> bool,
+}
+
+const NO_EFFECT_INFO_RULES: &[NoEffectInfoRule] = &[
+    NoEffectInfoRule {
+        flag: "--grid-minz",
+        n_a_formats: &[
+            crate::OutputFormatKind::Cityjson,
+            crate::OutputFormatKind::Cityjsonseq,
+        ],
+        is_present: cli_has_grid_minz,
+    },
+    NoEffectInfoRule {
+        flag: "--grid-maxz",
+        n_a_formats: &[
+            crate::OutputFormatKind::Cityjson,
+            crate::OutputFormatKind::Cityjsonseq,
+        ],
+        is_present: cli_has_grid_maxz,
+    },
+];
+
 impl Cli {
     /// Central gate for rejecting CLI option combinations that are incompatible
     /// with one or more selected output formats.
@@ -260,16 +287,62 @@ impl Cli {
         &self,
         formats: &[crate::OutputFormatKind],
     ) -> Result<(), String> {
-        for &format in formats {
-            Self::validate_parameter_combinations_for_format(format)?;
+        for message in self.no_effect_info_messages(formats) {
+            info!("{message}");
         }
         Ok(())
     }
 
-    fn validate_parameter_combinations_for_format(
-        _format: crate::OutputFormatKind,
-    ) -> Result<(), String> {
-        Ok(())
+    fn no_effect_info_messages(&self, formats: &[crate::OutputFormatKind]) -> Vec<String> {
+        let selected_formats = unique_output_formats(formats);
+        let selected_format_names = selected_formats
+            .iter()
+            .map(|format| output_format_name(*format))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        NO_EFFECT_INFO_RULES
+            .iter()
+            .filter(|rule| {
+                (rule.is_present)(self)
+                    && selected_formats
+                        .iter()
+                        .all(|format| rule.n_a_formats.contains(format))
+            })
+            .map(|rule| {
+                format!(
+                    "{} has no effect for selected output formats: {}",
+                    rule.flag, selected_format_names
+                )
+            })
+            .collect()
+    }
+}
+
+fn cli_has_grid_minz(cli: &Cli) -> bool {
+    cli.grid_minz.is_some()
+}
+
+fn cli_has_grid_maxz(cli: &Cli) -> bool {
+    cli.grid_maxz.is_some()
+}
+
+fn unique_output_formats(formats: &[crate::OutputFormatKind]) -> Vec<crate::OutputFormatKind> {
+    let mut unique_formats = Vec::new();
+    for &format in formats {
+        if !unique_formats.contains(&format) {
+            unique_formats.push(format);
+        }
+    }
+    unique_formats.sort_unstable_by_key(|format| output_format_name(*format));
+    unique_formats
+}
+
+fn output_format_name(format: crate::OutputFormatKind) -> &'static str {
+    match format {
+        crate::OutputFormatKind::Cesium3dTiles => "3dtiles",
+        crate::OutputFormatKind::Cityjson => "cityjson",
+        crate::OutputFormatKind::Cityjsonseq => "cityjsonseq",
     }
 }
 
@@ -472,6 +545,46 @@ mod tests {
                 OutputFormatKind::Cityjsonseq,
             ])
             .is_ok());
+    }
+
+    #[test]
+    fn n_a_flag_emits_one_info_message_for_selected_formats() {
+        let mut cli = Cli::try_parse_from(dataset_args()).unwrap();
+        cli.grid_minz = Some(-10);
+
+        assert_eq!(
+            cli.no_effect_info_messages(&[
+                OutputFormatKind::Cityjson,
+                OutputFormatKind::Cityjsonseq,
+            ]),
+            vec![
+                "--grid-minz has no effect for selected output formats: cityjson, cityjsonseq"
+                    .to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn supported_format_suppresses_no_op_info_message() {
+        let mut cli = Cli::try_parse_from(dataset_args()).unwrap();
+        cli.grid_minz = Some(-10);
+
+        assert!(cli
+            .no_effect_info_messages(
+                &[OutputFormatKind::Cesium3dTiles, OutputFormatKind::Cityjson,]
+            )
+            .is_empty());
+    }
+
+    #[test]
+    fn default_single_format_path_still_behaves_correctly() {
+        let mut cli = Cli::try_parse_from(dataset_args()).unwrap();
+        cli.grid_minz = Some(-10);
+
+        assert!(cli
+            .no_effect_info_messages(&[OutputFormatKind::Cesium3dTiles])
+            .is_empty());
+        assert!(cli.validate_parameter_combinations(&[cli.format]).is_ok());
     }
 
     #[test]
