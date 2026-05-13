@@ -1,16 +1,15 @@
 #![allow(clippy::too_many_lines)]
 
-use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::convert::TryFrom;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
-use crate::proj::Proj;
 use crate::{ExportOptions, GeographicClipRegion, GeometryPlacement};
 use anyhow::{bail, Context, Result};
 use cityjson_lib::cityjson_types::v2_0::{AttributeValue, CityObject, GeometryType, VertexIndex};
+use cityjson_lib::ops::Transformer;
 use cityjson_lib::CityModel;
 use earcutr::earcut;
 use gltf::json;
@@ -32,10 +31,6 @@ const QUANTIZED_POSITION_STRIDE: usize = std::mem::size_of::<QuantizedPosition>(
 const QUANTIZED_NORMAL_STRIDE: usize = std::mem::size_of::<QuantizedNormal>();
 const CLIP_PLANE_EPSILON: f64 = 1.0e-12;
 const GEOGRAPHIC_CLIP_INTERSECTION_ITERATIONS: usize = 64;
-
-thread_local! {
-    static PROJ_TRANSFORM_CACHE: RefCell<HashMap<(String, String), Proj>> = RefCell::new(HashMap::new());
-}
 
 /// Parse hex color string (#RRGGBB) to RGBA f32 array [R, G, B, A]
 fn hex_to_rgba(hex: &str) -> Result<[f32; 4], anyhow::Error> {
@@ -397,35 +392,18 @@ struct SmoothVertexKey {
 
 #[derive(Clone, Debug)]
 struct CachedProjTransform {
-    key: (String, String),
+    transformer: Transformer,
 }
 
 impl CachedProjTransform {
-    fn new(source_crs: String, target_crs: &'static str) -> Self {
-        Self {
-            key: (source_crs, target_crs.to_owned()),
-        }
+    fn new(source_crs: String, target_crs: &'static str) -> Result<Self> {
+        let transformer = cityjson_lib::ops::transformer(&source_crs, target_crs)
+            .with_context(|| format!("failed to create {source_crs} to {target_crs} transform"))?;
+        Ok(Self { transformer })
     }
 
     fn convert(&self, point: [f64; 3]) -> Result<[f64; 3]> {
-        PROJ_TRANSFORM_CACHE.with(|cache| {
-            let mut cache = cache.borrow_mut();
-            if !cache.contains_key(&self.key) {
-                let transformer = Proj::new_known_crs(&self.key.0, &self.key.1, None)
-                    .with_context(|| {
-                        format!(
-                            "failed to create {} to {} transform",
-                            self.key.0, self.key.1
-                        )
-                    })?;
-                cache.insert(self.key.clone(), transformer);
-            }
-            let transformer = cache
-                .get(&self.key)
-                .expect("cached PROJ transform should have been inserted");
-            let output = transformer.convert((point[0], point[1], point[2]))?;
-            Ok([output.0, output.1, output.2])
-        })
+        self.transformer.transform(point).map_err(Into::into)
     }
 }
 
@@ -565,7 +543,7 @@ impl CoordinateTransform {
             GeometryPlacement::SourceCoordinates => CoordinatePlacement::SourceCoordinates,
             GeometryPlacement::EcefRelative { source_crs, origin } => {
                 let source_crs = canonical_epsg_crs(source_crs)?;
-                let vertex_transformer = source_to_ecef_transformer(&source_crs);
+                let vertex_transformer = source_to_ecef_transformer(&source_crs)?;
                 CoordinatePlacement::EcefRelative {
                     vertex_transformer,
                     origin: *origin,
@@ -579,7 +557,7 @@ impl CoordinateTransform {
                 up,
             } => {
                 let source_crs = canonical_epsg_crs(source_crs)?;
-                let vertex_transformer = source_to_ecef_transformer(&source_crs);
+                let vertex_transformer = source_to_ecef_transformer(&source_crs)?;
                 CoordinatePlacement::Enu {
                     vertex_transformer,
                     ecef_origin: *ecef_origin,
@@ -648,8 +626,11 @@ impl ClipVolume {
 
     fn geographic_region(region: &GeographicClipRegion) -> Result<Self> {
         let source_crs = canonical_epsg_crs(&region.source_crs)?;
-        let transformer = (source_crs != "EPSG:4979")
-            .then(|| CachedProjTransform::new(source_crs.clone(), "EPSG:4979"));
+        let transformer = if source_crs == "EPSG:4979" {
+            None
+        } else {
+            Some(CachedProjTransform::new(source_crs.clone(), "EPSG:4979")?)
+        };
         Ok(Self::GeographicRegion(GeographicClipVolume {
             transformer,
             west: region.west,
@@ -815,9 +796,15 @@ fn canonical_epsg_crs(value: &str) -> Result<String> {
     Ok(format!("EPSG:{parsed}"))
 }
 
-fn source_to_ecef_transformer(source_crs: &str) -> Option<CachedProjTransform> {
-    (source_crs != "EPSG:4978")
-        .then(|| CachedProjTransform::new(source_crs.to_owned(), "EPSG:4978"))
+fn source_to_ecef_transformer(source_crs: &str) -> Result<Option<CachedProjTransform>> {
+    if source_crs == "EPSG:4978" {
+        Ok(None)
+    } else {
+        Ok(Some(CachedProjTransform::new(
+            source_crs.to_owned(),
+            "EPSG:4978",
+        )?))
+    }
 }
 
 fn transform_to_ecef(

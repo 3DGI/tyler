@@ -61,7 +61,6 @@ mod cli;
 mod coordinates;
 mod formats;
 mod parser;
-mod proj;
 mod spatial_structs;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -73,8 +72,8 @@ use std::time::Instant;
 
 use crate::coordinates::RootEnuFrame;
 use crate::formats::cesium3dtiles::{Tile, TileId};
-use crate::proj::Proj;
 use cityjson_lib::cityjson_types::prelude::CityObjectHandle;
+use cityjson_lib::ops::Transformer;
 use clap::{Parser, ValueEnum};
 use log::{debug, info, log_enabled, warn, Level};
 use rayon::prelude::*;
@@ -458,7 +457,7 @@ fn geographic_implicit_tile_export_jobs(
     quadtree: &spatial_structs::QuadTree,
     tileset: &formats::cesium3dtiles::Tileset,
     root_region: GeographicBounds,
-    transformer: &Proj,
+    transformer: &Transformer,
     clip_to_tile_bounds: bool,
 ) -> Result<Vec<TileExportJob>, Box<dyn std::error::Error>> {
     let mut feature_content_tiles: HashMap<usize, HashSet<TileId>> = HashMap::new();
@@ -594,11 +593,11 @@ fn geographic_tile_id_for_feature_centroid(
     root: GeographicBounds,
     feature: &parser::Feature,
     level: u16,
-    transformer: &Proj,
+    transformer: &Transformer,
 ) -> Result<TileId, Box<dyn std::error::Error>> {
     let z = f64::midpoint(feature.bbox[2], feature.bbox[5]);
-    let (lon, lat, _height) =
-        transformer.convert((feature.centroid()[0], feature.centroid()[1], z))?;
+    let [lon, lat, _height] =
+        transformer.transform([feature.centroid()[0], feature.centroid()[1], z])?;
     let tiles_per_axis = 1_usize << level;
     let tile_width = (root.east - root.west) / tiles_per_axis as f64;
     let tile_height = (root.north - root.south) / tiles_per_axis as f64;
@@ -612,7 +611,7 @@ fn geographic_tile_id_for_feature_centroid(
 
 fn geographic_bounds_from_source_bbox(
     bbox: &spatial_structs::Bbox,
-    transformer: &Proj,
+    transformer: &Transformer,
 ) -> Result<GeographicBounds, Box<dyn std::error::Error>> {
     let mut west = f64::INFINITY;
     let mut south = f64::INFINITY;
@@ -620,7 +619,7 @@ fn geographic_bounds_from_source_bbox(
     let mut north = f64::NEG_INFINITY;
 
     for [x, y, z] in bbox_corners(bbox) {
-        let (lon, lat, _height) = transformer.convert((x, y, z))?;
+        let [lon, lat, _height] = transformer.transform([x, y, z])?;
         west = west.min(lon);
         south = south.min(lat);
         east = east.max(lon);
@@ -1432,7 +1431,7 @@ impl OutputFormatBackend for Cesium3dTilesBackend {
         }
 
         let source_crs = format!("EPSG:{}", world.crs.to_epsg()?);
-        let source_to_geographic = Proj::new_known_crs(&source_crs, "EPSG:4979", None)?;
+        let source_to_geographic = cityjson_lib::ops::transformer(&source_crs, "EPSG:4979")?;
         let root_geographic_bounds =
             geographic_bounds_from_source_bbox(&quadtree.bbox(&world.grid), &source_to_geographic)?;
 
@@ -3704,7 +3703,7 @@ mod tests {
         let tileset = resource_tileset(&world, &quadtree);
         let source_crs = format!("EPSG:{}", world.crs.to_epsg().expect("EPSG code"));
         let source_to_geographic =
-            Proj::new_known_crs(&source_crs, "EPSG:4979", None).expect("source CRS transform");
+            cityjson_lib::ops::transformer(&source_crs, "EPSG:4979").expect("source CRS transform");
         let root_geographic_bounds =
             geographic_bounds_from_source_bbox(&quadtree.bbox(&world.grid), &source_to_geographic)
                 .expect("root geographic bounds");

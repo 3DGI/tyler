@@ -33,8 +33,8 @@ pub mod cesium3dtiles {
     use serde_repr::{Deserialize_repr, Serialize_repr};
 
     use crate::coordinates::RootEnuFrame;
-    use crate::proj::Proj;
     use crate::spatial_structs::{Bbox, CellId, QuadTree, QuadTreeNodeId, SquareGrid};
+    use cityjson_lib::ops::Transformer;
 
     /// [Tileset](https://github.com/CesiumGS/3d-tiles/tree/main/specification#tileset).
     ///
@@ -175,7 +175,7 @@ pub mod cesium3dtiles {
             root_enu_frame: &RootEnuFrame,
         ) -> Self {
             let crs_from = format!("EPSG:{}", world.crs.to_epsg().unwrap());
-            let transformer = Proj::new_known_crs(&crs_from, "EPSG:4979", None).unwrap();
+            let transformer = cityjson_lib::ops::transformer(&crs_from, "EPSG:4979").unwrap();
             let root_bbox = quadtree.bbox(&world.grid);
             let root_geometric_error = ((root_bbox[3] - root_bbox[0])
                 .max(root_bbox[4] - root_bbox[1]))
@@ -237,7 +237,7 @@ pub mod cesium3dtiles {
         fn generate_tiles(
             quadtree: &QuadTree,
             world: &crate::parser::World,
-            transformer: &Proj,
+            transformer: &Transformer,
             geometric_error_factor: f64,
             arg_minz: Option<i32>,
             arg_maxz: Option<i32>,
@@ -1452,7 +1452,7 @@ pub mod cesium3dtiles {
         #[allow(dead_code)]
         fn box_from_bbox(
             bbox: &Bbox,
-            transformer: &Proj,
+            transformer: &Transformer,
         ) -> Result<Self, Box<dyn std::error::Error>> {
             // Input CRS box dimensions and center
             let dx = bbox[3] - bbox[0];
@@ -1471,50 +1471,50 @@ pub mod cesium3dtiles {
             // can cause a tilt in the ECEF box. Assuming we have a input CRS unit of metres,
             // 1 meter is a good choice for the input vector length.
             // NB: be careful if input CRS is not in metres.
-            let center_ecef = transformer.convert((center[0], center[1], center[2]))?;
-            let pnx = transformer.convert((center[0] + 1.0, center[1], center[2]))?;
-            let pny = transformer.convert((center[0], center[1] + 1.0, center[2]))?;
+            let center_ecef = transformer.transform([center[0], center[1], center[2]])?;
+            let pnx = transformer.transform([center[0] + 1.0, center[1], center[2]])?;
+            let pny = transformer.transform([center[0], center[1] + 1.0, center[2]])?;
 
             // Compute the correct half lengths for X and Y vectors of the box
-            let x_max_pt_ecef = transformer.convert((x_max_pt[0], x_max_pt[1], x_max_pt[2]))?;
-            let y_max_pt_ecef = transformer.convert((y_max_pt[0], y_max_pt[1], y_max_pt[2]))?;
+            let x_max_pt_ecef = transformer.transform([x_max_pt[0], x_max_pt[1], x_max_pt[2]])?;
+            let y_max_pt_ecef = transformer.transform([y_max_pt[0], y_max_pt[1], y_max_pt[2]])?;
 
-            let dx_ = ((x_max_pt_ecef.0 - center_ecef.0).powi(2)
-                + (x_max_pt_ecef.1 - center_ecef.1).powi(2)
-                + (x_max_pt_ecef.2 - center_ecef.2).powi(2))
+            let dx_ = ((x_max_pt_ecef[0] - center_ecef[0]).powi(2)
+                + (x_max_pt_ecef[1] - center_ecef[1]).powi(2)
+                + (x_max_pt_ecef[2] - center_ecef[2]).powi(2))
             .sqrt();
-            let dy_ = ((y_max_pt_ecef.0 - center_ecef.0).powi(2)
-                + (y_max_pt_ecef.1 - center_ecef.1).powi(2)
-                + (y_max_pt_ecef.2 - center_ecef.2).powi(2))
+            let dy_ = ((y_max_pt_ecef[0] - center_ecef[0]).powi(2)
+                + (y_max_pt_ecef[1] - center_ecef[1]).powi(2)
+                + (y_max_pt_ecef[2] - center_ecef[2]).powi(2))
             .sqrt();
 
             // Compute half length X Y vectors of the ECEF box
-            let s_to_unit_vx = ((pnx.0 - center_ecef.0).powi(2)
-                + (pnx.1 - center_ecef.1).powi(2)
-                + (pnx.2 - center_ecef.2).powi(2))
+            let s_to_unit_vx = ((pnx[0] - center_ecef[0]).powi(2)
+                + (pnx[1] - center_ecef[1]).powi(2)
+                + (pnx[2] - center_ecef[2]).powi(2))
             .sqrt();
             let vx = (
-                (pnx.0 - center_ecef.0) / s_to_unit_vx * dx_,
-                (pnx.1 - center_ecef.1) / s_to_unit_vx * dx_,
-                (pnx.2 - center_ecef.2) / s_to_unit_vx * dx_,
+                (pnx[0] - center_ecef[0]) / s_to_unit_vx * dx_,
+                (pnx[1] - center_ecef[1]) / s_to_unit_vx * dx_,
+                (pnx[2] - center_ecef[2]) / s_to_unit_vx * dx_,
             );
-            let s_to_unit_vy = ((pny.0 - center_ecef.0).powi(2)
-                + (pny.1 - center_ecef.1).powi(2)
-                + (pny.2 - center_ecef.2).powi(2))
+            let s_to_unit_vy = ((pny[0] - center_ecef[0]).powi(2)
+                + (pny[1] - center_ecef[1]).powi(2)
+                + (pny[2] - center_ecef[2]).powi(2))
             .sqrt();
             let vy = (
-                (pny.0 - center_ecef.0) / s_to_unit_vy * dy_,
-                (pny.1 - center_ecef.1) / s_to_unit_vy * dy_,
-                (pny.2 - center_ecef.2) / s_to_unit_vy * dy_,
+                (pny[0] - center_ecef[0]) / s_to_unit_vy * dy_,
+                (pny[1] - center_ecef[1]) / s_to_unit_vy * dy_,
+                (pny[2] - center_ecef[2]) / s_to_unit_vy * dy_,
             );
 
             // Z unit vector in the ECEF box (before curvature correction)
             let dvz =
-                (center_ecef.0.powi(2) + center_ecef.1.powi(2) + center_ecef.2.powi(2)).sqrt();
+                (center_ecef[0].powi(2) + center_ecef[1].powi(2) + center_ecef[2].powi(2)).sqrt();
             let vz_unit = (
-                center_ecef.0 / dvz,
-                center_ecef.1 / dvz,
-                center_ecef.2 / dvz,
+                center_ecef[0] / dvz,
+                center_ecef[1] / dvz,
+                center_ecef[2] / dvz,
             );
 
             // Calculate the height difference between the lower corners and the curved earth surface
@@ -1527,9 +1527,9 @@ pub mod cesium3dtiles {
 
             // Drop center_ecef
             let center_ecef_dropped = (
-                center_ecef.0 - center_z_correction * vz_unit.0,
-                center_ecef.1 - center_z_correction * vz_unit.1,
-                center_ecef.2 - center_z_correction * vz_unit.2,
+                center_ecef[0] - center_z_correction * vz_unit.0,
+                center_ecef[1] - center_z_correction * vz_unit.1,
+                center_ecef[2] - center_z_correction * vz_unit.2,
             );
 
             // Final box matrix, NB the Z half length vector are now also corrected for earth curvature
@@ -1552,7 +1552,7 @@ pub mod cesium3dtiles {
         #[allow(dead_code)]
         fn region_from_bbox(
             bbox: &Bbox,
-            transformer: &Proj,
+            transformer: &Transformer,
         ) -> Result<Self, Box<dyn std::error::Error>> {
             let mut west = f64::INFINITY;
             let mut south = f64::INFINITY;
@@ -1562,7 +1562,7 @@ pub mod cesium3dtiles {
             let mut max_h = f64::NEG_INFINITY;
 
             for [x, y, z] in bbox_corners(bbox) {
-                let (lon, lat, height) = transformer.convert((x, y, z))?;
+                let [lon, lat, height] = transformer.transform([x, y, z])?;
                 west = west.min(lon);
                 south = south.min(lat);
                 min_h = min_h.min(height);
@@ -1983,7 +1983,7 @@ pub mod cesium3dtiles {
         #[test]
         fn test_boundingvolume_from_bbox() {
             let crs_to = "EPSG:4978";
-            let transformer = Proj::new_known_crs("EPSG:7415", crs_to, None).unwrap();
+            let transformer = cityjson_lib::ops::transformer("EPSG:7415", crs_to).unwrap();
             let bbox: Bbox = [
                 84362.90299999999,
                 446306.814,
@@ -1999,7 +1999,7 @@ pub mod cesium3dtiles {
         #[test]
         fn test_boundingvolume_region_from_bbox() {
             let crs_to = "EPSG:4979";
-            let transformer = Proj::new_known_crs("EPSG:7415", crs_to, None).unwrap();
+            let transformer = cityjson_lib::ops::transformer("EPSG:7415", crs_to).unwrap();
             let bbox: Bbox = [84995.279, 446316.813, -5.333, 85644.748, 446996.132, 52.881];
             let bounding_volume = BoundingVolume::region_from_bbox(&bbox, &transformer)
                 .expect("bbox should transform to EPSG:4979 region");
@@ -2016,7 +2016,7 @@ pub mod cesium3dtiles {
                 f64::NEG_INFINITY,
             ];
             for [x, y, z] in bbox_corners(&bbox) {
-                let (lon, lat, height) = transformer.convert((x, y, z)).unwrap();
+                let [lon, lat, height] = transformer.transform([x, y, z]).unwrap();
                 expected[0] = expected[0].min(lon.to_radians());
                 expected[1] = expected[1].min(lat.to_radians());
                 expected[2] = expected[2].max(lon.to_radians());

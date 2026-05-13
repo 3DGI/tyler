@@ -1,4 +1,3 @@
-use crate::proj::Proj;
 use crate::spatial_structs::Bbox;
 
 #[derive(Clone, Copy, Debug)]
@@ -25,24 +24,11 @@ impl RootEnuFrame {
         source_crs: &str,
         source_origin: [f64; 3],
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let to_geodetic = Proj::new_known_crs(source_crs, "EPSG:4979", None)?;
-        let to_ecef = Proj::new_known_crs(source_crs, "EPSG:4978", None)?;
+        let to_geodetic = cityjson_lib::ops::transformer(source_crs, "EPSG:4979")?;
+        let to_ecef = cityjson_lib::ops::transformer(source_crs, "EPSG:4978")?;
 
-        let geodetic_origin_tuple =
-            to_geodetic.convert((source_origin[0], source_origin[1], source_origin[2]))?;
-        let ecef_origin_tuple =
-            to_ecef.convert((source_origin[0], source_origin[1], source_origin[2]))?;
-
-        let geodetic_origin = [
-            geodetic_origin_tuple.0,
-            geodetic_origin_tuple.1,
-            geodetic_origin_tuple.2,
-        ];
-        let ecef_origin = [
-            ecef_origin_tuple.0,
-            ecef_origin_tuple.1,
-            ecef_origin_tuple.2,
-        ];
+        let geodetic_origin = to_geodetic.transform(source_origin)?;
+        let ecef_origin = to_ecef.transform(source_origin)?;
         let (east, north, up) = enu_basis(geodetic_origin[0], geodetic_origin[1]);
 
         Ok(Self {

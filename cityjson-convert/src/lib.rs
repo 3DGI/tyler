@@ -11,7 +11,6 @@
 )]
 
 pub mod gltf_writer;
-mod proj;
 
 use std::collections::BTreeMap;
 use std::fs;

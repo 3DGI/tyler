@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Tyler and `cityjson-convert` now use `cityjson_lib::ops::Transformer` for PROJ
+  coordinate transformations instead of maintaining local PROJ wrappers.
+- Tyler resolves `cityjson-lib`, `cityjson-types`, and `cityjson-json` through
+  the local `cityjson-rs` checkout while depending on the new `cityjson-lib`
+  `proj` feature.
+
+### Removed
+
+- Removed Tyler's direct `proj-sys`, `libc`, `num-traits`, and `thiserror`
+  dependencies that only supported the deleted local PROJ wrappers.
+- Removed the duplicate local PROJ wrapper modules from Tyler and
+  `cityjson-convert`.
+
 ## tyler 0.4.1 (2026-04-30)
 
 The main features of the new version:

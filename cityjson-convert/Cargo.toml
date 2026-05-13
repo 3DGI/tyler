@@ -18,7 +18,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"
-cityjson-lib = { version = "0.9.0", features = ["json"] }
+cityjson-lib = { path = "../../cityjson-rs/crates/cityjson-lib", features = ["json", "proj"] }
 clap = { version = "4.6", features = ["cargo", "derive"] }
 earcutr = "0.5.0"
 env_logger = "0.11.0"
@@ -26,7 +26,3 @@ gltf = { version = "1.4", features = ["extensions", "extras"] }
 log = "0.4"
 meshopt = "0.6.2"
 serde_json = "1.0"
-proj-sys = { version = "0.23.1", features = ["network"] } # remove after tyler/develop is merged
-libc = "0.2.119" # remove after tyler/develop is merged
-num-traits = "0.2.14" # remove after tyler/develop is merged
-thiserror = "1.0.30" # remove after tyler/develop is merged
