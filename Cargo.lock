@@ -259,7 +259,7 @@ name = "cityjson-convert"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "cityjson-lib",
+ "cityjson-lib 0.9.0",
  "clap",
  "earcutr",
  "env_logger 0.11.10",
@@ -272,10 +272,10 @@ dependencies = [
 [[package]]
 name = "cityjson-index"
 version = "0.9.0"
-source = "git+https://github.com/3DGI/cityjson-rs.git?branch=main#79d2ae4817e1a416108863a02e175b126e7450b6"
+source = "git+https://github.com/3DGI/cityjson-rs.git?branch=main#eadd58d3f2992561d84550ef793642b93615b85d"
 dependencies = [
- "cityjson-lib",
- "cityjson-types",
+ "cityjson-lib 0.9.0 (git+https://github.com/3DGI/cityjson-rs.git?branch=main)",
+ "cityjson-types 0.9.0 (git+https://github.com/3DGI/cityjson-rs.git?branch=main)",
  "clap",
  "flate2",
  "flatgeobuf",
@@ -296,7 +296,19 @@ name = "cityjson-json"
 version = "0.9.0"
 dependencies = [
  "ahash",
- "cityjson-types",
+ "cityjson-types 0.9.0",
+ "derive_more",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "cityjson-json"
+version = "0.9.0"
+source = "git+https://github.com/3DGI/cityjson-rs.git?branch=main#eadd58d3f2992561d84550ef793642b93615b85d"
+dependencies = [
+ "ahash",
+ "cityjson-types 0.9.0 (git+https://github.com/3DGI/cityjson-rs.git?branch=main)",
  "derive_more",
  "serde",
  "serde_json",
@@ -306,9 +318,25 @@ dependencies = [
 name = "cityjson-lib"
 version = "0.9.0"
 dependencies = [
- "cityjson-json",
- "cityjson-types",
+ "cityjson-json 0.9.0",
+ "cityjson-types 0.9.0",
  "libc",
+ "libsqlite3-sys",
+ "num-traits",
+ "proj-sys",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "cityjson-lib"
+version = "0.9.0"
+source = "git+https://github.com/3DGI/cityjson-rs.git?branch=main#eadd58d3f2992561d84550ef793642b93615b85d"
+dependencies = [
+ "cityjson-json 0.9.0 (git+https://github.com/3DGI/cityjson-rs.git?branch=main)",
+ "cityjson-types 0.9.0 (git+https://github.com/3DGI/cityjson-rs.git?branch=main)",
+ "libc",
+ "libsqlite3-sys",
  "num-traits",
  "proj-sys",
  "serde_json",
@@ -318,6 +346,14 @@ dependencies = [
 [[package]]
 name = "cityjson-types"
 version = "0.9.0"
+dependencies = [
+ "num 0.4.3",
+]
+
+[[package]]
+name = "cityjson-types"
+version = "0.9.0"
+source = "git+https://github.com/3DGI/cityjson-rs.git?branch=main#eadd58d3f2992561d84550ef793642b93615b85d"
 dependencies = [
  "num 0.4.3",
 ]
@@ -2454,7 +2490,7 @@ dependencies = [
  "bitvec",
  "cityjson-convert",
  "cityjson-index",
- "cityjson-lib",
+ "cityjson-lib 0.9.0 (git+https://github.com/3DGI/cityjson-rs.git?branch=main)",
  "clap",
  "env_logger 0.10.2",
  "log",
