@@ -51,9 +51,21 @@ ci: fmt lint check build test
 ci-check: fmt-check lint check build test
 
 # Run full validation using the system-preferred PROJ mode.
-ci-check-system: fmt-check lint check build test
+ci-check-system: fmt-check feature-check-system lint check build test
 
 # Validate bundled PROJ source builds without running the full test suite.
-ci-check-bundled: fmt-check
+ci-check-bundled: fmt-check feature-check-bundled
     cargo check --workspace --all-targets --no-default-features --features proj-bundled
     cargo build --workspace --all-targets --no-default-features --features proj-bundled
+
+# Verify that the system mode keeps native PROJ networking without bundled PROJ.
+feature-check-system:
+    cargo tree -e features -i cityjson-lib --no-default-features --features proj-system | rg 'cityjson-lib feature "proj-network"'
+    ! cargo tree -e features -i cityjson-lib --no-default-features --features proj-system | rg 'cityjson-lib feature "proj-bundled"'
+    ! cargo tree -e features -i proj-sys --no-default-features --features proj-system | rg 'proj-sys feature "bundled_proj"'
+
+# Verify that the bundled mode stays separate from native PROJ networking.
+feature-check-bundled:
+    cargo tree -e features -i cityjson-lib --no-default-features --features proj-bundled | rg 'cityjson-lib feature "proj-bundled"'
+    cargo tree -e features -i proj-sys --no-default-features --features proj-bundled | rg 'proj-sys feature "bundled_proj"'
+    ! cargo tree -e features -i cityjson-lib --no-default-features --features proj-bundled | rg 'cityjson-lib feature "proj-network"'

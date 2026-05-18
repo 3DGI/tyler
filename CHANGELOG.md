@@ -9,6 +9,20 @@
 - Tyler resolves `cityjson-lib`, `cityjson-types`, and `cityjson-json` through
   the local `cityjson-rs` checkout while depending on the new `cityjson-lib`
   `proj` feature.
+- Tyler and `cityjson-convert` now expose explicit `proj-system` and
+  `proj-bundled` build modes, with system builds using native PROJ networking
+  capability and bundled builds kept separate from it.
+- The build documentation now distinguishes reproducible/offline packaged
+  grids from opt-in native PROJ network fetching and documents the local cache
+  behavior used for downloaded grid chunks.
+- Linux, macOS, and Windows CI now validate both PROJ build modes, and the
+  devcontainer installs the native PROJ toolchain used for repeatable local
+  validation.
+
+### Added
+
+- Feature-resolution checks that verify system mode does not activate bundled
+  PROJ and bundled mode does not imply native PROJ networking.
 
 ### Removed
 

@@ -7,8 +7,9 @@ and through the `cjconvert` CLI.
 
 By default, source builds use the `proj-system` feature, which enables
 PROJ-backed clipping and reprojection through `cityjson-lib` while preferring a
-system PROJ installation. Use `--no-default-features --features proj-bundled`
-to build with bundled PROJ source support.
+system PROJ installation with native network-grid capability enabled. Use
+`--no-default-features --features proj-bundled` to build with bundled PROJ
+source support; bundled mode is separate from native PROJ networking.
 
 ## Library
 

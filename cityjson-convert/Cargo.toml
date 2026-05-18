@@ -32,6 +32,5 @@ default = ["proj-system"]
 proj-system = ["cityjson-lib/proj", "cityjson-lib/proj-network"]
 proj-bundled = [
     "cityjson-lib/proj",
-    "cityjson-lib/proj-network",
     "cityjson-lib/proj-bundled",
 ]

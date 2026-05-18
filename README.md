@@ -44,7 +44,7 @@ cargo install .
 
 Plain `cargo build` and `cargo install .` use Tyler's default `proj-system`
 feature. This enables PROJ-backed APIs and asks `proj-sys` to prefer a system
-PROJ installation with network grid support enabled.
+PROJ installation with native network-grid capability enabled.
 
 `proj-sys 0.27.0` requires PROJ 9.6.2 or newer for system discovery. If no
 acceptable system PROJ is found, `proj-sys` may fall back to building PROJ from
@@ -100,6 +100,17 @@ RUST_LOG=debug tyler ...
 
 Tyler uses the [proj](https://proj.org/) library for reprojecting the input to the required CRS.
 Set [PROJ_DATA](https://proj.org/usage/environmentvars.html#envvar-PROJ_DATA) if your environment requires a custom PROJ data directory.
+
+The packaged Nix build uses the reproducible/offline path: it vendors the Dutch
+`nl_nsgi_nlgeo2018.tif` and `nl_nsgi_rdtrans2018.tif` grids into `PROJ_DATA`, so
+required transforms do not depend on runtime downloads.
+
+Native PROJ networking is a separate, opt-in path for non-packaged builds. It
+requires both a system PROJ build with curl support and explicit runtime
+enablement in the caller. When enabled, PROJ fetches the needed remote grid
+chunks on demand and stores them in its user-writable cache database; it does
+not materialize full `.tif` files into `PROJ_DATA`. Reproducible or offline
+deployments should continue to provide required grids locally.
 
 ### Performance
 
