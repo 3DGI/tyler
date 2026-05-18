@@ -81,6 +81,70 @@ fn create_default_material(base_color: &str) -> Result<json::Material, anyhow::E
     })
 }
 
+/// Remove consecutive-duplicate vertices per ring (outer + each hole) before
+/// triangulation. earcutr 0.5.0 can spin forever on rings whose vertices
+/// repeat — see `tests::polygon_with_duplicate_consecutive_vertices_does_not_hang`.
+///
+/// Returns `(deduped_flat_coords, deduped_hole_indices, original_index_map)`
+/// where `original_index_map[deduped_idx] = original_vertex_idx` lets callers
+/// translate earcut's deduped-vertex triangle indices back to the caller's
+/// per-vertex side data (positions, normals, ...). A ring is dropped entirely
+/// if dedup leaves it with fewer than 3 vertices.
+fn dedupe_polygon_rings(
+    flat_coords: &[f64],
+    hole_indices: &[usize],
+) -> (Vec<f64>, Vec<usize>, Vec<usize>) {
+    let mut ring_starts: Vec<usize> = std::iter::once(0)
+        .chain(hole_indices.iter().copied())
+        .collect();
+    ring_starts.push(flat_coords.len() / 2);
+
+    let mut new_flat: Vec<f64> = Vec::with_capacity(flat_coords.len());
+    let mut new_holes: Vec<usize> = Vec::with_capacity(hole_indices.len());
+    let mut index_map: Vec<usize> = Vec::with_capacity(flat_coords.len() / 2);
+
+    for ring_idx in 0..ring_starts.len() - 1 {
+        let start_vertex = ring_starts[ring_idx];
+        let end_vertex = ring_starts[ring_idx + 1];
+        let mut deduped_vertices: Vec<usize> = Vec::new();
+        for orig_idx in start_vertex..end_vertex {
+            let x = flat_coords[orig_idx * 2];
+            let y = flat_coords[orig_idx * 2 + 1];
+            if let Some(&prev) = deduped_vertices.last() {
+                if flat_coords[prev * 2] == x && flat_coords[prev * 2 + 1] == y {
+                    continue;
+                }
+            }
+            deduped_vertices.push(orig_idx);
+        }
+        // Drop trailing vertex if it duplicates the ring's first (closing dup).
+        if deduped_vertices.len() >= 2 {
+            let first = deduped_vertices[0];
+            let last = *deduped_vertices.last().unwrap();
+            if flat_coords[first * 2] == flat_coords[last * 2]
+                && flat_coords[first * 2 + 1] == flat_coords[last * 2 + 1]
+            {
+                deduped_vertices.pop();
+            }
+        }
+        if deduped_vertices.len() < 3 {
+            // Degenerate ring — drop it. For the outer ring this means the
+            // whole polygon collapses; the caller checks `index_map.len() < 3`.
+            continue;
+        }
+        if ring_idx > 0 {
+            new_holes.push(new_flat.len() / 2);
+        }
+        for orig_idx in deduped_vertices {
+            new_flat.push(flat_coords[orig_idx * 2]);
+            new_flat.push(flat_coords[orig_idx * 2 + 1]);
+            index_map.push(orig_idx);
+        }
+    }
+
+    (new_flat, new_holes, index_map)
+}
+
 /// Writes a `CityJSON` model as a binary glTF file.
 ///
 /// # Errors
@@ -1001,6 +1065,16 @@ impl MeshCollector {
             }
         }
 
+        // earcutr 0.5.0 (the only published release) can spin forever on
+        // polygons that contain consecutive-duplicate vertices in inner rings —
+        // see tests::polygon_with_duplicate_consecutive_vertices_does_not_hang.
+        // Strip those duplicates per ring before calling earcut, and drop any
+        // ring whose vertex count drops below 3 (degenerate / collapsed).
+        let (flat_coords, hole_indices, source_index_map) =
+            dedupe_polygon_rings(&flat_coords, &hole_indices);
+        if source_index_map.len() < 3 {
+            return Ok(());
+        }
         let triangulated =
             earcut(&flat_coords, &hole_indices, 2).context("Failed to triangulate surface")?;
         if triangulated.len() < 3 {
@@ -1009,15 +1083,18 @@ impl MeshCollector {
 
         let primitive = self.primitives.entry(feature_type.to_string()).or_default();
         for tri in triangulated.chunks_exact(3) {
+            let orig0 = source_index_map[tri[0]];
+            let orig1 = source_index_map[tri[1]];
+            let orig2 = source_index_map[tri[2]];
             let source_triangle = [
-                source_positions[tri[0]],
-                source_positions[tri[1]],
-                source_positions[tri[2]],
+                source_positions[orig0],
+                source_positions[orig1],
+                source_positions[orig2],
             ];
             let local_triangle = [
-                local_positions[tri[0]],
-                local_positions[tri[1]],
-                local_positions[tri[2]],
+                local_positions[orig0],
+                local_positions[orig1],
+                local_positions[orig2],
             ];
             primitive.add_triangle(
                 feature_id,
@@ -3056,5 +3133,111 @@ fn align_length(length: usize, alignment: usize) -> usize {
         length
     } else {
         length + (alignment - remainder)
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use earcutr::earcut;
+    use std::time::{Duration, Instant};
+
+    /// Captured from production input that hung tyler's GLB conversion
+    /// for >67h on a single thread. Two of the inner rings collapse to a single
+    /// point under exact-equality (e.g. four copies of `(779.418, 813.609)`),
+    /// which sends `earcutr::filter_points` into an infinite loop in 0.5.0.
+    /// Minimized from a 89-vertex / 15-hole BuildingPart surface down to the
+    /// smallest hole-subset that still hangs.
+    const HANGING_POLYGON_JSON: &str =
+        include_str!("../tests/fixtures/earcut_hang_minimal.json");
+
+    fn load_hanging_polygon() -> (Vec<f64>, Vec<usize>) {
+        let v: serde_json::Value = serde_json::from_str(HANGING_POLYGON_JSON).unwrap();
+        let flat: Vec<f64> = v["flat_coords"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x.as_f64().unwrap())
+            .collect();
+        let holes: Vec<usize> = v["hole_indices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x.as_u64().unwrap() as usize)
+            .collect();
+        (flat, holes)
+    }
+
+    /// Sanity check: confirms the captured fixture really does hang upstream
+    /// earcut. Ignored by default so `cargo test` stays finite; un-ignore when
+    /// retesting against a new earcutr release.
+    #[test]
+    #[ignore = "this test deliberately hangs earcutr; run with `cargo test -- --ignored`"]
+    fn upstream_earcut_hangs_on_captured_polygon() {
+        let (flat, holes) = load_hanging_polygon();
+        let handle = std::thread::spawn(move || earcut(&flat, &holes, 2));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !handle.is_finished() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(
+            !handle.is_finished(),
+            "earcutr no longer hangs on this polygon — \
+             remove the dedupe_polygon_rings workaround once a fixed earcutr \
+             release is in Cargo.toml"
+        );
+    }
+
+    #[test]
+    fn dedupe_polygon_rings_drops_consecutive_duplicates() {
+        let flat = vec![
+            0.0, 0.0, 0.0, 0.0, // duplicate
+            1.0, 0.0, 1.0, 1.0, 1.0, 1.0, // duplicate
+            0.0, 1.0, 0.0, 0.0, // closing dup → trimmed
+        ];
+        let holes: Vec<usize> = vec![];
+        let (new_flat, new_holes, map) = dedupe_polygon_rings(&flat, &holes);
+        assert_eq!(new_holes, Vec::<usize>::new());
+        assert_eq!(new_flat.len() / 2, 4);
+        assert_eq!(map, vec![0, 2, 3, 5]);
+    }
+
+    #[test]
+    fn dedupe_polygon_rings_drops_collapsed_holes() {
+        // Outer = 4-vertex square; hole = 4 copies of the same point.
+        let flat = vec![
+            0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0, // outer
+            5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, // collapsed hole
+        ];
+        let holes = vec![4usize];
+        let (new_flat, new_holes, _) = dedupe_polygon_rings(&flat, &holes);
+        assert_eq!(new_holes, Vec::<usize>::new(), "collapsed hole should be dropped");
+        assert_eq!(new_flat.len() / 2, 4);
+    }
+
+    /// Regression test: dedupe + earcut on the captured polygon must finish.
+    #[test]
+    fn polygon_with_duplicate_consecutive_vertices_does_not_hang() {
+        let (flat, holes) = load_hanging_polygon();
+        let (deduped_flat, deduped_holes, map) = dedupe_polygon_rings(&flat, &holes);
+        assert!(map.len() >= 3, "outer ring should survive dedupe");
+
+        // Run earcut in a thread with a watchdog. Locally this returns in ~50ms.
+        let handle = std::thread::spawn(move || earcut(&deduped_flat, &deduped_holes, 2));
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !handle.is_finished() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            handle.is_finished(),
+            "earcut hung on the deduped polygon — workaround insufficient"
+        );
+        let triangulated = handle.join().unwrap().expect("earcut returned an error");
+        assert_eq!(triangulated.len() % 3, 0);
+        assert!(
+            !triangulated.is_empty(),
+            "deduped polygon should produce at least one triangle"
+        );
     }
 }
