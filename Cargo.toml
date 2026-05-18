@@ -19,9 +19,9 @@ name = "tyler"
 path = "src/main.rs"
 
 [dependencies]
-cityjson-lib = { version = "0.9.0", features = ["json", "proj"] }
+cityjson-lib = { version = "0.9.0", default-features = true }
 cityjson-index = { version = "0.9.0" }
-cityjson-convert = { version = "0.1.0" }
+cityjson-convert = { version = "0.1.0", default-features = true }
 log = "0.4.17"
 env_logger = "0.10.0"
 clap = { version = "4.0.32", features = ["cargo", "derive"] }
@@ -36,6 +36,20 @@ proj-sys = { version = "0.23.1", features = ["network"] } # remove after tyler/d
 libc = "0.2.119" # remove after tyler/develop is merged
 num-traits = "0.2.14" # remove after tyler/develop is merged
 thiserror = "1.0.30" # remove after tyler/develop is merged
+
+[features]
+default = ["proj-system"]
+proj-system = [
+    "cityjson-lib/proj",
+    "cityjson-lib/proj-network",
+    "cityjson-convert/proj-system",
+]
+proj-bundled = [
+    "cityjson-lib/proj",
+    "cityjson-lib/proj-network",
+    "cityjson-lib/proj-bundled",
+    "cityjson-convert/proj-bundled",
+]
 
 [workspace]
 members = [".", "cityjson-convert"]

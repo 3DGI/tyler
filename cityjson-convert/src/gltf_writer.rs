@@ -396,8 +396,8 @@ struct CachedProjTransform {
 }
 
 impl CachedProjTransform {
-    fn new(source_crs: String, target_crs: &'static str) -> Result<Self> {
-        let transformer = cityjson_lib::ops::transformer(&source_crs, target_crs)
+    fn new(source_crs: &str, target_crs: &'static str) -> Result<Self> {
+        let transformer = cityjson_lib::ops::transformer(source_crs, target_crs)
             .with_context(|| format!("failed to create {source_crs} to {target_crs} transform"))?;
         Ok(Self { transformer })
     }
@@ -629,7 +629,7 @@ impl ClipVolume {
         let transformer = if source_crs == "EPSG:4979" {
             None
         } else {
-            Some(CachedProjTransform::new(source_crs.clone(), "EPSG:4979")?)
+            Some(CachedProjTransform::new(&source_crs, "EPSG:4979")?)
         };
         Ok(Self::GeographicRegion(GeographicClipVolume {
             transformer,
@@ -800,10 +800,7 @@ fn source_to_ecef_transformer(source_crs: &str) -> Result<Option<CachedProjTrans
     if source_crs == "EPSG:4978" {
         Ok(None)
     } else {
-        Ok(Some(CachedProjTransform::new(
-            source_crs.to_owned(),
-            "EPSG:4978",
-        )?))
+        Ok(Some(CachedProjTransform::new(source_crs, "EPSG:4978")?))
     }
 }
 

@@ -259,7 +259,7 @@ name = "cityjson-convert"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "cityjson-lib 0.9.0",
+ "cityjson-lib",
  "clap",
  "earcutr",
  "env_logger 0.11.10",
@@ -272,10 +272,10 @@ dependencies = [
 [[package]]
 name = "cityjson-index"
 version = "0.9.0"
-source = "git+https://github.com/3DGI/cityjson-rs.git?branch=main#eadd58d3f2992561d84550ef793642b93615b85d"
+source = "git+https://github.com/3DGI/cityjson-rs.git?branch=main#78e8c6685ec47c139ea1483742564ba0f4add042"
 dependencies = [
- "cityjson-lib 0.9.0 (git+https://github.com/3DGI/cityjson-rs.git?branch=main)",
- "cityjson-types 0.9.0 (git+https://github.com/3DGI/cityjson-rs.git?branch=main)",
+ "cityjson-lib",
+ "cityjson-types",
  "clap",
  "flate2",
  "flatgeobuf",
@@ -294,21 +294,10 @@ dependencies = [
 [[package]]
 name = "cityjson-json"
 version = "0.9.0"
+source = "git+https://github.com/3DGI/cityjson-rs.git?branch=main#78e8c6685ec47c139ea1483742564ba0f4add042"
 dependencies = [
  "ahash",
- "cityjson-types 0.9.0",
- "derive_more",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "cityjson-json"
-version = "0.9.0"
-source = "git+https://github.com/3DGI/cityjson-rs.git?branch=main#eadd58d3f2992561d84550ef793642b93615b85d"
-dependencies = [
- "ahash",
- "cityjson-types 0.9.0 (git+https://github.com/3DGI/cityjson-rs.git?branch=main)",
+ "cityjson-types",
  "derive_more",
  "serde",
  "serde_json",
@@ -317,24 +306,10 @@ dependencies = [
 [[package]]
 name = "cityjson-lib"
 version = "0.9.0"
+source = "git+https://github.com/3DGI/cityjson-rs.git?branch=main#78e8c6685ec47c139ea1483742564ba0f4add042"
 dependencies = [
- "cityjson-json 0.9.0",
- "cityjson-types 0.9.0",
- "libc",
- "libsqlite3-sys",
- "num-traits",
- "proj-sys",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "cityjson-lib"
-version = "0.9.0"
-source = "git+https://github.com/3DGI/cityjson-rs.git?branch=main#eadd58d3f2992561d84550ef793642b93615b85d"
-dependencies = [
- "cityjson-json 0.9.0 (git+https://github.com/3DGI/cityjson-rs.git?branch=main)",
- "cityjson-types 0.9.0 (git+https://github.com/3DGI/cityjson-rs.git?branch=main)",
+ "cityjson-json",
+ "cityjson-types",
  "libc",
  "libsqlite3-sys",
  "num-traits",
@@ -346,14 +321,7 @@ dependencies = [
 [[package]]
 name = "cityjson-types"
 version = "0.9.0"
-dependencies = [
- "num 0.4.3",
-]
-
-[[package]]
-name = "cityjson-types"
-version = "0.9.0"
-source = "git+https://github.com/3DGI/cityjson-rs.git?branch=main#eadd58d3f2992561d84550ef793642b93615b85d"
+source = "git+https://github.com/3DGI/cityjson-rs.git?branch=main#78e8c6685ec47c139ea1483742564ba0f4add042"
 dependencies = [
  "num 0.4.3",
 ]
@@ -2490,7 +2458,7 @@ dependencies = [
  "bitvec",
  "cityjson-convert",
  "cityjson-index",
- "cityjson-lib 0.9.0 (git+https://github.com/3DGI/cityjson-rs.git?branch=main)",
+ "cityjson-lib",
  "clap",
  "env_logger 0.10.2",
  "log",

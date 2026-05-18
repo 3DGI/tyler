@@ -9,15 +9,69 @@ on:
 
 jobs:
   ci-check:
-    runs-on: ubuntu-latest
+    name: ${{ matrix.os }} / ${{ matrix.mode }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        mode: [proj-system, proj-bundled]
+        include:
+          - mode: proj-system
+            recipe: ci-check-system
+          - mode: proj-bundled
+            recipe: ci-check-bundled
     steps:
       - uses: actions/checkout@v6
-      - name: Install native dependencies
+
+      - name: Install Linux native dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libtiff-dev
+          sudo apt-get install -y --no-install-recommends \
+            clang \
+            cmake \
+            libproj-dev \
+            libsqlite3-dev \
+            libtiff-dev \
+            pkg-config \
+            sqlite3
+
+      - name: Install macOS native dependencies
+        if: runner.os == 'macOS'
+        run: brew install proj sqlite libtiff pkg-config
+
+      - name: Install Windows native dependencies
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-clang
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-just
+            mingw-w64-ucrt-x86_64-libsqlite
+            mingw-w64-ucrt-x86_64-libtiff
+            mingw-w64-ucrt-x86_64-make
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-proj
+            mingw-w64-ucrt-x86_64-rust
+
       - uses: extractions/setup-just@v4
+        if: runner.os != 'Windows'
+
       - uses: dtolnay/rust-toolchain@stable
+        if: runner.os != 'Windows'
         with:
           components: clippy, rustfmt
-      - run: just ci-check
+
+      - name: Run validation
+        if: runner.os != 'Windows'
+        run: just ${{ matrix.recipe }}
+
+      - name: Run validation
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: just ${{ matrix.recipe }}
