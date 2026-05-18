@@ -90,6 +90,7 @@ fn create_default_material(base_color: &str) -> Result<json::Material, anyhow::E
 /// translate earcut's deduped-vertex triangle indices back to the caller's
 /// per-vertex side data (positions, normals, ...). A ring is dropped entirely
 /// if dedup leaves it with fewer than 3 vertices.
+#[allow(clippy::float_cmp)] // exact-equality dedup is intentional: we drop only bit-identical repeats
 fn dedupe_polygon_rings(
     flat_coords: &[f64],
     hole_indices: &[usize],
@@ -3156,7 +3157,7 @@ mod tests {
     /// for >67h on a single thread. Two of the inner rings collapse to a single
     /// point under exact-equality (e.g. four copies of `(779.418, 813.609)`),
     /// which sends `earcutr::filter_points` into an infinite loop in 0.5.0.
-    /// Minimized from a 89-vertex / 15-hole BuildingPart surface down to the
+    /// Minimized from a 89-vertex / 15-hole `BuildingPart` surface down to the
     /// smallest hole-subset that still hangs.
     const HANGING_POLYGON_JSON: &str = include_str!("../tests/fixtures/earcut_hang_minimal.json");
 
@@ -3172,7 +3173,7 @@ mod tests {
             .as_array()
             .unwrap()
             .iter()
-            .map(|x| x.as_u64().unwrap() as usize)
+            .map(|x| usize::try_from(x.as_u64().unwrap()).unwrap())
             .collect();
         (flat, holes)
     }
