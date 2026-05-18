@@ -13,7 +13,7 @@ use cityjson_lib::ops::Transformer;
 use cityjson_lib::CityModel;
 use earcutr::earcut;
 use gltf::json;
-use log::debug;
+use log::{debug, warn};
 use meshopt::{
     encode_index_buffer, encode_vertex_buffer, generate_vertex_remap,
     optimize_overdraw_in_place_decoder, optimize_vertex_cache, optimize_vertex_fetch,
@@ -1074,9 +1074,15 @@ impl MeshCollector {
         // original index in `source_positions`/`local_positions`, which are
         // not deduped. Needed because earcut's triangle indices reference the
         // deduped `flat_coords`, not the original vertex arrays.
+        let pre_dedup_vertex_count = local_positions.len();
         let (flat_coords, hole_indices, source_index_map) =
             dedupe_polygon_rings(&flat_coords, &hole_indices);
         if source_index_map.len() < 3 {
+            warn!(
+                "Skipping {feature_type} feature {feature_id} surface: dedupe collapsed \
+                 {pre_dedup_vertex_count} vertices to {} (below triangulation minimum of 3)",
+                source_index_map.len()
+            );
             return Ok(());
         }
         let triangulated =
