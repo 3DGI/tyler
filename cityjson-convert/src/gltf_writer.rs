@@ -3136,7 +3136,6 @@ fn align_length(length: usize, alignment: usize) -> usize {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3149,8 +3148,7 @@ mod tests {
     /// which sends `earcutr::filter_points` into an infinite loop in 0.5.0.
     /// Minimized from a 89-vertex / 15-hole BuildingPart surface down to the
     /// smallest hole-subset that still hangs.
-    const HANGING_POLYGON_JSON: &str =
-        include_str!("../tests/fixtures/earcut_hang_minimal.json");
+    const HANGING_POLYGON_JSON: &str = include_str!("../tests/fixtures/earcut_hang_minimal.json");
 
     fn load_hanging_polygon() -> (Vec<f64>, Vec<usize>) {
         let v: serde_json::Value = serde_json::from_str(HANGING_POLYGON_JSON).unwrap();
@@ -3212,7 +3210,11 @@ mod tests {
         ];
         let holes = vec![4usize];
         let (new_flat, new_holes, _) = dedupe_polygon_rings(&flat, &holes);
-        assert_eq!(new_holes, Vec::<usize>::new(), "collapsed hole should be dropped");
+        assert_eq!(
+            new_holes,
+            Vec::<usize>::new(),
+            "collapsed hole should be dropped"
+        );
         assert_eq!(new_flat.len() / 2, 4);
     }
 
