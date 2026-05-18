@@ -1070,6 +1070,10 @@ impl MeshCollector {
         // see tests::polygon_with_duplicate_consecutive_vertices_does_not_hang.
         // Strip those duplicates per ring before calling earcut, and drop any
         // ring whose vertex count drops below 3 (degenerate / collapsed).
+        // `source_index_map[i]` maps the i-th deduped vertex back to its
+        // original index in `source_positions`/`local_positions`, which are
+        // not deduped. Needed because earcut's triangle indices reference the
+        // deduped `flat_coords`, not the original vertex arrays.
         let (flat_coords, hole_indices, source_index_map) =
             dedupe_polygon_rings(&flat_coords, &hole_indices);
         if source_index_map.len() < 3 {
