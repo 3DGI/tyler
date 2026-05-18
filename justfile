@@ -60,12 +60,12 @@ ci-check-bundled: fmt-check feature-check-bundled
 
 # Verify that the system mode keeps native PROJ networking without bundled PROJ.
 feature-check-system:
-    cargo tree -e features -i cityjson-lib --no-default-features --features proj-system | rg 'cityjson-lib feature "proj-network"'
-    ! cargo tree -e features -i cityjson-lib --no-default-features --features proj-system | rg 'cityjson-lib feature "proj-bundled"'
-    ! cargo tree -e features -i proj-sys --no-default-features --features proj-system | rg 'proj-sys feature "bundled_proj"'
+    cargo tree -e features -i cityjson-lib --no-default-features --features proj-system | grep 'cityjson-lib feature "proj-network"'
+    ! cargo tree -e features -i cityjson-lib --no-default-features --features proj-system | grep 'cityjson-lib feature "proj-bundled"'
+    ! cargo tree -e features -i proj-sys --no-default-features --features proj-system | grep 'proj-sys feature "bundled_proj"'
 
 # Verify that the bundled mode stays separate from native PROJ networking.
 feature-check-bundled:
-    cargo tree -e features -i cityjson-lib --no-default-features --features proj-bundled | rg 'cityjson-lib feature "proj-bundled"'
-    cargo tree -e features -i proj-sys --no-default-features --features proj-bundled | rg 'proj-sys feature "bundled_proj"'
-    ! cargo tree -e features -i cityjson-lib --no-default-features --features proj-bundled | rg 'cityjson-lib feature "proj-network"'
+    cargo tree -e features -i cityjson-lib --no-default-features --features proj-bundled | grep 'cityjson-lib feature "proj-bundled"'
+    cargo tree -e features -i proj-sys --no-default-features --features proj-bundled | grep 'proj-sys feature "bundled_proj"'
+    ! cargo tree -e features -i cityjson-lib --no-default-features --features proj-bundled | grep 'cityjson-lib feature "proj-network"'
