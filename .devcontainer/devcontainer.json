@@ -3,6 +3,9 @@
 	"build": {
 		"dockerfile": "Dockerfile"
 	},
+	"features": {
+		"ghcr.io/balazsdukai/devcontainer-tools/tools:1": {}
+	},
 	"mounts": [
 		{
 			"source": "devcontainer-cargo-cache-${devcontainerId}",
