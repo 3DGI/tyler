@@ -13,7 +13,7 @@ use cityjson_lib::ops::Transformer;
 use cityjson_lib::CityModel;
 use earcutr::earcut;
 use gltf::json;
-use log::{debug, warn};
+use log::debug;
 use meshopt::{
     encode_index_buffer, encode_vertex_buffer, generate_vertex_remap,
     optimize_overdraw_in_place_decoder, optimize_vertex_cache, optimize_vertex_fetch,
@@ -81,15 +81,28 @@ fn create_default_material(base_color: &str) -> Result<json::Material, anyhow::E
     })
 }
 
-/// Remove consecutive-duplicate vertices per ring (outer + each hole) before
-/// triangulation. earcutr 0.5.0 can spin forever on rings whose vertices
-/// repeat — see `tests::polygon_with_duplicate_consecutive_vertices_does_not_hang`.
+/// Strip consecutive bit-identical vertices from each ring (outer + each hole)
+/// before triangulation. earcutr 0.5.0 can spin forever on polygons that
+/// contain inner rings whose vertices repeat — see
+/// `tests::polygon_with_duplicate_consecutive_vertices_does_not_hang`.
 ///
-/// Returns `(deduped_flat_coords, deduped_hole_indices, original_index_map)`
-/// where `original_index_map[deduped_idx] = original_vertex_idx` lets callers
-/// translate earcut's deduped-vertex triangle indices back to the caller's
-/// per-vertex side data (positions, normals, ...). A ring is dropped entirely
-/// if dedup leaves it with fewer than 3 vertices.
+/// This is the minimum intervention needed to defuse the upstream hang:
+///
+/// - Only **consecutive** duplicates within a single ring are merged. Vertices
+///   that are shared *between* rings (e.g. neighbouring buildings touching at
+///   a wall) and vertices that repeat *non-consecutively* in a self-touching
+///   ring are both preserved.
+/// - Rings that end up with fewer than 3 vertices after the merge are kept
+///   anyway; earcutr's `add_contour` silently ignores rings below the
+///   triangulation minimum, so we do not need to drop them ourselves, and
+///   keeping them avoids changing the polygon's hole topology vs. an
+///   unpatched earcutr run.
+///
+/// Returns `(deduped_flat_coords, deduped_hole_indices, original_index_map)`.
+/// `original_index_map[deduped_idx] = original_vertex_idx` lets callers
+/// translate earcut's triangle indices (which point into the deduped
+/// `flat_coords`) back to the caller's per-vertex side data
+/// (positions, normals, ...), which is *not* deduped.
 #[allow(clippy::float_cmp)] // exact-equality dedup is intentional: we drop only bit-identical repeats
 fn dedupe_polygon_rings(
     flat_coords: &[f64],
@@ -104,41 +117,39 @@ fn dedupe_polygon_rings(
     let mut new_holes: Vec<usize> = Vec::with_capacity(hole_indices.len());
     let mut index_map: Vec<usize> = Vec::with_capacity(flat_coords.len() / 2);
 
+    let vertex_count = flat_coords.len() / 2;
+    assert!(
+        flat_coords.len() == vertex_count * 2 && vertex_count >= 3,
+        "flat_coords must contain at least 3 (x, y) pairs (got {} f64s)",
+        flat_coords.len()
+    );
+    assert!(
+        hole_indices.iter().all(|&h| h <= vertex_count),
+        "hole_indices must be in range of flat_coords vertices"
+    );
     for ring_idx in 0..ring_starts.len() - 1 {
         let start_vertex = ring_starts[ring_idx];
         let end_vertex = ring_starts[ring_idx + 1];
-        let mut deduped_vertices: Vec<usize> = Vec::new();
-        for orig_idx in start_vertex..end_vertex {
-            let x = flat_coords[orig_idx * 2];
-            let y = flat_coords[orig_idx * 2 + 1];
-            if let Some(&prev) = deduped_vertices.last() {
-                if flat_coords[prev * 2] == x && flat_coords[prev * 2 + 1] == y {
-                    continue;
-                }
-            }
-            deduped_vertices.push(orig_idx);
-        }
-        // Drop trailing vertex if it duplicates the ring's first (closing dup).
-        if deduped_vertices.len() >= 2 {
-            let first = deduped_vertices[0];
-            let last = *deduped_vertices.last().unwrap();
-            if flat_coords[first * 2] == flat_coords[last * 2]
-                && flat_coords[first * 2 + 1] == flat_coords[last * 2 + 1]
-            {
-                deduped_vertices.pop();
-            }
-        }
-        if deduped_vertices.len() < 3 {
-            // Degenerate ring — drop it. For the outer ring this means the
-            // whole polygon collapses; the caller checks `index_map.len() < 3`.
-            continue;
-        }
         if ring_idx > 0 {
             new_holes.push(new_flat.len() / 2);
         }
-        for orig_idx in deduped_vertices {
-            new_flat.push(flat_coords[orig_idx * 2]);
-            new_flat.push(flat_coords[orig_idx * 2 + 1]);
+        // Watermark in `new_flat` where this ring begins. We only dedupe
+        // against vertices written *into the current ring* — never against
+        // the tail of a previous ring.
+        let ring_start_in_new_flat = new_flat.len();
+        for orig_idx in start_vertex..end_vertex {
+            let x = flat_coords[orig_idx * 2];
+            let y = flat_coords[orig_idx * 2 + 1];
+            if new_flat.len() >= ring_start_in_new_flat + 2 {
+                if let Some(&[px, py]) = new_flat.last_chunk::<2>() {
+                    if px == x && py == y {
+                        continue;
+                    }
+                }
+            }
+
+            new_flat.push(x);
+            new_flat.push(y);
             index_map.push(orig_idx);
         }
     }
@@ -1067,25 +1078,16 @@ impl MeshCollector {
         }
 
         // earcutr 0.5.0 (the only published release) can spin forever on
-        // polygons that contain consecutive-duplicate vertices in inner rings —
+        // polygons whose inner rings repeat the same vertex consecutively —
         // see tests::polygon_with_duplicate_consecutive_vertices_does_not_hang.
-        // Strip those duplicates per ring before calling earcut, and drop any
-        // ring whose vertex count drops below 3 (degenerate / collapsed).
-        // `source_index_map[i]` maps the i-th deduped vertex back to its
-        // original index in `source_positions`/`local_positions`, which are
-        // not deduped. Needed because earcut's triangle indices reference the
-        // deduped `flat_coords`, not the original vertex arrays.
-        let pre_dedup_vertex_count = local_positions.len();
+        // Strip those consecutive bit-identical repeats per ring; that's the
+        // minimum intervention that breaks the upstream hang while preserving
+        // all between-ring shared vertices and any non-consecutive repeats
+        // (self-touching rings). `source_index_map[i]` maps the i-th deduped
+        // vertex back to its original index in
+        // `source_positions`/`local_positions`, which are not deduped.
         let (flat_coords, hole_indices, source_index_map) =
             dedupe_polygon_rings(&flat_coords, &hole_indices);
-        if source_index_map.len() < 3 {
-            warn!(
-                "Skipping {feature_type} feature {feature_id} surface: dedupe collapsed \
-                 {pre_dedup_vertex_count} vertices to {} (below triangulation minimum of 3)",
-                source_index_map.len()
-            );
-            return Ok(());
-        }
         let triangulated =
             earcut(&flat_coords, &hole_indices, 2).context("Failed to triangulate surface")?;
         if triangulated.len() < 3 {
@@ -3199,34 +3201,108 @@ mod tests {
     }
 
     #[test]
-    fn dedupe_polygon_rings_drops_consecutive_duplicates() {
+    fn dedupe_polygon_rings_strips_only_consecutive_duplicates() {
+        // Outer ring: A A B C C D, with a closing-dup-style trailing A. We
+        // collapse only consecutive duplicates *within* the ring; the trailing
+        // A is preserved because earcutr handles closing-duplicate vertices
+        // internally.
         let flat = vec![
-            0.0, 0.0, 0.0, 0.0, // duplicate
-            1.0, 0.0, 1.0, 1.0, 1.0, 1.0, // duplicate
-            0.0, 1.0, 0.0, 0.0, // closing dup → trimmed
+            0.0, 0.0, 0.0, 0.0, // A A (consecutive dup → second dropped)
+            1.0, 0.0, // B
+            1.0, 1.0, 1.0, 1.0, // C C
+            0.0, 1.0, // D
+            0.0, 0.0, // closing-dup of A (not consecutive with previous kept D → kept)
         ];
         let holes: Vec<usize> = vec![];
         let (new_flat, new_holes, map) = dedupe_polygon_rings(&flat, &holes);
         assert_eq!(new_holes, Vec::<usize>::new());
-        assert_eq!(new_flat.len() / 2, 4);
-        assert_eq!(map, vec![0, 2, 3, 5]);
+        assert_eq!(new_flat.len() / 2, 5);
+        // Map back: kept original indices in order.
+        assert_eq!(map, vec![0, 2, 3, 5, 6]);
     }
 
     #[test]
-    fn dedupe_polygon_rings_drops_collapsed_holes() {
-        // Outer = 4-vertex square; hole = 4 copies of the same point.
+    fn dedupe_polygon_rings_keeps_non_consecutive_repeats() {
+        // Self-touching ring: vertex B appears at index 1 and 3, separated by
+        // C. Both copies must survive — only consecutive bit-identical pairs
+        // are merged.
+        let flat = vec![
+            0.0, 0.0, // A
+            5.0, 5.0, // B
+            10.0, 0.0, // C
+            5.0, 5.0, // B again (non-consecutive)
+            10.0, 10.0, // D
+        ];
+        let holes: Vec<usize> = vec![];
+        let (new_flat, _, map) = dedupe_polygon_rings(&flat, &holes);
+        assert_eq!(new_flat.len() / 2, 5);
+        assert_eq!(map, vec![0, 1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn dedupe_polygon_rings_keeps_collapsed_inner_rings() {
+        // Outer = 4-vertex square; hole = 4 copies of the same point. We must
+        // *keep* the hole entry so the polygon's topology stays unchanged —
+        // earcutr's add_contour silently ignores a sub-3-vertex ring, so it
+        // does not contribute geometry and does not hang.
         let flat = vec![
             0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0, // outer
-            5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, // collapsed hole
+            5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, // collapsed hole (4× same)
         ];
         let holes = vec![4usize];
-        let (new_flat, new_holes, _) = dedupe_polygon_rings(&flat, &holes);
+        let (new_flat, new_holes, map) = dedupe_polygon_rings(&flat, &holes);
         assert_eq!(
             new_holes,
-            Vec::<usize>::new(),
-            "collapsed hole should be dropped"
+            vec![4],
+            "hole entry preserved at the dedup-aware offset"
         );
-        assert_eq!(new_flat.len() / 2, 4);
+        assert_eq!(new_flat.len() / 2, 5);
+        assert_eq!(map, vec![0, 1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn dedupe_polygon_rings_preserves_between_ring_overlap() {
+        // Two adjacent buildings share a wall: vertex (10,10) appears in both
+        // the outer ring and the hole ring. Sharing happens *between* rings,
+        // never within one. Both copies must survive.
+        let flat = vec![
+            0.0, 0.0, 20.0, 0.0, 20.0, 20.0, 0.0, 20.0, // outer
+            5.0, 5.0, 10.0, 5.0, 10.0, 10.0, 5.0,
+            10.0, // hole (shares (10,10) with no consecutive dup)
+        ];
+        let holes = vec![4usize];
+        let (new_flat, new_holes, map) = dedupe_polygon_rings(&flat, &holes);
+        assert_eq!(new_flat, flat, "no consecutive dups → no-op");
+        assert_eq!(new_holes, holes);
+        assert_eq!(map, (0..8).collect::<Vec<_>>());
+    }
+
+    #[test]
+    #[should_panic(expected = "hole_indices must be in range")]
+    fn dedupe_polygon_rings_rejects_out_of_range_hole_indices() {
+        let flat = vec![0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0]; // 4 verts
+        let holes = vec![10usize]; // bogus: only 4 vertices exist
+        let _ = dedupe_polygon_rings(&flat, &holes);
+    }
+
+    #[test]
+    #[should_panic(expected = "at least 3 (x, y) pairs")]
+    fn dedupe_polygon_rings_rejects_odd_length_flat_coords() {
+        let flat = vec![0.0, 0.0, 10.0, 0.0, 10.0]; // 2.5 vertices: malformed
+        let _ = dedupe_polygon_rings(&flat, &[]);
+    }
+
+    #[test]
+    #[should_panic(expected = "at least 3 (x, y) pairs")]
+    fn dedupe_polygon_rings_rejects_empty_flat_coords() {
+        let _ = dedupe_polygon_rings(&[], &[]);
+    }
+
+    #[test]
+    #[should_panic(expected = "at least 3 (x, y) pairs")]
+    fn dedupe_polygon_rings_rejects_too_few_vertices() {
+        let flat = vec![0.0, 0.0, 10.0, 0.0]; // 2 vertices — not a polygon
+        let _ = dedupe_polygon_rings(&flat, &[]);
     }
 
     /// Regression test: dedupe + earcut on the captured polygon must finish.
