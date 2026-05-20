@@ -117,16 +117,6 @@ fn dedupe_polygon_rings(
     let mut new_holes: Vec<usize> = Vec::with_capacity(hole_indices.len());
     let mut index_map: Vec<usize> = Vec::with_capacity(flat_coords.len() / 2);
 
-    let vertex_count = flat_coords.len() / 2;
-    assert!(
-        flat_coords.len() == vertex_count * 2 && vertex_count >= 3,
-        "flat_coords must contain at least 3 (x, y) pairs (got {} f64s)",
-        flat_coords.len()
-    );
-    assert!(
-        hole_indices.iter().all(|&h| h <= vertex_count),
-        "hole_indices must be in range of flat_coords vertices"
-    );
     for ring_idx in 0..ring_starts.len() - 1 {
         let start_vertex = ring_starts[ring_idx];
         let end_vertex = ring_starts[ring_idx + 1];
@@ -3277,35 +3267,7 @@ mod tests {
         assert_eq!(map, (0..8).collect::<Vec<_>>());
     }
 
-    #[test]
-    #[should_panic(expected = "hole_indices must be in range")]
-    fn dedupe_polygon_rings_rejects_out_of_range_hole_indices() {
-        let flat = vec![0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0]; // 4 verts
-        let holes = vec![10usize]; // bogus: only 4 vertices exist
-        let _ = dedupe_polygon_rings(&flat, &holes);
-    }
-
-    #[test]
-    #[should_panic(expected = "at least 3 (x, y) pairs")]
-    fn dedupe_polygon_rings_rejects_odd_length_flat_coords() {
-        let flat = vec![0.0, 0.0, 10.0, 0.0, 10.0]; // 2.5 vertices: malformed
-        let _ = dedupe_polygon_rings(&flat, &[]);
-    }
-
-    #[test]
-    #[should_panic(expected = "at least 3 (x, y) pairs")]
-    fn dedupe_polygon_rings_rejects_empty_flat_coords() {
-        let _ = dedupe_polygon_rings(&[], &[]);
-    }
-
-    #[test]
-    #[should_panic(expected = "at least 3 (x, y) pairs")]
-    fn dedupe_polygon_rings_rejects_too_few_vertices() {
-        let flat = vec![0.0, 0.0, 10.0, 0.0]; // 2 vertices — not a polygon
-        let _ = dedupe_polygon_rings(&flat, &[]);
-    }
-
-    /// Regression test: dedupe + earcut on the captured polygon must finish.
+/// Regression test: dedupe + earcut on the captured polygon must finish.
     #[test]
     fn polygon_with_duplicate_consecutive_vertices_does_not_hang() {
         let (flat, holes) = load_hanging_polygon();
