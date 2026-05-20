@@ -9,6 +9,12 @@ use log::debug;
 use crate::triangle_mesh::{build_triangle_mesh, TriangleMeshOptions};
 use crate::ObjExportOptions;
 
+/// Writes a `CityJSON` model as a Wavefront OBJ file.
+///
+/// # Errors
+///
+/// Returns an error when model geometry cannot be triangulated or clipped, or
+/// when the OBJ file cannot be created or written.
 pub fn write_city_model_obj<P: AsRef<Path>>(
     model: &CityModel,
     output_path: P,
