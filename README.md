@@ -470,8 +470,8 @@ Profiling Dependencies:
 - [x] Additional export formats:
     - [x] CityJSON
     - [x] CityJSONSeq
+    - [x] Wavefront OBJ
 - [ ] Additional export formats:
-    - [ ] Wavefront OBJ
     - [ ] GeoPackage
 
 ## Funding
