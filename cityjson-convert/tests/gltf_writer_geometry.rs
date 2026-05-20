@@ -59,11 +59,51 @@ fn read_obj_lines(path: &PathBuf) -> Vec<String> {
         .collect()
 }
 
+fn read_obj_vertices_and_faces(path: &PathBuf) -> (Vec<[f64; 3]>, Vec<[usize; 3]>) {
+    let mut vertices = Vec::new();
+    let mut faces = Vec::new();
+    for line in read_obj_lines(path) {
+        if let Some(rest) = line.strip_prefix("v ") {
+            let coordinates = rest
+                .split_whitespace()
+                .map(|value| value.parse::<f64>().expect("OBJ coordinate should parse"))
+                .collect::<Vec<_>>();
+            assert_eq!(coordinates.len(), 3);
+            vertices.push([coordinates[0], coordinates[1], coordinates[2]]);
+        } else if let Some(rest) = line.strip_prefix("f ") {
+            let indices = rest
+                .split_whitespace()
+                .map(|value| value.parse::<usize>().expect("OBJ face index should parse") - 1)
+                .collect::<Vec<_>>();
+            assert_eq!(indices.len(), 3);
+            faces.push([indices[0], indices[1], indices[2]]);
+        }
+    }
+    (vertices, faces)
+}
+
 fn inline_feature(id: &str, vertices: &str, boundaries: &str) -> Vec<u8> {
     format!(
         r#"{{"type":"CityJSONFeature","id":"{id}","transform":{{"scale":[1.0,1.0,1.0],"translate":[0.0,0.0,0.0]}},"CityObjects":{{"{id}":{{"type":"Building","geometry":[{{"type":"MultiSurface","lod":"1","boundaries":{boundaries}}}]}}}},"vertices":{vertices}}}"#
     )
     .into_bytes()
+}
+
+fn face_normal(vertices: &[[f64; 3]], face: [usize; 3]) -> [f64; 3] {
+    let p0 = vertices[face[0]];
+    let p1 = vertices[face[1]];
+    let p2 = vertices[face[2]];
+    let u = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
+    let v = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
+    [
+        u[1] * v[2] - u[2] * v[1],
+        u[2] * v[0] - u[0] * v[2],
+        u[0] * v[1] - u[1] * v[0],
+    ]
+}
+
+fn dot_f64(lhs: [f64; 3], rhs: [f64; 3]) -> f64 {
+    lhs[0] * rhs[0] + lhs[1] * rhs[1] + lhs[2] * rhs[2]
 }
 
 #[test]
@@ -132,6 +172,52 @@ fn convert_to_obj_triangulates_polygons_and_preserves_unclipped_geometry_by_defa
         2
     );
     assert!(lines.iter().any(|line| line == "v 2 2 0"));
+}
+
+#[test]
+fn convert_to_obj_preserves_winding_for_y_dominant_polygons() {
+    let input = inline_feature(
+        "y-normal-quad",
+        "[[0.0,0.0,0.0],[0.0,0.0,2.0],[2.0,0.0,2.0],[2.0,0.0,0.0]]",
+        "[[[0,1,2,3]]]",
+    );
+    let model = json::from_feature_slice(&input).expect("inline feature should parse");
+    let output_path = stable_output_path_with_suffix("convert_to_obj_y_winding", "obj");
+
+    convert_to_obj(&model, &output_path, &ObjExportOptions::default())
+        .expect("OBJ conversion should succeed");
+
+    let (vertices, faces) = read_obj_vertices_and_faces(&output_path);
+    assert_eq!(faces.len(), 2);
+    for face in faces {
+        assert!(
+            dot_f64(face_normal(&vertices, face), [0.0, 1.0, 0.0]) > 0.0,
+            "OBJ face {face:?} should preserve the source +Y winding"
+        );
+    }
+}
+
+#[test]
+fn convert_to_obj_preserves_reversed_winding_for_y_dominant_polygons() {
+    let input = inline_feature(
+        "negative-y-normal-quad",
+        "[[0.0,0.0,0.0],[2.0,0.0,0.0],[2.0,0.0,2.0],[0.0,0.0,2.0]]",
+        "[[[0,1,2,3]]]",
+    );
+    let model = json::from_feature_slice(&input).expect("inline feature should parse");
+    let output_path = stable_output_path_with_suffix("convert_to_obj_negative_y_winding", "obj");
+
+    convert_to_obj(&model, &output_path, &ObjExportOptions::default())
+        .expect("OBJ conversion should succeed");
+
+    let (vertices, faces) = read_obj_vertices_and_faces(&output_path);
+    assert_eq!(faces.len(), 2);
+    for face in faces {
+        assert!(
+            dot_f64(face_normal(&vertices, face), [0.0, -1.0, 0.0]) > 0.0,
+            "OBJ face {face:?} should preserve the source -Y winding"
+        );
+    }
 }
 
 #[test]

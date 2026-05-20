@@ -180,19 +180,17 @@ fn add_surface(
     }
 
     if surface.len() == 1 && exterior.len() == 3 {
-        push_triangle(
-            triangles,
-            [
-                source_positions[0],
-                source_positions[1],
-                source_positions[2],
-            ],
-            clip_volume,
-        )?;
+        let source_triangle = [
+            source_positions[0],
+            source_positions[1],
+            source_positions[2],
+        ];
+        push_triangle(triangles, source_triangle, clip_volume)?;
         return Ok(());
     }
 
-    let drop_axis = find_projection_axis(&source_positions[..exterior.len()]);
+    let (drop_axis, surface_normal) =
+        projection_axis_and_normal(&source_positions[..exterior.len()]);
     for pos in &source_positions {
         match drop_axis {
             0 => {
@@ -217,19 +215,22 @@ fn add_surface(
     if triangulated.len() < 3 {
         return Ok(());
     }
+    // earcutr normalizes the outer ring to positive 2D winding. Map that
+    // known 2D orientation back to the selected 3D projection once per surface.
+    let reverse_earcut_winding = should_reverse_earcut_winding(drop_axis, surface_normal);
     for tri in triangulated.chunks_exact(3) {
         let orig0 = source_index_map[tri[0]];
         let orig1 = source_index_map[tri[1]];
         let orig2 = source_index_map[tri[2]];
-        push_triangle(
-            triangles,
-            [
-                source_positions[orig0],
-                source_positions[orig1],
-                source_positions[orig2],
-            ],
-            clip_volume,
-        )?;
+        let mut source_triangle = [
+            source_positions[orig0],
+            source_positions[orig1],
+            source_positions[orig2],
+        ];
+        if reverse_earcut_winding {
+            source_triangle.swap(1, 2);
+        }
+        push_triangle(triangles, source_triangle, clip_volume)?;
     }
 
     Ok(())
@@ -278,6 +279,17 @@ fn dedupe_polygon_rings(
     }
 
     (new_flat, new_holes, index_map)
+}
+
+fn should_reverse_earcut_winding(drop_axis: usize, surface_normal: Option<[f64; 3]>) -> bool {
+    let Some(surface_normal) = surface_normal else {
+        return false;
+    };
+    let positive_projected_winding_axis = match drop_axis {
+        1 => -1.0,
+        _ => 1.0,
+    };
+    positive_projected_winding_axis * surface_normal[drop_axis] < 0.0
 }
 
 fn push_triangle(
@@ -557,9 +569,10 @@ fn canonical_epsg_crs(value: &str) -> Result<String> {
     Ok(format!("EPSG:{parsed}"))
 }
 
-fn find_projection_axis(positions: &[[f64; 3]]) -> usize {
-    if let Some(normal) = compute_polygon_normal(positions) {
-        return dominant_axis(normal);
+fn projection_axis_and_normal(positions: &[[f64; 3]]) -> (usize, Option<[f64; 3]>) {
+    let normal = compute_polygon_normal(positions);
+    if let Some(normal) = normal {
+        return (dominant_axis(normal), Some(normal));
     }
 
     let mut min = [f64::INFINITY; 3];
@@ -571,13 +584,14 @@ fn find_projection_axis(positions: &[[f64; 3]]) -> usize {
         }
     }
 
-    (0..3)
+    let drop_axis = (0..3)
         .min_by(|&lhs, &rhs| {
             (max[lhs] - min[lhs])
                 .partial_cmp(&(max[rhs] - min[rhs]))
                 .unwrap()
         })
-        .unwrap_or(2)
+        .unwrap_or(2);
+    (drop_axis, None)
 }
 
 fn compute_polygon_normal(positions: &[[f64; 3]]) -> Option<[f64; 3]> {
@@ -606,7 +620,7 @@ fn dominant_axis(normal: [f64; 3]) -> usize {
         .unwrap_or(2)
 }
 
-fn is_degenerate_source_triangle(points: [[f64; 3]; 3]) -> bool {
+fn triangle_normal(points: [[f64; 3]; 3]) -> [f64; 3] {
     let u = [
         points[1][0] - points[0][0],
         points[1][1] - points[0][1],
@@ -617,11 +631,15 @@ fn is_degenerate_source_triangle(points: [[f64; 3]; 3]) -> bool {
         points[2][1] - points[0][1],
         points[2][2] - points[0][2],
     ];
-    let cross = [
+    [
         u[1] * v[2] - u[2] * v[1],
         u[2] * v[0] - u[0] * v[2],
         u[0] * v[1] - u[1] * v[0],
-    ];
+    ]
+}
+
+fn is_degenerate_source_triangle(points: [[f64; 3]; 3]) -> bool {
+    let cross = triangle_normal(points);
     let area_sq = cross[0] * cross[0] + cross[1] * cross[1] + cross[2] * cross[2];
     area_sq <= 1.0e-18
 }
