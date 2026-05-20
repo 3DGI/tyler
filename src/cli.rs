@@ -256,6 +256,7 @@ const NO_EFFECT_INFO_RULES: &[NoEffectInfoRule] = &[
     NoEffectInfoRule {
         flag: "--grid-minz",
         n_a_formats: &[
+            crate::OutputFormatKind::Obj,
             crate::OutputFormatKind::Cityjson,
             crate::OutputFormatKind::Cityjsonseq,
         ],
@@ -264,10 +265,29 @@ const NO_EFFECT_INFO_RULES: &[NoEffectInfoRule] = &[
     NoEffectInfoRule {
         flag: "--grid-maxz",
         n_a_formats: &[
+            crate::OutputFormatKind::Obj,
             crate::OutputFormatKind::Cityjson,
             crate::OutputFormatKind::Cityjsonseq,
         ],
         is_present: cli_has_grid_maxz,
+    },
+    NoEffectInfoRule {
+        flag: "--3dtiles-implicit",
+        n_a_formats: &[
+            crate::OutputFormatKind::Obj,
+            crate::OutputFormatKind::Cityjson,
+            crate::OutputFormatKind::Cityjsonseq,
+        ],
+        is_present: cli_has_3dtiles_implicit,
+    },
+    NoEffectInfoRule {
+        flag: "--3dtiles-content-clip-to-tile-bounds",
+        n_a_formats: &[
+            crate::OutputFormatKind::Obj,
+            crate::OutputFormatKind::Cityjson,
+            crate::OutputFormatKind::Cityjsonseq,
+        ],
+        is_present: cli_has_3dtiles_content_clip_to_tile_bounds,
     },
 ];
 
@@ -327,6 +347,14 @@ fn cli_has_grid_maxz(cli: &Cli) -> bool {
     cli.grid_maxz.is_some()
 }
 
+fn cli_has_3dtiles_implicit(cli: &Cli) -> bool {
+    cli.cesium3dtiles_implicit
+}
+
+fn cli_has_3dtiles_content_clip_to_tile_bounds(cli: &Cli) -> bool {
+    cli.cesium3dtiles_content_clip_to_tile_bounds
+}
+
 fn unique_output_formats(formats: &[crate::OutputFormatKind]) -> Vec<crate::OutputFormatKind> {
     let mut unique_formats = Vec::new();
     for &format in formats {
@@ -341,6 +369,7 @@ fn unique_output_formats(formats: &[crate::OutputFormatKind]) -> Vec<crate::Outp
 fn output_format_name(format: crate::OutputFormatKind) -> &'static str {
     match format {
         crate::OutputFormatKind::Cesium3dTiles => "3dtiles",
+        crate::OutputFormatKind::Obj => "obj",
         crate::OutputFormatKind::Cityjson => "cityjson",
         crate::OutputFormatKind::Cityjsonseq => "cityjsonseq",
     }
@@ -535,6 +564,16 @@ mod tests {
     }
 
     #[test]
+    fn validation_accepts_obj_format() {
+        let mut args = dataset_args();
+        args.extend(["--format".to_string(), "obj".to_string()]);
+        let cli = Cli::try_parse_from(args).unwrap();
+
+        assert_eq!(cli.format, OutputFormatKind::Obj);
+        assert!(cli.validate_parameter_combinations(&[cli.format]).is_ok());
+    }
+
+    #[test]
     fn validation_accepts_multiple_formats_directly() {
         let cli = Cli::try_parse_from(dataset_args()).unwrap();
 
@@ -585,6 +624,22 @@ mod tests {
             .no_effect_info_messages(&[OutputFormatKind::Cesium3dTiles])
             .is_empty());
         assert!(cli.validate_parameter_combinations(&[cli.format]).is_ok());
+    }
+
+    #[test]
+    fn obj_reports_3dtiles_only_flags_as_no_effect() {
+        let mut cli = Cli::try_parse_from(dataset_args()).unwrap();
+        cli.cesium3dtiles_implicit = true;
+        cli.cesium3dtiles_content_clip_to_tile_bounds = true;
+
+        assert_eq!(
+            cli.no_effect_info_messages(&[OutputFormatKind::Obj]),
+            vec![
+                "--3dtiles-implicit has no effect for selected output formats: obj".to_string(),
+                "--3dtiles-content-clip-to-tile-bounds has no effect for selected output formats: obj"
+                    .to_string(),
+            ]
+        );
     }
 
     #[test]

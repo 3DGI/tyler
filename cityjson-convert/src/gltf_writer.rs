@@ -6,12 +6,12 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
+use crate::triangle_mesh::{build_triangle_mesh, TriangleMeshOptions};
 use crate::{ExportOptions, GeographicClipRegion, GeometryPlacement};
 use anyhow::{bail, Context, Result};
-use cityjson_lib::cityjson_types::v2_0::{AttributeValue, CityObject, GeometryType, VertexIndex};
+use cityjson_lib::cityjson_types::v2_0::{AttributeValue, CityObject};
 use cityjson_lib::ops::Transformer;
 use cityjson_lib::CityModel;
-use earcutr::earcut;
 use gltf::json;
 use log::debug;
 use meshopt::{
@@ -79,51 +79,6 @@ fn create_default_material(base_color: &str) -> Result<json::Material, anyhow::E
         alpha_cutoff: None,
         double_sided: true,
     })
-}
-
-/// Strip consecutive bit-identical vertices from each ring
-/// before triangulation. earcutr 0.5.0 can spin forever on polygons that
-/// contain inner rings whose vertices repeat
-#[allow(clippy::float_cmp)]
-fn dedupe_polygon_rings(
-    flat_coords: &[f64],
-    hole_indices: &[usize],
-) -> (Vec<f64>, Vec<usize>, Vec<usize>) {
-    let mut ring_offsets: Vec<usize> = std::iter::once(0)
-        .chain(hole_indices.iter().copied())
-        .collect();
-    ring_offsets.push(flat_coords.len() / 2);
-
-    let mut new_flat: Vec<f64> = Vec::with_capacity(flat_coords.len());
-    let mut new_holes: Vec<usize> = Vec::with_capacity(hole_indices.len());
-    let mut index_map: Vec<usize> = Vec::with_capacity(flat_coords.len() / 2);
-
-    for ring_idx in 0..ring_offsets.len() - 1 {
-        let start_vertex = ring_offsets[ring_idx];
-        let end_vertex = ring_offsets[ring_idx + 1];
-        if ring_idx > 0 {
-            new_holes.push(new_flat.len() / 2);
-        }
-
-        let ring_start_in_new_flat = new_flat.len();
-        for orig_idx in start_vertex..end_vertex {
-            let x = flat_coords[orig_idx * 2];
-            let y = flat_coords[orig_idx * 2 + 1];
-            if new_flat.len() >= ring_start_in_new_flat + 2 {
-                if let Some(&[px, py]) = new_flat.last_chunk::<2>() {
-                    if px == x && py == y {
-                        continue;
-                    }
-                }
-            }
-
-            new_flat.push(x);
-            new_flat.push(y);
-            index_map.push(orig_idx);
-        }
-    }
-
-    (new_flat, new_holes, index_map)
 }
 
 /// Writes a `CityJSON` model as a binary glTF file.
@@ -897,62 +852,35 @@ impl MeshCollector {
     }
 
     fn add_model(&mut self, model: &CityModel) -> Result<()> {
-        for (object_id, cityobject) in model.cityobjects().iter() {
-            let Some(geometry_handles) = cityobject.geometry() else {
+        let mesh = build_triangle_mesh(model, &TriangleMeshOptions::default())?;
+        for object in mesh.objects {
+            let Some(cityobject) = model.cityobjects().get(object.handle) else {
                 continue;
             };
-            let feature_type = cityobject.type_cityobject().to_string();
-            let mut feature_index = None;
-            for geometry_handle in geometry_handles {
-                let geometry = model.resolve_geometry(*geometry_handle)?;
-                let feature_index = *feature_index.get_or_insert_with(|| {
-                    let feature_index =
-                        u32::try_from(self.features.len()).expect("feature count within u32 range");
-                    self.features.push(FeatureRecord {
-                        object_id: object_id.to_string(),
-                        feature_type: feature_type.clone(),
-                        attributes: Self::collect_feature_attributes(model, cityobject),
-                    });
-                    feature_index
-                });
-                match geometry.geometry().type_geometry() {
-                    GeometryType::MultiSurface | GeometryType::CompositeSurface => {
-                        let Some(boundary) = geometry.geometry().boundaries() else {
-                            continue;
-                        };
-                        for surface in boundary.to_nested_multi_or_composite_surface()? {
-                            self.add_surface(&feature_type, feature_index, &surface, model)?;
-                        }
-                    }
-                    GeometryType::Solid => {
-                        let Some(boundary) = geometry.geometry().boundaries() else {
-                            continue;
-                        };
-                        for shell in boundary.to_nested_solid()? {
-                            for surface in shell {
-                                self.add_surface(&feature_type, feature_index, &surface, model)?;
-                            }
-                        }
-                    }
-                    GeometryType::MultiSolid | GeometryType::CompositeSolid => {
-                        let Some(boundary) = geometry.geometry().boundaries() else {
-                            continue;
-                        };
-                        for solid in boundary.to_nested_multi_or_composite_solid()? {
-                            for shell in solid {
-                                for surface in shell {
-                                    self.add_surface(
-                                        &feature_type,
-                                        feature_index,
-                                        &surface,
-                                        model,
-                                    )?;
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
-                }
+            let feature_index =
+                u32::try_from(self.features.len()).expect("feature count within u32 range");
+            self.features.push(FeatureRecord {
+                object_id: object.object_id,
+                feature_type: object.feature_type.clone(),
+                attributes: Self::collect_feature_attributes(model, cityobject),
+            });
+            let primitive = self
+                .primitives
+                .entry(object.feature_type.clone())
+                .or_default();
+            for triangle in object.triangles {
+                let local_positions = triangle
+                    .source_positions
+                    .map(|position| self.coordinate_transform.transform_position(position))
+                    .into_iter()
+                    .collect::<Result<Vec<_>>>()?;
+                primitive.add_triangle(
+                    feature_index,
+                    triangle.source_positions,
+                    [local_positions[0], local_positions[1], local_positions[2]],
+                    Self::compute_face_normal,
+                    self.smooth_normals,
+                );
             }
         }
 
@@ -961,124 +889,6 @@ impl MeshCollector {
 
     fn finish(self) -> Result<ProcessedScene> {
         ProcessedScene::from_collector(self)
-    }
-
-    fn add_surface(
-        &mut self,
-        feature_type: &str,
-        feature_id: u32,
-        surface: &[Vec<u32>],
-        model: &CityModel,
-    ) -> Result<()> {
-        if surface.is_empty() {
-            return Ok(());
-        }
-        let exterior = &surface[0];
-        if exterior.len() < 3 {
-            return Ok(());
-        }
-
-        let mut source_positions: Vec<[f64; 3]> = Vec::new();
-        let mut local_positions: Vec<[f32; 3]> = Vec::new();
-        let mut flat_coords: Vec<f64> = Vec::new();
-        let mut hole_indices: Vec<usize> = Vec::new();
-        let mut vertex_count = 0usize;
-
-        for (ring_idx, ring) in surface.iter().enumerate() {
-            if ring.len() < 3 {
-                continue;
-            }
-            if ring_idx > 0 {
-                hole_indices.push(vertex_count);
-            }
-
-            for &vertex_id in ring {
-                let vertex = model
-                    .get_vertex(VertexIndex::new(vertex_id))
-                    .ok_or_else(|| anyhow::anyhow!("missing vertex {vertex_id}"))?;
-                let source_position = vertex.to_array();
-                let local_position = self
-                    .coordinate_transform
-                    .transform_position(source_position)?;
-                source_positions.push(source_position);
-                local_positions.push(local_position);
-                vertex_count += 1;
-            }
-        }
-
-        if local_positions.len() < 3 {
-            return Ok(());
-        }
-
-        if surface.len() == 1 && exterior.len() == 3 {
-            let primitive = self.primitives.entry(feature_type.to_string()).or_default();
-            let source_triangle = [
-                source_positions[0],
-                source_positions[1],
-                source_positions[2],
-            ];
-            let local_triangle = [local_positions[0], local_positions[1], local_positions[2]];
-            primitive.add_triangle(
-                feature_id,
-                source_triangle,
-                local_triangle,
-                Self::compute_face_normal,
-                self.smooth_normals,
-            );
-            return Ok(());
-        }
-
-        let drop_axis = Self::find_projection_axis(&local_positions[..exterior.len()]);
-        for pos in &local_positions {
-            match drop_axis {
-                0 => {
-                    flat_coords.push(f64::from(pos[1]));
-                    flat_coords.push(f64::from(pos[2]));
-                }
-                1 => {
-                    flat_coords.push(f64::from(pos[0]));
-                    flat_coords.push(f64::from(pos[2]));
-                }
-                _ => {
-                    flat_coords.push(f64::from(pos[0]));
-                    flat_coords.push(f64::from(pos[1]));
-                }
-            }
-        }
-
-        let (flat_coords, hole_indices, source_index_map) =
-            dedupe_polygon_rings(&flat_coords, &hole_indices);
-        let triangulated =
-            earcut(&flat_coords, &hole_indices, 2).context("Failed to triangulate surface")?;
-        if triangulated.len() < 3 {
-            return Ok(());
-        }
-
-        let primitive = self.primitives.entry(feature_type.to_string()).or_default();
-        for tri in triangulated.chunks_exact(3) {
-            let orig0 = source_index_map[tri[0]];
-            let orig1 = source_index_map[tri[1]];
-            let orig2 = source_index_map[tri[2]];
-            let source_triangle = [
-                source_positions[orig0],
-                source_positions[orig1],
-                source_positions[orig2],
-            ];
-            let local_triangle = [
-                local_positions[orig0],
-                local_positions[orig1],
-                local_positions[orig2],
-            ];
-            primitive.add_triangle(
-                feature_id,
-                source_triangle,
-                local_triangle,
-                Self::compute_face_normal,
-                self.smooth_normals,
-            );
-        }
-
-        Ok(())
     }
 
     fn collect_feature_attributes(
@@ -1149,59 +959,6 @@ impl MeshCollector {
             AttributeValue::String(value) => Some(MetadataValue::String(value.clone())),
             _ => None,
         }
-    }
-
-    fn find_projection_axis(positions: &[[f32; 3]]) -> usize {
-        if let Some(normal) = Self::compute_polygon_normal(positions) {
-            return Self::dominant_axis(normal);
-        }
-
-        let mut min = [f32::INFINITY; 3];
-        let mut max = [f32::NEG_INFINITY; 3];
-        for pos in positions {
-            for (axis, coordinate) in pos.iter().enumerate() {
-                min[axis] = min[axis].min(*coordinate);
-                max[axis] = max[axis].max(*coordinate);
-            }
-        }
-
-        (0..3)
-            .min_by(|&lhs, &rhs| {
-                (max[lhs] - min[lhs])
-                    .partial_cmp(&(max[rhs] - min[rhs]))
-                    .unwrap()
-            })
-            .unwrap_or(2)
-    }
-
-    fn compute_polygon_normal(positions: &[[f32; 3]]) -> Option<[f32; 3]> {
-        if positions.len() < 3 {
-            return None;
-        }
-
-        let mut normal = [0.0_f32; 3];
-        for (current, next) in positions
-            .iter()
-            .zip(positions.iter().cycle().skip(1))
-            .take(positions.len())
-        {
-            normal[0] += (current[1] - next[1]) * (current[2] + next[2]);
-            normal[1] += (current[2] - next[2]) * (current[0] + next[0]);
-            normal[2] += (current[0] - next[0]) * (current[1] + next[1]);
-        }
-
-        let length = (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]).sqrt();
-        if length > f32::EPSILON {
-            Some([normal[0] / length, normal[1] / length, normal[2] / length])
-        } else {
-            None
-        }
-    }
-
-    fn dominant_axis(normal: [f32; 3]) -> usize {
-        (0..3)
-            .max_by(|&lhs, &rhs| normal[lhs].abs().partial_cmp(&normal[rhs].abs()).unwrap())
-            .unwrap_or(2)
     }
 
     fn compute_face_normal(p0: [f32; 3], p1: [f32; 3], p2: [f32; 3]) -> [f32; 3] {

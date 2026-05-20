@@ -150,11 +150,12 @@ give Tyler a dataset root that `cjindex` can resolve.
 Tyler writes 3D Tiles by default. Select another output format with `--format`:
 
 - `3dtiles`: writes a 3D Tiles tileset and `.glb` tile content.
+- `obj`: writes one geometry-only Wavefront OBJ file per non-empty tile.
 - `cityjson`: writes one merged `CityJSON` document per non-empty tile.
 - `cityjsonseq`: writes one `CityJSONSeq` stream per non-empty tile, with a
   `CityJSON` header and one `CityJSONFeature` item per selected source feature.
 
-The tiled `CityJSON` and `CityJSONSeq` outputs use the same grid, quadtree,
+The tiled `OBJ`, `CityJSON` and `CityJSONSeq` outputs use the same grid, quadtree,
 feature filtering, LoD selection, attribute filtering and parent-attribute
 inheritance path as the 3D Tiles output. They do not write `tileset.json`,
 `subtrees/`, or 3D Tiles metadata.
@@ -197,6 +198,24 @@ tyler \
 The output tiles are written under `t/<level>/<x>/<y>.city.json`.
 Each tile is a merged `CityJSON` document containing the selected features for
 that tile.
+
+### Exporting OBJ
+
+Use `--format obj` to write tiled Wavefront OBJ files.
+
+```shell
+tyler \
+    /data \
+    --output /obj-tiles \
+    --format obj \
+    --object-type Building \
+    --object-type BuildingPart
+```
+
+The output tiles are written under `t/<level>/<x>/<y>.obj`. Each tile contains
+geometry-only OBJ records grouped by CityObject ID. Coordinates stay in the
+source CityJSON coordinate space; Tyler does not apply the 3D Tiles ENU
+placement or tile-bound clipping to OBJ output.
 
 ### Exporting CityJSONSeq
 
@@ -249,6 +268,7 @@ cjio combined.city.json upgrade save combined/combined_upg.city.json
 The output is written to the directory set in `--output`.
 For 3D Tiles output, it will contain a `tileset.json` file and `t/` directory with the glTF files.
 In case of implicit tiling, also a `subtrees/` directory is written with the subtrees.
+For `--format obj`, it will contain a `t/` directory with `.obj` tile files.
 For `--format cityjson`, it will contain a `t/` directory with `.city.json` tile files.
 For `--format cityjsonseq`, it will contain a `t/` directory with `.city.jsonl` tile files.
 

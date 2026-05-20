@@ -2,7 +2,7 @@
 
 `cityjson-convert` converts CityJSON data to other formats.
 
-It supports GLB, CityJSON and CityJSONSeq output, both through the library API
+It supports GLB, OBJ, CityJSON and CityJSONSeq output, both through the library API
 and through the `cjconvert` CLI.
 
 By default, source builds use the `proj-system` feature, which enables
@@ -50,6 +50,20 @@ fn export(model: &CityModel) -> anyhow::Result<()> {
 }
 ```
 
+### OBJ
+
+```rust
+use cityjson_convert::{convert_to_obj, ObjExportOptions};
+use cityjson_lib::CityModel;
+
+fn export(model: &CityModel) -> anyhow::Result<()> {
+    convert_to_obj(model, "output/model.obj", &ObjExportOptions::default())
+}
+```
+
+OBJ output is geometry-only Wavefront OBJ grouped by CityObject ID. Coordinates
+are written in the source CityJSON coordinate space.
+
 ### CityJSONSeq
 
 ```rust
@@ -87,6 +101,12 @@ Convert a CityJSON file to a CityJSON file:
 
 ```shell
 cjconvert input.city.json --output output/model.city.json --format cityjson
+```
+
+Convert a CityJSON file to an OBJ file:
+
+```shell
+cjconvert input.city.json --output output/model.obj --format obj
 ```
 
 Convert a CityJSONSeq or CityJSONFeature stream to CityJSONSeq:

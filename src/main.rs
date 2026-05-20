@@ -85,6 +85,7 @@ pub enum OutputFormatKind {
     #[value(name = "3dtiles")]
     #[default]
     Cesium3dTiles,
+    Obj,
     Cityjson,
     Cityjsonseq,
 }
@@ -1334,6 +1335,7 @@ struct TileFilesPreparedOutput {
 
 enum PreparedOutput {
     Cesium3dTiles(Box<Cesium3dTilesPreparedOutput>),
+    Obj(TileFilesPreparedOutput),
     Cityjson(TileFilesPreparedOutput),
     Cityjsonseq(TileFilesPreparedOutput),
 }
@@ -1342,16 +1344,18 @@ impl PreparedOutput {
     fn source_crs(&self) -> &str {
         match self {
             PreparedOutput::Cesium3dTiles(prepared) => &prepared.source_crs,
-            PreparedOutput::Cityjson(prepared) | PreparedOutput::Cityjsonseq(prepared) => {
-                &prepared.source_crs
-            }
+            PreparedOutput::Obj(prepared)
+            | PreparedOutput::Cityjson(prepared)
+            | PreparedOutput::Cityjsonseq(prepared) => &prepared.source_crs,
         }
     }
 
     fn root_enu_frame(&self) -> Option<&RootEnuFrame> {
         match self {
             PreparedOutput::Cesium3dTiles(prepared) => Some(&prepared.root_enu_frame),
-            PreparedOutput::Cityjson(_) | PreparedOutput::Cityjsonseq(_) => None,
+            PreparedOutput::Obj(_)
+            | PreparedOutput::Cityjson(_)
+            | PreparedOutput::Cityjsonseq(_) => None,
         }
     }
 }
@@ -1628,6 +1632,70 @@ impl OutputFormatBackend for Cesium3dTilesBackend {
 
 struct CityjsonBackend;
 
+struct ObjBackend;
+
+impl OutputFormatBackend for ObjBackend {
+    fn prepare(
+        &self,
+        _cli: &crate::cli::Cli,
+        world: &parser::World,
+        quadtree: &spatial_structs::QuadTree,
+        _grid_cellsize: u32,
+        _geometric_error_factor: f64,
+        _debug_data_output_path: &Path,
+    ) -> Result<PreparedOutput, Box<dyn std::error::Error>> {
+        Ok(PreparedOutput::Obj(TileFilesPreparedOutput {
+            export_jobs: quadtree_leaf_tile_export_jobs(world, quadtree),
+            source_crs: format!("EPSG:{}", world.crs.to_epsg()?),
+        }))
+    }
+
+    fn jobs(&self, prepared: &PreparedOutput) -> Vec<TileExportJob> {
+        let PreparedOutput::Obj(prepared) = prepared else {
+            return Vec::new();
+        };
+        prepared.export_jobs.clone()
+    }
+
+    fn write_tile(
+        &self,
+        job: &TileExportJob,
+        model: &cityjson_lib::CityModel,
+        context: &TileWriteContext<'_>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let output_file = context
+            .output_tiles_dir
+            .join(job.content_tile_coord.to_string())
+            .with_extension("obj");
+        cityjson_convert::convert_to_obj(
+            model,
+            &output_file,
+            &cityjson_convert::ObjExportOptions::default(),
+        )?;
+        Ok(())
+    }
+
+    fn finalize(
+        &self,
+        _cli: &crate::cli::Cli,
+        _quadtree: &spatial_structs::QuadTree,
+        _successful_jobs: &[TileExportJob],
+        failed_jobs: &[TileExportJob],
+        _prepared: &mut PreparedOutput,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        info!("Skipped {} failed OBJ tile outputs", failed_jobs.len());
+        Ok(())
+    }
+
+    fn write_manifest_only(
+        &self,
+        _cli: &crate::cli::Cli,
+        _prepared: &mut PreparedOutput,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        Ok(())
+    }
+}
+
 impl OutputFormatBackend for CityjsonBackend {
     fn prepare(
         &self,
@@ -1771,6 +1839,7 @@ impl OutputFormatBackend for CityjsonseqBackend {
 fn output_format_backend(kind: OutputFormatKind) -> Box<dyn OutputFormatBackend> {
     match kind {
         OutputFormatKind::Cesium3dTiles => Box::new(Cesium3dTilesBackend),
+        OutputFormatKind::Obj => Box::new(ObjBackend),
         OutputFormatKind::Cityjson => Box::new(CityjsonBackend),
         OutputFormatKind::Cityjsonseq => Box::new(CityjsonseqBackend),
     }

@@ -4,8 +4,9 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use cityjson_convert::{
-    convert_to_cityjson, convert_to_cityjsonseq, convert_to_glb, CityJsonSeqExportOptions,
-    ExportOptions, GeographicClipRegion, GeometryPlacement, JsonExportOptions,
+    convert_to_cityjson, convert_to_cityjsonseq, convert_to_glb, convert_to_obj,
+    CityJsonSeqExportOptions, ExportOptions, GeographicClipRegion, GeometryPlacement,
+    JsonExportOptions, ObjExportOptions,
 };
 use cityjson_lib::json;
 use serde_json::Value;
@@ -48,6 +49,123 @@ fn read_json_lines(path: &PathBuf) -> Vec<Value> {
         .filter(|line| !line.trim().is_empty())
         .map(|line| serde_json::from_str(line).expect("json line should parse"))
         .collect()
+}
+
+fn read_obj_lines(path: &PathBuf) -> Vec<String> {
+    fs::read_to_string(path)
+        .expect("read OBJ output")
+        .lines()
+        .map(str::to_string)
+        .collect()
+}
+
+fn inline_feature(id: &str, vertices: &str, boundaries: &str) -> Vec<u8> {
+    format!(
+        r#"{{"type":"CityJSONFeature","id":"{id}","transform":{{"scale":[1.0,1.0,1.0],"translate":[0.0,0.0,0.0]}},"CityObjects":{{"{id}":{{"type":"Building","geometry":[{{"type":"MultiSurface","lod":"1","boundaries":{boundaries}}}]}}}},"vertices":{vertices}}}"#
+    )
+    .into_bytes()
+}
+
+#[test]
+fn convert_to_obj_writes_single_triangle_in_source_coordinates() {
+    let input = inline_feature(
+        "source triangle",
+        "[[1000.5,2000.25,3.0],[1001.5,2000.25,3.0],[1000.5,2001.25,4.0]]",
+        "[[[0,1,2]]]",
+    );
+    let model = json::from_feature_slice(&input).expect("inline feature should parse");
+    let output_path = stable_output_path_with_suffix("convert_to_obj_single_triangle", "obj");
+
+    convert_to_obj(&model, &output_path, &ObjExportOptions::default())
+        .expect("OBJ conversion should succeed");
+
+    let lines = read_obj_lines(&output_path);
+    assert_eq!(lines[0], "o source_triangle");
+    assert_eq!(lines[1], "v 1000.5 2000.25 3");
+    assert_eq!(lines[2], "v 1001.5 2000.25 3");
+    assert_eq!(lines[3], "v 1000.5 2001.25 4");
+    assert_eq!(lines[4], "f 1 2 3");
+}
+
+#[test]
+fn convert_to_obj_groups_cityobjects_and_uses_global_indices() {
+    let model =
+        json::merge_feature_stream_slice(include_bytes!("data/multi_feature_types.city.jsonl"))
+            .expect("fixture should merge");
+    let output_path = stable_output_path_with_suffix("convert_to_obj_multi_object", "obj");
+
+    convert_to_obj(&model, &output_path, &ObjExportOptions::default())
+        .expect("OBJ conversion should succeed");
+
+    let lines = read_obj_lines(&output_path);
+    let object_lines = lines
+        .iter()
+        .filter(|line| line.starts_with("o "))
+        .collect::<Vec<_>>();
+    assert!(object_lines
+        .iter()
+        .any(|line| *line == "o building-feature"));
+    assert!(object_lines.iter().any(|line| *line == "o water-feature"));
+    assert!(lines.iter().any(|line| line == "f 1 2 3"));
+    assert!(lines
+        .iter()
+        .filter_map(|line| line.strip_prefix("f "))
+        .any(|face| face != "1 2 3"));
+}
+
+#[test]
+fn convert_to_obj_triangulates_polygons_and_preserves_unclipped_geometry_by_default() {
+    let input = inline_feature(
+        "quad",
+        "[[0.0,0.0,0.0],[2.0,0.0,0.0],[2.0,2.0,0.0],[0.0,2.0,0.0]]",
+        "[[[0,1,2,3]]]",
+    );
+    let model = json::from_feature_slice(&input).expect("inline feature should parse");
+    let output_path = stable_output_path_with_suffix("convert_to_obj_quad", "obj");
+
+    convert_to_obj(&model, &output_path, &ObjExportOptions::default())
+        .expect("OBJ conversion should succeed");
+
+    let lines = read_obj_lines(&output_path);
+    assert_eq!(
+        lines.iter().filter(|line| line.starts_with("f ")).count(),
+        2
+    );
+    assert!(lines.iter().any(|line| line == "v 2 2 0"));
+}
+
+#[test]
+fn convert_to_obj_can_clip_to_bbox() {
+    let input = inline_feature(
+        "clip",
+        "[[-1.0,0.0,0.0],[2.0,0.0,0.0],[0.0,2.0,0.0]]",
+        "[[[0,1,2]]]",
+    );
+    let model = json::from_feature_slice(&input).expect("inline feature should parse");
+    let output_path = stable_output_path_with_suffix("convert_to_obj_clipped", "obj");
+    let options = ObjExportOptions {
+        clip_bbox: Some([0.0, 0.0, -1.0, 1.0, 1.0, 1.0]),
+    };
+
+    convert_to_obj(&model, &output_path, &options).expect("OBJ conversion should succeed");
+
+    let lines = read_obj_lines(&output_path);
+    let vertices = lines
+        .iter()
+        .filter_map(|line| line.strip_prefix("v "))
+        .map(|line| {
+            line.split_whitespace()
+                .map(|value| value.parse::<f64>().unwrap())
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    assert!(!vertices.is_empty());
+    assert!(vertices.iter().all(|vertex| {
+        vertex[0] >= -1.0e-9
+            && vertex[0] <= 1.0 + 1.0e-9
+            && vertex[1] >= -1.0e-9
+            && vertex[1] <= 1.0 + 1.0e-9
+    }));
 }
 
 #[test]
@@ -100,9 +218,10 @@ fn convert_to_cityjsonseq_writes_header_and_features() {
 }
 
 #[test]
-fn cjconvert_can_write_cityjson_and_cityjsonseq() {
+fn cjconvert_can_write_cityjson_cityjsonseq_and_obj() {
     let cityjson_output = stable_output_path_with_suffix("cjconvert_cityjson", "city.json");
     let cityjsonseq_output = stable_output_path_with_suffix("cjconvert_cityjsonseq", "city.jsonl");
+    let obj_output = stable_output_path_with_suffix("cjconvert_obj", "obj");
     let cityjson_input = stable_output_path_with_suffix("cjconvert_input", "city.json");
     let model =
         json::merge_feature_stream_slice(include_bytes!("data/multi_feature_types.city.jsonl"))
@@ -139,6 +258,20 @@ fn cjconvert_can_write_cityjson_and_cityjsonseq() {
     let items = read_json_lines(&cityjsonseq_output);
     assert_eq!(items[0]["type"], "CityJSON");
     assert_eq!(items[1]["type"], "CityJSONFeature");
+
+    let obj_status = Command::new(env!("CARGO_BIN_EXE_cjconvert"))
+        .arg(&cityjson_input)
+        .arg("--output")
+        .arg(&obj_output)
+        .arg("--format")
+        .arg("obj")
+        .status()
+        .expect("run cjconvert obj");
+    assert!(obj_status.success());
+    let obj_lines = read_obj_lines(&obj_output);
+    assert!(obj_lines.iter().any(|line| line.starts_with("o ")));
+    assert!(obj_lines.iter().any(|line| line.starts_with("v ")));
+    assert!(obj_lines.iter().any(|line| line.starts_with("f ")));
 }
 
 #[allow(clippy::cast_possible_truncation)]

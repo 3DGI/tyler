@@ -11,6 +11,9 @@
 )]
 
 pub mod gltf_writer;
+pub mod obj_writer;
+#[path = "triangle-mesh.rs"]
+mod triangle_mesh;
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -92,6 +95,11 @@ impl Default for ExportOptions {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct ObjExportOptions {
+    pub clip_bbox: Option<[f64; 6]>,
+}
+
 /// Converts a `CityJSON` model to a GLB file.
 ///
 /// # Errors
@@ -108,6 +116,24 @@ pub fn convert_to_glb<P: AsRef<Path>>(
         fs::create_dir_all(parent)?;
     }
     gltf_writer::write_city_model_glb(model, output, options)
+}
+
+/// Converts a `CityJSON` model to a Wavefront OBJ file.
+///
+/// # Errors
+///
+/// Returns an error when the output directory cannot be created or OBJ writing
+/// fails.
+pub fn convert_to_obj<P: AsRef<Path>>(
+    model: &CityModel,
+    output: P,
+    options: &ObjExportOptions,
+) -> Result<()> {
+    let output = output.as_ref();
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    obj_writer::write_city_model_obj(model, output, options)
 }
 
 /// Converts a `CityJSON` model to a `CityJSON` file.

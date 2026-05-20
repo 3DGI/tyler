@@ -4,8 +4,9 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Context};
 use cityjson_convert::{
-    convert_to_cityjson, convert_to_cityjsonseq, convert_to_glb, CityJsonSeqExportOptions,
-    ExportOptions, GeometryPlacement, JsonExportOptions,
+    convert_to_cityjson, convert_to_cityjsonseq, convert_to_glb, convert_to_obj,
+    CityJsonSeqExportOptions, ExportOptions, GeometryPlacement, JsonExportOptions,
+    ObjExportOptions,
 };
 use cityjson_lib::json;
 use clap::{Parser, ValueEnum};
@@ -16,6 +17,7 @@ use log::info;
 enum OutputFormat {
     #[default]
     Glb,
+    Obj,
     Cityjson,
     Cityjsonseq,
 }
@@ -70,6 +72,12 @@ fn main() -> anyhow::Result<()> {
             info!("Converting to GLB");
             convert_to_glb(&model, &cli.output, &options)?;
             info!("GLB written to {}", cli.output.display());
+        }
+        OutputFormat::Obj => {
+            let model = json::from_file(&cli.input)?;
+            info!("Converting to OBJ");
+            convert_to_obj(&model, &cli.output, &ObjExportOptions::default())?;
+            info!("OBJ written to {}", cli.output.display());
         }
         OutputFormat::Cityjson => {
             let model = json::from_file(&cli.input)?;
