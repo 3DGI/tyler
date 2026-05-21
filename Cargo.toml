@@ -50,6 +50,19 @@ proj-bundled = [
     "cityjson-convert/proj-bundled",
 ]
 
+[features]
+default = ["proj-system"]
+proj-system = [
+    "cityjson-lib/proj",
+    "cityjson-lib/proj-network",
+    "cityjson-convert/proj-system",
+]
+proj-bundled = [
+    "cityjson-lib/proj",
+    "cityjson-lib/proj-bundled",
+    "cityjson-convert/proj-bundled",
+]
+
 [workspace]
 members = [".", "cityjson-convert"]
 resolver = "2"
