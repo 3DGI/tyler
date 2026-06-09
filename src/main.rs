@@ -64,6 +64,13 @@ mod parser;
 mod proj;
 mod spatial_structs;
 
+// mimalloc returns freed memory to the OS and scales across threads without the
+// per-arena retention/fragmentation that makes glibc malloc ratchet RSS up under
+// tyler's heavily parallel tile conversion. (glibc MALLOC_ARENA_MAX=2 halves peak
+// but serializes allocation ~6x slower; mimalloc gets the memory win at full speed.)
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::fs::File;
