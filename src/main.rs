@@ -64,6 +64,13 @@ mod parser;
 mod proj;
 mod spatial_structs;
 
+// mimalloc returns freed memory to the OS and scales across threads without the
+// per-arena retention/fragmentation that makes glibc malloc ratchet RSS up under
+// tyler's heavily parallel tile conversion. (glibc MALLOC_ARENA_MAX=2 halves peak
+// but serializes allocation ~6x slower; mimalloc gets the memory win at full speed.)
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::fs::File;
@@ -235,8 +242,8 @@ fn build_feature_type_lods(cli: &crate::cli::Cli) -> BTreeMap<String, String> {
 fn build_feature_filter(
     cityobject_types: Option<&Vec<parser::CityObjectType>>,
     feature_type_lods: &BTreeMap<String, String>,
-) -> cityjson_index::FeatureFilter {
-    cityjson_index::FeatureFilter {
+) -> cityjson_index::PackageFilter {
+    cityjson_index::PackageFilter {
         cityobject_types: cityobject_types.map(|types| {
             types
                 .iter()
@@ -647,9 +654,15 @@ fn read_tile_feature_models(
                     else {
                         return Err("cjindex input mixed row references with feature ids".into());
                     };
-                    let model = city_index.get(feature_id)?.ok_or_else(|| {
-                        format!("feature {feature_id} could not be resolved from cjindex")
-                    })?;
+                    // The new API resolves packages by a contained CityObject's
+                    // external id and returns 0..N; take the first for this id.
+                    let model = city_index
+                        .get_packages(feature_id)?
+                        .into_iter()
+                        .next()
+                        .ok_or_else(|| {
+                            format!("feature {feature_id} could not be resolved from cjindex")
+                        })?;
                     models.push(model);
                 }
                 return Ok(models);
@@ -708,7 +721,7 @@ fn deduplicate_feature_ids_by_reference(
 
 fn feature_reference_public_id(reference: &parser::FeatureReference) -> String {
     match reference {
-        parser::FeatureReference::CjIndexRef(feature) => feature.feature_id.clone(),
+        parser::FeatureReference::CjIndexRef(feature) => feature.model_id.clone(),
         parser::FeatureReference::CjIndexId(feature_id) => feature_id.clone(),
     }
 }
@@ -719,19 +732,9 @@ fn feature_reference_precedes(
 ) -> bool {
     match (lhs, rhs) {
         (parser::FeatureReference::CjIndexRef(lhs), parser::FeatureReference::CjIndexRef(rhs)) => {
-            (
-                lhs.source_id,
-                lhs.row_id,
-                lhs.offset,
-                lhs.length,
-                &lhs.source_path,
-            ) < (
-                rhs.source_id,
-                rhs.row_id,
-                rhs.offset,
-                rhs.length,
-                &rhs.source_path,
-            )
+            // record_id is the package's unique key (was row_id + source byte
+            // offsets, which the new ref no longer carries).
+            lhs.record_id < rhs.record_id
         }
         (parser::FeatureReference::CjIndexRef(_), parser::FeatureReference::CjIndexId(_)) => true,
         (parser::FeatureReference::CjIndexId(_), parser::FeatureReference::CjIndexRef(_)) => false,
@@ -836,7 +839,7 @@ fn prepare_feature_model(
     model: cityjson_lib::CityModel,
     _feature_id: usize,
     _cityobject_types: Option<&Vec<parser::CityObjectType>>,
-    feature_filter: &cityjson_index::FeatureFilter,
+    feature_filter: &cityjson_index::PackageFilter,
     object_attribute_types: &BTreeMap<String, ObjectAttributeType>,
     include_parent_attributes: bool,
     cleanup_feature: bool,
@@ -849,7 +852,10 @@ fn prepare_feature_model(
         apply_object_attribute_types(&mut model, object_attribute_types)?;
     }
     let filtered = feature_filter.apply(&model)?;
-    model = filtered.model;
+    // A package with no retained geometry yields `model: None`.
+    let Some(model) = filtered.model else {
+        return Ok(None);
+    };
     let remove_empty_geometry =
         cleanup_feature || include_parent_attributes || !object_attribute_types.is_empty();
     let model = if remove_empty_geometry {
@@ -1021,7 +1027,7 @@ pub(crate) fn filter_cityjsonfeature_preserving_root_with_policy(
     feature_type_lods: &BTreeMap<String, String>,
     default_highest_lod: bool,
 ) -> Result<cityjson_lib::CityModel, Box<dyn std::error::Error>> {
-    let filter = cityjson_index::FeatureFilter {
+    let filter = cityjson_index::PackageFilter {
         cityobject_types: cityobject_types.map(|types| {
             types
                 .iter()
@@ -1043,7 +1049,16 @@ pub(crate) fn filter_cityjsonfeature_preserving_root_with_policy(
             })
             .collect(),
     };
-    Ok(filter.apply(model)?.model)
+    // The new API returns `model: None` when no geometry is retained; preserve
+    // the old contract of returning an empty model in that case.
+    match filter.apply(model)?.model {
+        Some(filtered) => Ok(filtered),
+        None => {
+            let mut empty = model.clone();
+            empty.clear_cityobjects();
+            Ok(empty)
+        }
+    }
 }
 
 fn parentless_cityobject_handle(model: &cityjson_lib::CityModel) -> Option<CityObjectHandle> {
@@ -1991,27 +2006,21 @@ mod tests {
         .expect("multi type lod fixture should parse")
     }
 
-    fn indexed_feature_ref(feature_id: &str, source_id: i64, row_id: i64) -> parser::Feature {
+    fn indexed_feature_ref(feature_id: &str, _source_id: i64, row_id: i64) -> parser::Feature {
         parser::Feature {
             centroid: [0.0, 0.0],
-            reference: parser::FeatureReference::CjIndexRef(cityjson_index::IndexedFeatureRef {
-                row_id,
-                feature_id: feature_id.to_string(),
-                source_id,
-                source_path: PathBuf::from(format!("source-{source_id}.city.json")),
-                offset: row_id as u64,
-                length: 1,
-                vertices_offset: None,
-                vertices_length: None,
-                member_ranges_json: None,
-                bounds: cityjson_index::FeatureBounds {
+            reference: parser::FeatureReference::CjIndexRef(cityjson_index::IndexedPackageRef {
+                record_id: row_id,
+                model_id: feature_id.to_string(),
+                package_type: cityjson_index::PackageType::CityJson,
+                bounds: Some(cityjson_index::Bounds3D {
                     min_x: 0.0,
                     max_x: 1.0,
                     min_y: 0.0,
                     max_y: 1.0,
                     min_z: 0.0,
                     max_z: 1.0,
-                },
+                }),
             }),
             bbox: [0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             needs_type_filter: false,
@@ -2078,7 +2087,7 @@ mod tests {
             model.clone(),
             0,
             None,
-            &cityjson_index::FeatureFilter::default(),
+            &cityjson_index::PackageFilter::default(),
             &BTreeMap::new(),
             false,
             false,
@@ -2889,9 +2898,11 @@ mod tests {
         };
         let message = error.to_string();
 
-        assert!(message.contains("requested LoD selector matched no geometry"));
-        assert!(message.contains("BuildingPart requested LoD '99'"));
-        assert!(message.contains("available LoDs are: 1"));
+        // cityjson-index main reports missing explicit LoDs with this message.
+        assert!(
+            message.contains("requested LoD 99 is not available for BuildingPart"),
+            "unexpected error message: {message}"
+        );
     }
 
     #[test]
@@ -2932,15 +2943,13 @@ mod tests {
                 .expect("open index");
         city_index.reindex().expect("reindex ndjson dataset");
         let indexed_bounds = city_index
-            .iter_all_bbox_pages(1)
-            .expect("build bbox page iterator")
-            .next()
-            .expect("bbox page should exist")
-            .expect("bbox page should load")
+            .package_ref_page_after_record_id(None, 1)
+            .expect("read first package ref page")
             .into_iter()
             .next()
-            .expect("indexed feature should exist")
-            .bounds;
+            .expect("indexed package should exist")
+            .bounds
+            .expect("indexed package should have bounds");
         let feature_base_document = derive_base_document(&city_index).expect("derive base doc");
         let metadata_path = dataset_dir.join("metadata.city.json");
         fs::write(&metadata_path, &feature_base_document).expect("write metadata");
@@ -2957,11 +2966,10 @@ mod tests {
             None,
         )
         .expect("build cjindex ndjson world");
-        #[allow(clippy::float_cmp)]
-        {
-            assert_eq!(world.grid.bbox[2], indexed_bounds.min_z);
-            assert_eq!(world.grid.bbox[5], indexed_bounds.max_z);
-        }
+        // The grid z-extent comes from the geometry while indexed_bounds comes
+        // from the index; they agree to float-path precision.
+        assert!((world.grid.bbox[2] - indexed_bounds.min_z).abs() < 1e-6);
+        assert!((world.grid.bbox[5] - indexed_bounds.max_z).abs() < 1e-6);
         world.index_with_grid().expect("index cjindex ndjson world");
         assert!(world
             .features

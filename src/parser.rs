@@ -41,7 +41,7 @@ thread_local! {
 #[derive(Serialize, Deserialize)]
 pub struct World {
     pub cityobject_types: Option<Vec<CityObjectType>>,
-    pub feature_filter: cityjson_index::FeatureFilter,
+    pub feature_filter: cityjson_index::PackageFilter,
     pub crs: Crs,
     pub features: FeatureSet,
     pub feature_base_document: Vec<u8>,
@@ -70,16 +70,16 @@ struct ExtentStats {
     nr_features: usize,
     nr_features_ignored: usize,
     cityobject_types_ignored: Vec<CityObjectType>,
-    filter_summary: cityjson_index::FeatureFilterSummary,
+    filter_summary: cityjson_index::PackageFilterReport,
 }
 
 impl ExtentStats {
     fn add_selected_geometry_stats(
         &mut self,
         stats: SelectedGeometryStats,
-        diagnostics: &cityjson_index::FeatureFilterDiagnostics,
+        report: &cityjson_index::PackageFilterReport,
     ) {
-        self.filter_summary.add(diagnostics);
+        self.filter_summary.merge(report);
         if let Some(model_bbox) = stats.bbox {
             if let Some(current) = self.extent.as_mut() {
                 merge_bbox(current, &model_bbox);
@@ -104,7 +104,7 @@ impl ExtentStats {
         self.nr_features += other.nr_features;
         self.nr_features_ignored += other.nr_features_ignored;
         self.extend_ignored_types(other.cityobject_types_ignored);
-        merge_filter_summary(&mut self.filter_summary, other.filter_summary);
+        self.filter_summary.merge(&other.filter_summary);
     }
 
     fn extend_ignored_types(&mut self, ignored_types: Vec<CityObjectType>) {
@@ -113,29 +113,6 @@ impl ExtentStats {
                 self.cityobject_types_ignored.push(cotype);
             }
         }
-    }
-}
-
-fn merge_filter_summary(
-    target: &mut cityjson_index::FeatureFilterSummary,
-    source: cityjson_index::FeatureFilterSummary,
-) {
-    target.available_types.extend(source.available_types);
-    target.retained_types.extend(source.retained_types);
-    target.ignored_types.extend(source.ignored_types);
-    merge_lod_summary(&mut target.available_lods, source.available_lods);
-    merge_lod_summary(&mut target.retained_lods, source.retained_lods);
-    target.missing_lods.extend(source.missing_lods);
-    target.retained_feature_count += source.retained_feature_count;
-    target.ignored_feature_count += source.ignored_feature_count;
-}
-
-fn merge_lod_summary(
-    target: &mut BTreeMap<String, std::collections::BTreeSet<String>>,
-    source: BTreeMap<String, std::collections::BTreeSet<String>>,
-) {
-    for (cityobject_type, lods) in source {
-        target.entry(cityobject_type).or_default().extend(lods);
     }
 }
 
@@ -200,7 +177,7 @@ impl World {
         feature_base_document: Vec<u8>,
         cellsize: u32,
         cityobject_types: Option<Vec<CityObjectType>>,
-        feature_filter: cityjson_index::FeatureFilter,
+        feature_filter: cityjson_index::PackageFilter,
         arg_minz: Option<i32>,
         arg_maxz: Option<i32>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
@@ -291,31 +268,35 @@ impl World {
     fn extent_from_cjindex_features(
         input_source: &InputSource,
         cityobject_types: Option<&Vec<CityObjectType>>,
-        feature_filter: &cityjson_index::FeatureFilter,
+        feature_filter: &cityjson_index::PackageFilter,
     ) -> Result<
         (
             Option<Bbox>,
             usize,
             usize,
             Vec<CityObjectType>,
-            cityjson_index::FeatureFilterSummary,
+            cityjson_index::PackageFilterReport,
         ),
         Box<dyn std::error::Error>,
     > {
         let city_index = input_source.open_index()?;
         let (chunk_tx, chunk_rx) =
-            std::sync::mpsc::sync_channel::<Vec<cityjson_index::IndexedFeatureRef>>(64);
+            std::sync::mpsc::sync_channel::<Vec<cityjson_index::IndexedPackageRef>>(64);
 
         // Same 2-stage pipeline as `index_with_grid`: a dedicated page-loader
         // thread streams owned chunks to `chunk_tx` so workers can start
         // processing before all pages have been read.
         let total = std::thread::scope(|s| -> Result<ExtentStats, std::io::Error> {
             let page_loader = s.spawn(move || -> Result<(), std::io::Error> {
-                let pages_iter = city_index
-                    .iter_all_feature_ref_pages(CJINDEX_PAGE_SIZE)
-                    .map_err(|e| std::io::Error::other(e.to_string()))?;
-                for page_result in pages_iter {
-                    let page = page_result.map_err(|e| std::io::Error::other(e.to_string()))?;
+                let mut after: Option<i64> = None;
+                loop {
+                    let page = city_index
+                        .package_ref_page_after_record_id(after, CJINDEX_PAGE_SIZE)
+                        .map_err(|e| std::io::Error::other(e.to_string()))?;
+                    if page.is_empty() {
+                        break;
+                    }
+                    after = page.last().map(|package_ref| package_ref.record_id);
                     for chunk in page.chunks(CJINDEX_PARALLEL_CHUNK_SIZE) {
                         if chunk_tx.send(chunk.to_vec()).is_err() {
                             return Ok(());
@@ -362,29 +343,44 @@ impl World {
             usize,
             usize,
             Vec<CityObjectType>,
-            cityjson_index::FeatureFilterSummary,
+            cityjson_index::PackageFilterReport,
         ),
         Box<dyn std::error::Error>,
     > {
-        let Some(summary) = city_index.feature_bounds_summary()? else {
-            return Ok((
-                None,
-                0,
-                0,
-                Vec::new(),
-                cityjson_index::FeatureFilterSummary::default(),
-            ));
-        };
+        // The new cityjson-index has no aggregate-bounds query, so fold the whole
+        // dataset's package refs (keyset pagination by record_id) into an extent +
+        // count. Refs carry their bbox, so no geometry is read.
+        let mut extent: Option<Bbox> = None;
+        let mut nr_features = 0usize;
+        let mut after: Option<i64> = None;
+        loop {
+            let page = city_index.package_ref_page_after_record_id(after, CJINDEX_PAGE_SIZE)?;
+            if page.is_empty() {
+                break;
+            }
+            after = page.last().map(|package_ref| package_ref.record_id);
+            for package_ref in &page {
+                nr_features += 1;
+                if let Some(bounds) = &package_ref.bounds {
+                    let bbox = Self::cjindex_bounds_to_world_bbox(bounds);
+                    if let Some(current) = extent.as_mut() {
+                        merge_bbox(current, &bbox);
+                    } else {
+                        extent = Some(bbox);
+                    }
+                }
+            }
+        }
         Ok((
-            Some(Self::cjindex_bounds_to_world_bbox(&summary.bounds)),
-            summary.feature_count,
+            extent,
+            nr_features,
             0,
             Vec::new(),
-            cityjson_index::FeatureFilterSummary::default(),
+            cityjson_index::PackageFilterReport::default(),
         ))
     }
 
-    fn cjindex_bounds_to_world_bbox(bounds: &cityjson_index::FeatureBounds) -> Bbox {
+    fn cjindex_bounds_to_world_bbox(bounds: &cityjson_index::Bounds3D) -> Bbox {
         [
             bounds.min_x,
             bounds.min_y,
@@ -397,9 +393,9 @@ impl World {
 
     fn extent_from_cjindex_feature_refs_chunk(
         input_source: &InputSource,
-        feature_refs: &[cityjson_index::IndexedFeatureRef],
+        feature_refs: &[cityjson_index::IndexedPackageRef],
         _cityobject_types: Option<&Vec<CityObjectType>>,
-        feature_filter: &cityjson_index::FeatureFilter,
+        feature_filter: &cityjson_index::PackageFilter,
     ) -> Result<ExtentStats, std::io::Error> {
         let filtered_features = Self::read_filtered_cjindex_features_thread_local(
             input_source,
@@ -409,17 +405,20 @@ impl World {
         .map_err(|error| std::io::Error::other(error.to_string()))?;
         let mut chunk = ExtentStats::default();
         for filtered in filtered_features {
-            chunk.add_selected_geometry_stats(
-                selected_geometry_stats(&filtered.model, None),
-                &filtered.diagnostics,
-            );
+            // A package with no retained geometry yields `model: None`; treat it
+            // as ignored (default stats have no bbox).
+            let stats = match &filtered.model {
+                Some(model) => selected_geometry_stats(model, None),
+                None => SelectedGeometryStats::default(),
+            };
+            chunk.add_selected_geometry_stats(stats, &filtered.report);
         }
         Ok(chunk)
     }
 
     pub(crate) fn read_cjindex_features_thread_local(
         input_source: &InputSource,
-        features: &[cityjson_index::IndexedFeatureRef],
+        features: &[cityjson_index::IndexedPackageRef],
     ) -> cityjson_lib::Result<Vec<cityjson_lib::CityModel>> {
         let index_path = &input_source.index_path;
 
@@ -445,15 +444,17 @@ impl World {
                     "cjindex thread-local index cache was not initialized",
                 )));
             };
-            city_index.read_features(features)
+            city_index
+                .read_packages(features)
+                .map(|packages| packages.into_iter().map(|package| package.model).collect())
         })
     }
 
     fn read_filtered_cjindex_features_thread_local(
         input_source: &InputSource,
-        features: &[cityjson_index::IndexedFeatureRef],
-        filter: &cityjson_index::FeatureFilter,
-    ) -> cityjson_lib::Result<Vec<cityjson_index::FilteredFeature>> {
+        features: &[cityjson_index::IndexedPackageRef],
+        filter: &cityjson_index::PackageFilter,
+    ) -> cityjson_lib::Result<Vec<cityjson_index::PackageFilterResult>> {
         let index_path = &input_source.index_path;
 
         CJINDEX_THREAD_LOCAL.with(|cell| {
@@ -478,7 +479,7 @@ impl World {
                     "cjindex thread-local index cache was not initialized",
                 )));
             };
-            city_index.read_filtered_features(features, filter)
+            city_index.read_filtered_packages(features, filter)
         })
     }
 
@@ -496,11 +497,11 @@ impl World {
         let grid: &mut crate::spatial_structs::SquareGrid = &mut self.grid;
         let input_source: &InputSource = &self.input_source;
         let cityobject_types: Option<&Vec<CityObjectType>> = self.cityobject_types.as_ref();
-        let feature_filter: &cityjson_index::FeatureFilter = &self.feature_filter;
+        let feature_filter: &cityjson_index::PackageFilter = &self.feature_filter;
         let grid_layout = grid.layout();
 
         let (chunk_tx, chunk_rx) =
-            std::sync::mpsc::sync_channel::<Vec<cityjson_index::IndexedFeatureRef>>(64);
+            std::sync::mpsc::sync_channel::<Vec<cityjson_index::IndexedPackageRef>>(64);
         let (result_tx, result_rx) = std::sync::mpsc::sync_channel::<
             Result<Vec<Option<FeatureInGridCells>>, std::io::Error>,
         >(64);
@@ -519,13 +520,17 @@ impl World {
         //     mutations to `features` and `grid`.
         let loader_outcome = std::thread::scope(|s| -> Result<(usize, usize), std::io::Error> {
             let page_loader = s.spawn(move || -> Result<(usize, usize), std::io::Error> {
-                let pages_iter = city_index
-                    .iter_all_feature_ref_pages(CJINDEX_PAGE_SIZE)
-                    .map_err(|e| std::io::Error::other(e.to_string()))?;
                 let mut page_count = 0usize;
                 let mut scanned_features = 0usize;
-                for page_result in pages_iter {
-                    let page = page_result.map_err(|e| std::io::Error::other(e.to_string()))?;
+                let mut after: Option<i64> = None;
+                loop {
+                    let page = city_index
+                        .package_ref_page_after_record_id(after, CJINDEX_PAGE_SIZE)
+                        .map_err(|e| std::io::Error::other(e.to_string()))?;
+                    if page.is_empty() {
+                        break;
+                    }
+                    after = page.last().map(|package_ref| package_ref.record_id);
                     page_count += 1;
                     scanned_features += page.len();
                     for chunk in page.chunks(CJINDEX_PARALLEL_CHUNK_SIZE) {
@@ -591,8 +596,8 @@ impl World {
         input_source: &InputSource,
         grid_layout: &GridLayout,
         cityobject_types: Option<&Vec<CityObjectType>>,
-        feature_filter: &cityjson_index::FeatureFilter,
-        feature_refs: &[cityjson_index::IndexedFeatureRef],
+        feature_filter: &cityjson_index::PackageFilter,
+        feature_refs: &[cityjson_index::IndexedPackageRef],
     ) -> Result<Vec<Option<FeatureInGridCells>>, std::io::Error> {
         let filtered_features = Self::read_filtered_cjindex_features_thread_local(
             input_source,
@@ -604,13 +609,16 @@ impl World {
             .iter()
             .cloned()
             .zip(filtered_features.iter())
-            .map(|(feature_ref, filtered)| {
-                Self::index_feature_model(
+            .map(|(feature_ref, filtered)| match &filtered.model {
+                // A package with no retained geometry yields `model: None`; it
+                // simply isn't indexed into any grid cell.
+                Some(model) => Self::index_feature_model(
                     grid_layout,
                     cityobject_types,
                     FeatureReference::CjIndexRef(feature_ref),
-                    &filtered.model,
-                )
+                    model,
+                ),
+                None => Ok(None),
             })
             .collect::<Result<Vec<_>, _>>()
     }
@@ -791,7 +799,7 @@ fn default_feature_needs_type_filter() -> bool {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum FeatureReference {
-    CjIndexRef(cityjson_index::IndexedFeatureRef),
+    CjIndexRef(cityjson_index::IndexedPackageRef),
     CjIndexId(String),
 }
 

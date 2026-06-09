@@ -19,6 +19,7 @@ name = "tyler"
 path = "src/main.rs"
 
 [dependencies]
+mimalloc = "0.1"
 cityjson-lib = { version = "0.9.0", features = ["json"] }
 cityjson-index = { version = "0.9.0" }
 cityjson-convert = { version = "0.1.0" }
