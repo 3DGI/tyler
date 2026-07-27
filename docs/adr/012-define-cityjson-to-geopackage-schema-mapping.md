@@ -2,7 +2,8 @@
 
 ## Status
 
-Proposed
+Superseded by
+[ADR 014](014-use-schema-driven-attribute-projection-and-serialization.md).
 
 ## Context
 
