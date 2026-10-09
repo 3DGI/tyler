@@ -1096,6 +1096,7 @@ pub mod cesium3dtiles {
             qtree: &QuadTree,
         ) {
             self.root.prune_failed_content(failed_tile_ids, qtree);
+            self.geometric_error = self.root.geometric_error;
         }
 
         /// Splits a tileset into several tilesets at the given level, to create
@@ -1386,6 +1387,10 @@ pub mod cesium3dtiles {
                 } else {
                     self.geometric_error.max(maximum_child_error)
                 };
+            } else if self.content.is_none() {
+                // A root with no successful descendants cannot be removed from
+                // the tileset, so represent the empty result as a zero-error leaf.
+                self.geometric_error = 0.0;
             }
 
             let qtree_nodeid: QuadTreeNodeId = (&self.id).into();

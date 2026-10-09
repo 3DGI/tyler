@@ -4382,6 +4382,26 @@ mod tests {
             (actual_error - expected_traversal_error).abs() <= f64::EPSILON,
             "failed root should use the spatial term and maximum retained child error"
         );
+
+        let all_failed_tile_ids = failed_source_tile_ids(&content_plan.jobs);
+        let mut empty_tileset = formats::cesium3dtiles::Tileset::from_quadtree(
+            &quadtree,
+            &world,
+            200,
+            false,
+            true,
+            Some(&content_plan.content_tile_ids),
+            &root_enu_frame,
+        )
+        .expect("generate tileset for all-failed export");
+        empty_tileset.prune_failed_content(&all_failed_tile_ids, &quadtree);
+
+        let empty_tileset_json =
+            serde_json::to_value(empty_tileset).expect("serialize all-failed tileset");
+        assert!(empty_tileset_json["root"]["content"].is_null());
+        assert!(empty_tileset_json["root"]["children"].is_null());
+        assert_eq!(empty_tileset_json["root"]["geometricError"], 0.0);
+        assert_eq!(empty_tileset_json["geometricError"], 0.0);
     }
 
     #[test]
