@@ -702,7 +702,7 @@ fn object_attributes_filter_and_type_glb_metadata_schema() {
 }
 
 #[test]
-fn object_type_building_single_tile_tileset_keeps_positive_root_geometric_error() {
+fn object_type_building_single_tile_tileset_preserves_zero_root_geometric_error() {
     let metadata = read_fixture("resources/data/3dbag_x00.city.json");
     let feature = serde_json::json!({
         "type": "CityJSONFeature",
@@ -756,10 +756,10 @@ fn object_type_building_single_tile_tileset_keeps_positive_root_geometric_error(
         .as_f64()
         .expect("tileset geometricError should be numeric");
     assert!(
-        tileset_geometric_error > 0.0,
-        "tileset geometricError should stay positive for a single-tile tileset"
+        tileset_geometric_error.abs() <= f64::EPSILON,
+        "single-tile tileset geometricError should match its leaf root"
     );
-    assert!(tileset_geometric_error > f64::EPSILON);
+    assert!((tileset_geometric_error - root_geometric_error).abs() <= f64::EPSILON);
 
     let unpruned_tileset = read_json(&output_dir.join("tileset_unpruned.json"));
     let unpruned_root = &unpruned_tileset["root"];
@@ -775,8 +775,10 @@ fn object_type_building_single_tile_tileset_keeps_positive_root_geometric_error(
         .as_f64()
         .expect("unpruned tileset geometricError should be numeric");
     assert!(
-        unpruned_tileset_geometric_error > 0.0,
-        "unpruned tileset geometricError should stay positive"
+        unpruned_tileset_geometric_error.abs() <= f64::EPSILON,
+        "unpruned single-tile tileset geometricError should match its leaf root"
     );
-    assert!(unpruned_tileset_geometric_error > f64::EPSILON);
+    assert!(
+        (unpruned_tileset_geometric_error - unpruned_root_geometric_error).abs() <= f64::EPSILON
+    );
 }

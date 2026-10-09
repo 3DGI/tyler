@@ -73,7 +73,7 @@ use std::time::Instant;
 
 use crate::cityjson_edit::apply_cityobject_colors;
 use crate::coordinates::RootEnuFrame;
-use crate::formats::cesium3dtiles::{Tile, TileId};
+use crate::formats::cesium3dtiles::TileId;
 use cityjson_lib::cityjson_types::prelude::CityObjectHandle;
 use cityjson_lib::cityjson_types::v2_0::appearance::RGB;
 use cityjson_lib::ops::Transformer;
@@ -81,6 +81,8 @@ use clap::{Parser, ValueEnum};
 use log::{debug, info, log_enabled, warn, Level};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+
+const MAX_CONCURRENT_TILE_EXPORTS: usize = 4;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
 #[clap(rename_all = "lower")]
@@ -1912,10 +1914,10 @@ impl OutputFormatBackend for Cesium3dTilesBackend {
         let PreparedOutput::Cesium3dTiles(prepared) = prepared else {
             return Err("3D Tiles backend received incompatible prepared output".into());
         };
-        info!("Pruning tileset of {} failed tiles", summary.failed.len());
+        info!("Removing content for {} failed tiles", summary.failed.len());
         for (i, failed) in summary.failed.iter().enumerate() {
             debug!(
-                "{}, removing failed from the tileset: {}",
+                "{}, removing failed tile content: {}",
                 i, failed.content_tile_coord
             );
         }
@@ -1929,8 +1931,10 @@ impl OutputFormatBackend for Cesium3dTilesBackend {
             info!("Writing subtrees for implicit tiling");
             write_subtrees(&prepared.subtrees_path, &subtrees)?;
         } else {
-            let failed_tiles = failed_source_tiles(&prepared.tileset, &summary.failed);
-            prepared.tileset.prune(&failed_tiles, quadtree);
+            let failed_tile_ids = failed_source_tile_ids(&summary.failed);
+            prepared
+                .tileset
+                .prune_failed_content(&failed_tile_ids, quadtree);
             write_external_tilesets_if_needed(cli, &mut prepared.tileset)?;
         }
         info!("Writing 3D Tiles tileset");
@@ -2393,19 +2397,10 @@ fn write_subtrees(
     Ok(())
 }
 
-fn failed_source_tiles(
-    tileset: &formats::cesium3dtiles::Tileset,
-    failed_jobs: &[TileExportJob],
-) -> Vec<Tile> {
-    let failed_source_ids = failed_jobs
+fn failed_source_tile_ids(failed_jobs: &[TileExportJob]) -> HashSet<TileId> {
+    failed_jobs
         .iter()
         .filter_map(|failed| failed.source_node_id.as_ref().map(TileId::from))
-        .collect::<HashSet<_>>();
-    tileset
-        .collect_leaves()
-        .into_iter()
-        .filter(|tile| failed_source_ids.contains(&tile.id))
-        .cloned()
         .collect()
 }
 
@@ -2738,7 +2733,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             tile_outcomes = bincode::deserialize_from(tiles_results_file)?
         } else {
             info!("Converting and optimizing {tiles_len} tiles");
-            tile_outcomes_iter.collect_into_vec(&mut tile_outcomes);
+            let export_threads = std::thread::available_parallelism()
+                .map_or(1, std::num::NonZeroUsize::get)
+                .min(MAX_CONCURRENT_TILE_EXPORTS);
+            let export_pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(export_threads)
+                .build()?;
+            export_pool.install(|| tile_outcomes_iter.collect_into_vec(&mut tile_outcomes));
             if should_dump_debug_data(&cli) {
                 debug!(
                     "Exporting the tiles_results instance to bincode to {:?}",
@@ -4329,9 +4330,8 @@ mod tests {
     }
 
     #[test]
-    fn failed_job_pruning_input_uses_explicit_source_tiles() {
+    fn failed_job_pruning_input_uses_explicit_source_tile_ids() {
         let (world, quadtree) = indexed_resource_world("failed-pruning-input");
-        let tileset = resource_tileset(&world, &quadtree);
         let jobs =
             explicit_tile_export_jobs(&world, &quadtree, 0.1, 5.0).expect("plan leaf content");
         let failed_job = jobs
@@ -4349,10 +4349,10 @@ mod tests {
             .clone();
         let expected_tile_id = TileId::from(failed_job.source_node_id.as_ref().unwrap());
 
-        let failed_tiles = failed_source_tiles(&tileset, &[failed_job]);
+        let failed_tile_ids = failed_source_tile_ids(&[failed_job]);
 
-        assert_eq!(failed_tiles.len(), 1);
-        assert_eq!(failed_tiles[0].id, expected_tile_id);
+        assert_eq!(failed_tile_ids.len(), 1);
+        assert!(failed_tile_ids.contains(&expected_tile_id));
     }
 
     #[test]

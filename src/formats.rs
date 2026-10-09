@@ -56,17 +56,6 @@ pub mod cesium3dtiles {
     }
 
     impl Tileset {
-        fn normalize_tileset_geometric_error(
-            root: &Tile,
-            geometric_error: GeometricError,
-        ) -> GeometricError {
-            if root.children.is_none() {
-                geometric_error.max(f64::EPSILON)
-            } else {
-                geometric_error
-            }
-        }
-
         /// Write the tileset to a `tileset.json` file
         pub fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<(), Box<dyn std::error::Error>> {
             let file_out = File::create(path.as_ref())?;
@@ -175,11 +164,6 @@ pub mod cesium3dtiles {
         ) -> Self {
             let crs_from = format!("EPSG:{}", world.crs.to_epsg().unwrap());
             let transformer = cityjson_lib::ops::transformer(&crs_from, "EPSG:4979").unwrap();
-            let root_bbox = quadtree.bbox(&world.grid);
-            let root_geometric_error = ((root_bbox[3] - root_bbox[0])
-                .max(root_bbox[4] - root_bbox[1]))
-                * geometric_error_factor;
-
             let root = Self::generate_tiles(
                 quadtree,
                 world,
@@ -214,8 +198,7 @@ pub mod cesium3dtiles {
             // Apply root transform to root tile
             let mut root_with_transform = root;
             root_with_transform.transform = Some(root_transform);
-            let geometric_error =
-                Self::normalize_tileset_geometric_error(&root_with_transform, root_geometric_error);
+            let geometric_error = root_with_transform.geometric_error;
 
             Self {
                 asset: Default::default(),
@@ -271,7 +254,6 @@ pub mod cesium3dtiles {
                 let bounding_volume =
                     BoundingVolume::region_from_bbox(&tile_bbox, transformer).unwrap();
 
-                let geometric_error = tile_width * geometric_error_factor;
                 let has_content = content_tile_ids.is_some_and(|ids| ids.contains(&tile_id));
                 let content = if has_content {
                     tile_content_bbox.as_ref().map(|content_bbox| {
@@ -300,6 +282,12 @@ pub mod cesium3dtiles {
                         content_tile_ids,
                     ));
                 }
+                let maximum_child_error = tile_children
+                    .iter()
+                    .map(|child| child.geometric_error)
+                    .fold(0.0, f64::max);
+                let geometric_error =
+                    (tile_width * geometric_error_factor).max(maximum_child_error);
                 Tile {
                     id: tile_id,
                     bounding_volume,
@@ -1089,10 +1077,14 @@ pub mod cesium3dtiles {
             grid_for_level_corner_coords
         }
 
-        /// Prune the tileset by removing the tiles in `tiles_to_remove`.
-        /// In addition, it also removes that with `nr_items == 0`.
-        pub fn prune(&mut self, tiles_to_remove: &Vec<Tile>, qtree: &QuadTree) {
-            self.root.prune(tiles_to_remove, qtree);
+        /// Remove failed content and prune tiles that have neither content nor
+        /// successful descendants. Empty spatial nodes are removed as well.
+        pub fn prune_failed_content(
+            &mut self,
+            failed_tile_ids: &HashSet<TileId>,
+            qtree: &QuadTree,
+        ) {
+            self.root.prune_failed_content(failed_tile_ids, qtree);
         }
 
         /// Splits a tileset into several tilesets at the given level, to create
@@ -1112,10 +1104,10 @@ pub mod cesium3dtiles {
                 if tile.id.level == level {
                     let filename =
                         format!("tileset-{}-{}-{}.json", tile.id.level, tile.id.x, tile.id.y);
-                    // Create the new tileset
+                    // Keep the tile's content, bounds, and error on the child root
+                    // before replacing the parent's content URI with the link.
                     let root = tile.clone();
-                    let geometric_error =
-                        Self::normalize_tileset_geometric_error(&root, root.geometric_error);
+                    let geometric_error = root.geometric_error;
                     child_tilesets.push((
                         filename.clone(),
                         Tileset {
@@ -1352,25 +1344,31 @@ pub mod cesium3dtiles {
             })
         }
 
-        fn prune(&mut self, tiles_to_remove: &Vec<Tile>, qtree: &QuadTree) {
-            if let Some(mut children) = self.children.take() {
-                let mut children_new: Vec<Tile> = Vec::with_capacity(4);
-                for child in children.iter_mut() {
-                    if !tiles_to_remove.contains(&*child) {
-                        let tileid: &TileId = &child.id;
-                        let qtree_nodeid: QuadTreeNodeId = tileid.into();
-                        if let Some(qtree_node) = qtree.node(&qtree_nodeid) {
-                            if qtree_node.nr_items > 0 {
-                                child.prune(tiles_to_remove, qtree);
-                                children_new.push(child.clone());
-                            }
-                        } else {
-                            error!("Did not find matching QuadTree node for TileId {}", tileid);
-                        }
+        fn prune_failed_content(
+            &mut self,
+            failed_tile_ids: &HashSet<TileId>,
+            qtree: &QuadTree,
+        ) -> bool {
+            if failed_tile_ids.contains(&self.id) {
+                self.content = None;
+            }
+
+            if let Some(children) = self.children.take() {
+                let mut retained_children = Vec::with_capacity(children.len());
+                for mut child in children {
+                    if child.prune_failed_content(failed_tile_ids, qtree) {
+                        retained_children.push(child);
                     }
                 }
-                self.children = Some(children_new);
+                self.children = (!retained_children.is_empty()).then_some(retained_children);
             }
+
+            let qtree_nodeid: QuadTreeNodeId = (&self.id).into();
+            let Some(qtree_node) = qtree.node(&qtree_nodeid) else {
+                error!("Did not find matching QuadTree node for TileId {}", self.id);
+                return self.content.is_some() || self.children.is_some();
+            };
+            qtree_node.nr_items > 0 && (self.content.is_some() || self.children.is_some())
         }
     }
 
@@ -1973,7 +1971,7 @@ pub mod cesium3dtiles {
                 );
             } else {
                 assert!(tileset.root.geometric_error.abs() <= f64::EPSILON);
-                assert!(tileset.geometric_error > f64::EPSILON);
+                assert!(tileset.geometric_error.abs() <= f64::EPSILON);
             }
             let root_transform = tileset
                 .root
