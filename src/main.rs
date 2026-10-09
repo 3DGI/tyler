@@ -4249,6 +4249,31 @@ mod tests {
                 max_error_meters: 8.0
             }
         );
+        let root_level = root_coord.level;
+        let mut has_deeper_internal_content = false;
+        for job in &at_threshold.jobs {
+            let node_id = spatial_structs::QuadTreeNodeId::from(
+                job.source_node_id.as_ref().expect("explicit source node"),
+            );
+            let node = quadtree.node(&node_id).expect("planned node in quadtree");
+            if node.children.is_empty() {
+                assert_eq!(job.representation, TileRepresentationPolicy::FullDetail);
+                continue;
+            }
+
+            let TileRepresentationPolicy::Simplified { max_error_meters } = job.representation
+            else {
+                panic!("internal content should use the simplification policy");
+            };
+            let expected_error =
+                8.0 / 2_f64.powi(i32::from(job.content_tile_coord.level - root_level));
+            assert!((max_error_meters - expected_error).abs() < f64::EPSILON);
+            has_deeper_internal_content |= job.content_tile_coord.level > root_level;
+        }
+        assert!(
+            has_deeper_internal_content,
+            "fixture should include internal content below the first planned level"
+        );
         assert_eq!(
             root_job.feature_ids,
             deduplicate_tile_feature_ids(&world, &collect_tile_feature_ids(&world, &quadtree)),
