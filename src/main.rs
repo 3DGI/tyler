@@ -78,7 +78,7 @@ use cityjson_lib::cityjson_types::prelude::CityObjectHandle;
 use cityjson_lib::cityjson_types::v2_0::appearance::RGB;
 use cityjson_lib::ops::Transformer;
 use clap::{Parser, ValueEnum};
-use log::{debug, info, log_enabled, warn, Level};
+use log::{debug, error, info, log_enabled, warn, Level};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -2673,7 +2673,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ) {
                 Ok(model) => model,
                 Err(error) => {
-                    warn!(
+                    error!(
                         "Failed to build CityJSON model for tile {}: {}",
                         job.content_tile_coord, error
                     );
@@ -2690,7 +2690,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ) {
                     Ok(bytes) => bytes,
                     Err(error) => {
-                        warn!(
+                        error!(
                             "Failed to build debug CityJSONFeature stream for tile {}: {}",
                             job.content_tile_coord, error
                         );
@@ -2702,7 +2702,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     file_name.as_str(),
                     &cityjsonseq_bytes,
                 ) {
-                    warn!(
+                    error!(
                         "Failed to write debug CityJSONFeature stream for tile {}: {}",
                         job.content_tile_coord, error
                     );
@@ -2716,7 +2716,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 model.vertices().len()
             );
             if let Err(error) = backend.write_tile(job, &model, &tile_write_context) {
-                warn!(
+                error!(
                     "Tile {} conversion failed: {}",
                     job.content_tile_coord, error
                 );
