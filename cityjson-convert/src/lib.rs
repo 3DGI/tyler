@@ -68,6 +68,20 @@ pub enum GeometryPlacement {
     },
 }
 
+/// The requested level of detail for a GLB representation.
+///
+/// `Simplified` is the converter input contract used by callers that plan
+/// multiple representations. The GLB writer currently accepts this policy but
+/// does not yet perform mesh simplification.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum GeometryRepresentation {
+    #[default]
+    FullDetail,
+    Simplified {
+        max_error_meters: f64,
+    },
+}
+
 #[derive(Clone, Debug)]
 pub struct GeographicClipRegion {
     pub source_crs: String,
@@ -84,6 +98,7 @@ pub struct ExportOptions {
     pub metadata_class_name: String,
     pub feature_type_colors: BTreeMap<String, String>,
     pub geometry_placement: GeometryPlacement,
+    pub representation: GeometryRepresentation,
     pub clip_bbox: Option<[f64; 6]>,
     pub clip_geographic_region: Option<GeographicClipRegion>,
     pub smooth_normals: bool,
@@ -98,6 +113,7 @@ impl Default for ExportOptions {
             metadata_class_name: "cityobject".to_string(),
             feature_type_colors: BTreeMap::new(),
             geometry_placement: GeometryPlacement::default(),
+            representation: GeometryRepresentation::default(),
             clip_bbox: None,
             clip_geographic_region: None,
             smooth_normals: false,
@@ -123,6 +139,12 @@ pub fn convert_to_glb<P: AsRef<Path>>(
     output: P,
     options: &ExportOptions,
 ) -> Result<()> {
+    if let GeometryRepresentation::Simplified { max_error_meters } = options.representation {
+        anyhow::ensure!(
+            max_error_meters.is_finite() && max_error_meters > 0.0,
+            "simplification maximum error must be a finite positive number of metres"
+        );
+    }
     let output = output.as_ref();
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent)?;

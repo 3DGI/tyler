@@ -168,10 +168,9 @@ pub mod cesium3dtiles {
             world: &crate::parser::World,
             geometric_error_factor: f64,
             _arg_cellsize: u32,
-            arg_minz: Option<i32>,
-            arg_maxz: Option<i32>,
             content_bv_from_tile: bool,
             content_add_bv: bool,
+            content_tile_ids: Option<&HashSet<TileId>>,
             root_enu_frame: &RootEnuFrame,
         ) -> Self {
             let crs_from = format!("EPSG:{}", world.crs.to_epsg().unwrap());
@@ -186,10 +185,9 @@ pub mod cesium3dtiles {
                 world,
                 &transformer,
                 geometric_error_factor,
-                arg_minz,
-                arg_maxz,
                 content_bv_from_tile,
                 content_add_bv,
+                content_tile_ids,
             );
             log::info!(
                 "Root ENU frame - input CRS origin: [{:.2}, {:.2}, {:.2}], geodetic: [{:.8}, {:.8}, {:.2}], ECEF: [{:.2}, {:.2}, {:.2}]",
@@ -239,10 +237,9 @@ pub mod cesium3dtiles {
             world: &crate::parser::World,
             transformer: &Transformer,
             geometric_error_factor: f64,
-            arg_minz: Option<i32>,
-            arg_maxz: Option<i32>,
             content_bv_from_tile: bool,
             content_add_bv: bool,
+            content_tile_ids: Option<&HashSet<TileId>>,
         ) -> Tile {
             if !quadtree.children.is_empty() {
                 let tile_id = TileId::from(&quadtree.id);
@@ -253,7 +250,15 @@ pub mod cesium3dtiles {
                 // Tile bounding volume
                 // Set the bounding volume height from the grid height, which can be set with
                 // an argument, or else calculated from the data (content).
-                let mut tile_bbox = quadtree.bbox(&world.grid);
+                let spatial_bbox = quadtree.bbox(&world.grid);
+                let tile_width =
+                    (spatial_bbox[3] - spatial_bbox[0]).max(spatial_bbox[4] - spatial_bbox[1]);
+                let mut tile_bbox = spatial_bbox;
+                let tile_content_bbox =
+                    (quadtree.nr_items > 0).then(|| quadtree.node_content_bbox(world, None, None));
+                if let Some(content_bbox) = &tile_content_bbox {
+                    Self::enclose_bbox(&mut tile_bbox, content_bbox);
+                }
                 // But it can happen with faulty data, eg. 3D Basisvoorziening,
                 // that maxz is less than minz.
                 if tile_bbox[5] < tile_bbox[2] {
@@ -266,11 +271,23 @@ pub mod cesium3dtiles {
                 let bounding_volume =
                     BoundingVolume::region_from_bbox(&tile_bbox, transformer).unwrap();
 
-                // Tyler currently writes full-detail content only at leaves. Internal
-                // tiles are traversal nodes, so their geometric error is a spatial
-                // refinement trigger proportional to the tile footprint.
-                let tile_width = (tile_bbox[3] - tile_bbox[0]).max(tile_bbox[4] - tile_bbox[1]);
                 let geometric_error = tile_width * geometric_error_factor;
+                let has_content = content_tile_ids.is_some_and(|ids| ids.contains(&tile_id));
+                let content = if has_content {
+                    tile_content_bbox.as_ref().map(|content_bbox| {
+                        Self::content_for_tile(
+                            quadtree,
+                            &tile_id,
+                            tile_bbox,
+                            content_bbox,
+                            transformer,
+                            content_bv_from_tile,
+                            content_add_bv,
+                        )
+                    })
+                } else {
+                    None
+                };
                 let mut tile_children: Vec<Tile> = Vec::new();
                 for child in quadtree.children.iter() {
                     tile_children.push(Self::generate_tiles(
@@ -278,10 +295,9 @@ pub mod cesium3dtiles {
                         world,
                         transformer,
                         geometric_error_factor,
-                        arg_minz,
-                        arg_maxz,
                         content_bv_from_tile,
                         content_add_bv,
+                        content_tile_ids,
                     ));
                 }
                 Tile {
@@ -291,7 +307,7 @@ pub mod cesium3dtiles {
                     viewer_request_volume: None,
                     refine: Some(Refinement::Replace),
                     transform: None,
-                    content: None,
+                    content,
                     children: Some(tile_children),
                     implicit_tiling: None,
                 }
@@ -300,6 +316,11 @@ pub mod cesium3dtiles {
 
                 // Tile bounding volume
                 let mut tile_bbox = quadtree.bbox(&world.grid);
+                let tile_content_bbox =
+                    (quadtree.nr_items > 0).then(|| quadtree.node_content_bbox(world, None, None));
+                if let Some(content_bbox) = &tile_content_bbox {
+                    Self::enclose_bbox(&mut tile_bbox, content_bbox);
+                }
                 if tile_bbox[5] < tile_bbox[2] {
                     // See explanation above
                     debug!(
@@ -310,56 +331,23 @@ pub mod cesium3dtiles {
                 }
                 let bounding_volume =
                     BoundingVolume::region_from_bbox(&tile_bbox, transformer).unwrap();
-                let mut content: Option<Content> = None;
-
-                if quadtree.nr_items > 0 {
-                    let mut tile_content_bbox_rw =
-                        quadtree.node_content_bbox(world, arg_minz, arg_maxz);
-                    if content_bv_from_tile {
-                        tile_content_bbox_rw = tile_bbox;
-                    } else {
-                        // Stretch the tile bbox so that it covers the content bbox
-                        tile_content_bbox_rw[0..3]
-                            .iter()
-                            .enumerate()
-                            .for_each(|(i, min_c)| {
-                                if min_c < &tile_bbox[i] {
-                                    tile_bbox[i] = min_c - min_c * 0.01;
-                                }
-                            });
-                        tile_content_bbox_rw[3..6]
-                            .iter()
-                            .enumerate()
-                            .for_each(|(i0, max_c)| {
-                                let i = 3 + i0;
-                                if max_c > &tile_bbox[i] {
-                                    tile_bbox[i] = max_c + max_c * 0.01;
-                                }
-                            });
-                    }
-
-                    if tile_content_bbox_rw[5] < tile_content_bbox_rw[2] {
-                        // See explanation above
-                        debug!(
-                            "Leaf tile content {tile_id} {:?} (in input CRS) bbox maxz {} is less than minz {}. Replacing maxz with minz + minz * 0.01.",
-                            tile_content_bbox_rw, tile_content_bbox_rw[5], tile_content_bbox_rw[2]
-                        );
-                        tile_content_bbox_rw[5] =
-                            tile_content_bbox_rw[2] + tile_content_bbox_rw[2] * 0.01;
-                    }
-                    let content_bounding_volume =
-                        BoundingVolume::region_from_bbox(&tile_content_bbox_rw, transformer)
-                            .unwrap();
-
-                    content = Some(Content {
-                        bounding_volume: if content_add_bv {
-                            Some(content_bounding_volume)
-                        } else {
-                            None
-                        },
-                        uri: format!("t/{}.glb", quadtree.id),
-                    });
-                }
+                let has_content = quadtree.nr_items > 0
+                    && content_tile_ids.is_none_or(|ids| ids.contains(&tile_id));
+                let content = if has_content {
+                    tile_content_bbox.as_ref().map(|content_bbox| {
+                        Self::content_for_tile(
+                            quadtree,
+                            &tile_id,
+                            tile_bbox,
+                            content_bbox,
+                            transformer,
+                            content_bv_from_tile,
+                            content_add_bv,
+                        )
+                    })
+                } else {
+                    None
+                };
 
                 Tile {
                     id: tile_id,
@@ -372,6 +360,42 @@ pub mod cesium3dtiles {
                     children: None,
                     implicit_tiling: None,
                 }
+            }
+        }
+
+        fn enclose_bbox(tile_bbox: &mut Bbox, content_bbox: &Bbox) {
+            for axis in 0..3 {
+                tile_bbox[axis] = tile_bbox[axis].min(content_bbox[axis]);
+                tile_bbox[axis + 3] = tile_bbox[axis + 3].max(content_bbox[axis + 3]);
+            }
+        }
+
+        fn content_for_tile(
+            quadtree: &QuadTree,
+            tile_id: &TileId,
+            tile_bbox: Bbox,
+            content_bbox: &Bbox,
+            transformer: &Transformer,
+            content_bv_from_tile: bool,
+            content_add_bv: bool,
+        ) -> Content {
+            let mut content_bbox = if content_bv_from_tile {
+                tile_bbox
+            } else {
+                *content_bbox
+            };
+            if content_bbox[5] < content_bbox[2] {
+                debug!(
+                    "Tile content {tile_id} {:?} (in input CRS) bbox maxz {} is less than minz {}. Replacing maxz with minz + minz * 0.01.",
+                    content_bbox, content_bbox[5], content_bbox[2]
+                );
+                content_bbox[5] = content_bbox[2] + content_bbox[2] * 0.01;
+            }
+            let content_bounding_volume =
+                BoundingVolume::region_from_bbox(&content_bbox, transformer).unwrap();
+            Content {
+                bounding_volume: content_add_bv.then_some(content_bounding_volume),
+                uri: format!("t/{}.glb", quadtree.id),
             }
         }
 
@@ -1936,10 +1960,9 @@ pub mod cesium3dtiles {
                 &world,
                 0.024,
                 200,
-                None,
-                None,
                 true,
                 true,
+                None,
                 &root_enu_frame,
             );
             assert_tile_bounding_volumes_are_regions(&tileset.root);

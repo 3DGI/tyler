@@ -154,8 +154,24 @@ impl From<&TileCoord> for TileId {
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 enum TileClip {
     None,
-    SourceBbox,
     GeographicRegion(GeographicBounds),
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+enum TileRepresentationPolicy {
+    FullDetail,
+    Simplified { max_error_meters: f64 },
+}
+
+impl From<TileRepresentationPolicy> for cityjson_convert::GeometryRepresentation {
+    fn from(policy: TileRepresentationPolicy) -> Self {
+        match policy {
+            TileRepresentationPolicy::FullDetail => Self::FullDetail,
+            TileRepresentationPolicy::Simplified { max_error_meters } => {
+                Self::Simplified { max_error_meters }
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -164,6 +180,15 @@ struct TileExportJob {
     content_tile_coord: TileCoord,
     feature_ids: Vec<usize>,
     clip: TileClip,
+    representation: TileRepresentationPolicy,
+}
+
+#[derive(Debug)]
+struct ExplicitTileContentPlan {
+    jobs: Vec<TileExportJob>,
+    content_tile_ids: HashSet<TileId>,
+    first_content_level: Option<u16>,
+    first_content_width_meters: Option<f64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -258,6 +283,7 @@ fn build_glb_export_options(
         metadata_class_name: cli.cesium3dtiles_metadata_class.clone(),
         feature_type_colors,
         geometry_placement,
+        representation: cityjson_convert::GeometryRepresentation::FullDetail,
         clip_bbox,
         clip_geographic_region: None,
         smooth_normals: cli.smooth_normals,
@@ -504,29 +530,154 @@ fn collect_tile_feature_ids(
 fn explicit_tile_export_jobs(
     world: &parser::World,
     quadtree: &spatial_structs::QuadTree,
-    tileset: &formats::cesium3dtiles::Tileset,
-    clip_to_tile_bounds: bool,
-) -> Vec<TileExportJob> {
-    tileset
-        .collect_leaves()
-        .into_iter()
-        .filter_map(|tile_ref| {
-            let tile = tile_ref.clone();
-            let qtree_nodeid: spatial_structs::QuadTreeNodeId = (&tile.id).into();
-            let qtree_node = quadtree.node(&qtree_nodeid)?;
-            let feature_ids = collect_tile_feature_ids(world, qtree_node);
-            Some(TileExportJob {
-                source_node_id: Some((&qtree_nodeid).into()),
-                content_tile_coord: (&tile.id).into(),
-                feature_ids,
-                clip: if clip_to_tile_bounds {
-                    TileClip::SourceBbox
-                } else {
-                    TileClip::None
-                },
-            })
+    max_content_width_meters: f64,
+    max_geometric_error_meters: f64,
+) -> Result<ExplicitTileContentPlan, Box<dyn std::error::Error>> {
+    let source_crs = format!("EPSG:{}", world.crs.to_epsg()?);
+    let source_to_ecef = cityjson_lib::ops::transformer(&source_crs, "EPSG:4978")?;
+    let mut nodes = Vec::new();
+    collect_quadtree_nodes(quadtree, &mut nodes);
+
+    let mut candidates = Vec::new();
+    for node in nodes {
+        if node.nr_items == 0 {
+            continue;
+        }
+        let footprint_width_meters =
+            tile_footprint_width_meters(node, world, &source_crs, &source_to_ecef)?;
+        let is_leaf = node.children.is_empty();
+        if !is_leaf && footprint_width_meters > max_content_width_meters {
+            continue;
+        }
+
+        let coord = TileCoord::from(&node.id);
+        let feature_ids =
+            deduplicate_tile_feature_ids(world, &collect_tile_feature_ids(world, node));
+        if feature_ids.is_empty() {
+            continue;
+        }
+        candidates.push((coord, feature_ids, footprint_width_meters, is_leaf));
+    }
+    candidates.sort_by(|lhs, rhs| {
+        lhs.0
+            .level
+            .cmp(&rhs.0.level)
+            .then_with(|| lhs.0.x.cmp(&rhs.0.x))
+            .then_with(|| lhs.0.y.cmp(&rhs.0.y))
+    });
+
+    let first_simplified_level = candidates
+        .iter()
+        .filter(|candidate| !candidate.3)
+        .map(|candidate| candidate.0.level)
+        .min();
+    let first_content = first_simplified_level
+        .and_then(|level| {
+            candidates
+                .iter()
+                .find(|candidate| !candidate.3 && candidate.0.level == level)
+                .map(|candidate| (level, candidate.2))
         })
-        .collect()
+        .or_else(|| {
+            candidates
+                .first()
+                .map(|candidate| (candidate.0.level, candidate.2))
+        });
+    let mut content_tile_ids = HashSet::with_capacity(candidates.len());
+    let mut jobs = Vec::with_capacity(candidates.len());
+
+    for (coord, feature_ids, _footprint_width_meters, is_leaf) in candidates {
+        let representation = if is_leaf {
+            TileRepresentationPolicy::FullDetail
+        } else {
+            let first_level = first_simplified_level
+                .expect("a non-leaf candidate establishes the first simplified level");
+            let levels_deeper = coord.level - first_level;
+            let max_error_meters =
+                max_geometric_error_meters / 2_f64.powi(i32::from(levels_deeper));
+            if !max_error_meters.is_finite() || max_error_meters <= 0.0 {
+                return Err(
+                    format!("geometric error allowance underflowed for tile {coord}").into(),
+                );
+            }
+            TileRepresentationPolicy::Simplified { max_error_meters }
+        };
+        let tile_id = TileId::from(&coord);
+        content_tile_ids.insert(tile_id);
+        jobs.push(TileExportJob {
+            source_node_id: Some(coord.clone()),
+            content_tile_coord: coord,
+            feature_ids,
+            clip: TileClip::None,
+            representation,
+        });
+    }
+
+    let (first_content_level, first_content_width_meters) =
+        first_content.map_or((None, None), |(level, width)| (Some(level), Some(width)));
+
+    Ok(ExplicitTileContentPlan {
+        jobs,
+        content_tile_ids,
+        first_content_level,
+        first_content_width_meters,
+    })
+}
+
+fn collect_quadtree_nodes<'a>(
+    node: &'a spatial_structs::QuadTree,
+    output: &mut Vec<&'a spatial_structs::QuadTree>,
+) {
+    output.push(node);
+    for child in &node.children {
+        collect_quadtree_nodes(child, output);
+    }
+}
+
+fn tile_footprint_width_meters(
+    node: &spatial_structs::QuadTree,
+    world: &parser::World,
+    source_crs: &str,
+    source_to_ecef: &cityjson_lib::ops::Transformer,
+) -> Result<f64, Box<dyn std::error::Error>> {
+    let bbox = node.bbox(&world.grid);
+    let tile_enu_frame = RootEnuFrame::from_bbox(source_crs, &bbox)?;
+    let z = f64::midpoint(bbox[2], bbox[5]);
+    let corners = [
+        [bbox[0], bbox[1], z],
+        [bbox[0], bbox[4], z],
+        [bbox[3], bbox[1], z],
+        [bbox[3], bbox[4], z],
+    ];
+    let mut min_east = f64::INFINITY;
+    let mut min_north = f64::INFINITY;
+    let mut max_east = f64::NEG_INFINITY;
+    let mut max_north = f64::NEG_INFINITY;
+
+    for source_position in corners {
+        let ecef_position = source_to_ecef.transform(source_position)?;
+        let delta = [
+            ecef_position[0] - tile_enu_frame.ecef_origin[0],
+            ecef_position[1] - tile_enu_frame.ecef_origin[1],
+            ecef_position[2] - tile_enu_frame.ecef_origin[2],
+        ];
+        let east = dot_product(delta, tile_enu_frame.east);
+        let north = dot_product(delta, tile_enu_frame.north);
+        min_east = min_east.min(east);
+        min_north = min_north.min(north);
+        max_east = max_east.max(east);
+        max_north = max_north.max(north);
+    }
+
+    let width = (max_east - min_east).max(max_north - min_north);
+    if !width.is_finite() || width < 0.0 {
+        return Err(format!("could not calculate metre width for tile {}", node.id).into());
+    }
+    Ok(width)
+}
+
+fn dot_product(lhs: [f64; 3], rhs: [f64; 3]) -> f64 {
+    lhs[0] * rhs[0] + lhs[1] * rhs[1] + lhs[2] * rhs[2]
 }
 
 fn quadtree_leaf_tile_export_jobs(
@@ -543,6 +694,7 @@ fn quadtree_leaf_tile_export_jobs(
                 content_tile_coord: coord,
                 feature_ids: collect_tile_feature_ids(world, qtree_node),
                 clip: TileClip::None,
+                representation: TileRepresentationPolicy::FullDetail,
             }
         })
         .collect()
@@ -633,6 +785,7 @@ fn geographic_implicit_tile_export_jobs(
                 } else {
                     TileClip::None
                 },
+                representation: TileRepresentationPolicy::FullDetail,
             }
         })
         .collect();
@@ -1426,7 +1579,6 @@ struct TileWriteContext<'a> {
     export_options: cityjson_convert::ExportOptions,
     source_crs: String,
     world: &'a parser::World,
-    quadtree: &'a spatial_structs::QuadTree,
     object_attribute_types: BTreeMap<String, ObjectAttributeType>,
     include_parent_attributes: bool,
     cityjson_colors: BTreeMap<String, RGB>,
@@ -1564,15 +1716,31 @@ impl OutputFormatBackend for Cesium3dTilesBackend {
         let subtrees_path_unpruned = cli.output.join("subtrees_unpruned");
         info!("Generating 3D Tiles tileset");
         let root_enu_frame = compute_root_enu_frame(world, quadtree)?;
+        let explicit_content_plan = if cli.cesium3dtiles_implicit {
+            None
+        } else {
+            if cli.cesium3dtiles_content_clip_to_tile_bounds {
+                warn!(
+                    "--3dtiles-content-clip-to-tile-bounds is ignored for explicit tiling because content exports complete CityObjects"
+                );
+            }
+            Some(explicit_tile_export_jobs(
+                world,
+                quadtree,
+                cli.cesium3dtiles_max_content_width,
+                cli.cesium3dtiles_max_geometric_error,
+            )?)
+        };
         let tileset = formats::cesium3dtiles::Tileset::from_quadtree(
             quadtree,
             world,
             geometric_error_factor,
             grid_cellsize,
-            cli.grid_minz,
-            cli.grid_maxz,
             cli.cesium3dtiles_content_bv_from_tile,
             cli.cesium3dtiles_content_add_bv,
+            explicit_content_plan
+                .as_ref()
+                .map(|plan| &plan.content_tile_ids),
             &root_enu_frame,
         );
 
@@ -1590,6 +1758,9 @@ impl OutputFormatBackend for Cesium3dTilesBackend {
             geographic_bounds_from_source_bbox(&quadtree.bbox(&world.grid), &source_to_geographic)?;
 
         let export_jobs = if cli.cesium3dtiles_implicit {
+            warn!(
+                "--3dtiles-max-content-width and --3dtiles-max-geometric-error currently apply only to explicit tiling; implicit tiling continues to plan leaf content"
+            );
             let export_jobs = geographic_implicit_tile_export_jobs(
                 world,
                 quadtree,
@@ -1616,12 +1787,35 @@ impl OutputFormatBackend for Cesium3dTilesBackend {
 
             export_jobs
         } else {
-            let export_jobs = explicit_tile_export_jobs(
-                world,
-                quadtree,
-                &tileset,
-                cli.cesium3dtiles_content_clip_to_tile_bounds,
-            );
+            let content_plan =
+                explicit_content_plan.expect("explicit tiling prepared an explicit content plan");
+            if let (Some(level), Some(width)) = (
+                content_plan.first_content_level,
+                content_plan.first_content_width_meters,
+            ) {
+                info!(
+                    "Explicit 3D Tiles content plan starts at level {level} ({width:.1} m footprint), with {} content tiles; quadtree widths halve between levels, so nearby thresholds can select the same levels",
+                    content_plan.jobs.len()
+                );
+            } else {
+                info!("Explicit 3D Tiles content plan has no non-empty tiles");
+            }
+            let simplified_tiles = content_plan
+                .jobs
+                .iter()
+                .filter(|job| {
+                    matches!(
+                        job.representation,
+                        TileRepresentationPolicy::Simplified { .. }
+                    )
+                })
+                .count();
+            if simplified_tiles > 0 {
+                warn!(
+                    "{simplified_tiles} internal tiles request simplified content, but cityjson-convert currently writes full-detail geometry until mesh simplification support is implemented"
+                );
+            }
+            let export_jobs = content_plan.jobs;
             info!("Writing unpruned 3D Tiles tileset");
             tileset.to_file(&tileset_path_unpruned)?;
             export_jobs
@@ -1659,20 +1853,9 @@ impl OutputFormatBackend for Cesium3dTilesBackend {
             .join(&file_name)
             .with_extension("glb");
         let mut export_options = context.export_options.clone();
+        export_options.representation = job.representation.into();
         match job.clip {
             TileClip::None => {}
-            TileClip::SourceBbox => {
-                let source_node_id = job
-                    .source_node_id
-                    .as_ref()
-                    .ok_or("source bbox clipping requires a source node ID")?;
-                let qtree_nodeid: spatial_structs::QuadTreeNodeId = source_node_id.into();
-                let qtree_node = context
-                    .quadtree
-                    .node(&qtree_nodeid)
-                    .ok_or_else(|| format!("did not find tile {} in quadtree", source_node_id))?;
-                export_options.clip_bbox = Some(qtree_node.bbox(&context.world.grid));
-            }
             TileClip::GeographicRegion(bounds) => {
                 export_options.clip_geographic_region =
                     Some(cityjson_convert::GeographicClipRegion {
@@ -2275,6 +2458,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if geometric_error_factor < 0.0 {
         return Err("--3dtiles-geometric-error-factor must be non-negative".into());
     }
+    if !cli.cesium3dtiles_max_content_width.is_finite()
+        || cli.cesium3dtiles_max_content_width <= 0.0
+    {
+        return Err(
+            "--3dtiles-max-content-width must be a finite positive number of metres".into(),
+        );
+    }
+    if !cli.cesium3dtiles_max_geometric_error.is_finite()
+        || cli.cesium3dtiles_max_geometric_error <= 0.0
+    {
+        return Err(
+            "--3dtiles-max-geometric-error must be a finite positive number of metres".into(),
+        );
+    }
     // Since we have a default value, it is safe to unwrap
     // let qtree_capacity = 0; // override cli.qtree_capacity
     let qtree_criteria = spatial_structs::QuadTreeCriteria::Vertices; // override --qtree-criteria
@@ -2456,7 +2653,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             export_options,
             source_crs: prepared_output.source_crs().to_string(),
             world: &world,
-            quadtree: &quadtree,
             object_attribute_types: object_attribute_types.clone(),
             include_parent_attributes: cli.include_parent_attributes,
             cityjson_colors: build_cityjson_object_colors(&cli),
@@ -2641,10 +2837,9 @@ mod tests {
             world,
             1.0,
             200,
-            None,
-            None,
             false,
             true,
+            None,
             &root_enu_frame,
         )
     }
@@ -4017,42 +4212,139 @@ mod tests {
     }
 
     #[test]
-    fn explicit_quadtree_leaf_job_generation_uses_leaf_nodes() {
-        let (world, quadtree) = indexed_resource_world("explicit-leaf-jobs");
-        let tileset = resource_tileset(&world, &quadtree);
+    fn explicit_quadtree_content_plan_observes_threshold_and_leaf_exception() {
+        let (mut world, _) = indexed_resource_world("explicit-content-plan");
+        world.grid = spatial_structs::SquareGrid::new(
+            &world.grid.bbox,
+            10,
+            world.crs.to_epsg().expect("EPSG code"),
+        );
+        world
+            .index_with_grid()
+            .expect("reindex resource world on smaller cells");
+        let quadtree = spatial_structs::QuadTree::from_world(
+            &world,
+            spatial_structs::QuadTreeCapacity::Vertices(1),
+        );
+        let source_crs = format!("EPSG:{}", world.crs.to_epsg().expect("EPSG code"));
+        let source_to_ecef =
+            cityjson_lib::ops::transformer(&source_crs, "EPSG:4978").expect("source transform");
+        let root_width =
+            tile_footprint_width_meters(&quadtree, &world, &source_crs, &source_to_ecef)
+                .expect("root footprint width");
+        assert!(!quadtree.children.is_empty());
 
-        let jobs = explicit_tile_export_jobs(&world, &quadtree, &tileset, true);
-        let leaves = tileset.collect_leaves();
-
-        assert_eq!(jobs.len(), leaves.len());
-        assert!(jobs
+        let at_threshold = explicit_tile_export_jobs(&world, &quadtree, root_width, 8.0)
+            .expect("plan at threshold");
+        let root_coord = TileCoord::from(&quadtree.id);
+        let root_job = at_threshold
+            .jobs
             .iter()
-            .all(|job| matches!(job.clip, TileClip::SourceBbox)));
-        for job in jobs {
-            let source_node_id = job
-                .source_node_id
-                .as_ref()
-                .expect("explicit jobs should keep source node IDs");
-            let qtree_node_id = spatial_structs::QuadTreeNodeId::from(source_node_id);
-            let qtree_node = quadtree
-                .node(&qtree_node_id)
-                .expect("job source node should exist in quadtree");
-            assert_eq!(
-                job.feature_ids,
-                collect_tile_feature_ids(&world, qtree_node)
+            .find(|job| job.content_tile_coord == root_coord)
+            .expect("equality at threshold should include the root internal tile");
+        assert_eq!(
+            root_job.representation,
+            TileRepresentationPolicy::Simplified {
+                max_error_meters: 8.0
+            }
+        );
+        assert_eq!(
+            root_job.feature_ids,
+            deduplicate_tile_feature_ids(&world, &collect_tile_feature_ids(&world, &quadtree)),
+            "internal content should cover the deduplicated union of descendant features"
+        );
+        assert!(at_threshold
+            .jobs
+            .iter()
+            .all(|job| matches!(job.clip, TileClip::None)));
+
+        let below_threshold =
+            explicit_tile_export_jobs(&world, &quadtree, root_width * (1.0 - 1.0e-9), 8.0)
+                .expect("plan below threshold");
+        assert!(!below_threshold
+            .jobs
+            .iter()
+            .any(|job| job.content_tile_coord == root_coord));
+
+        let leaf_exception =
+            explicit_tile_export_jobs(&world, &quadtree, 0.1, 8.0).expect("plan leaves");
+        let nonempty_leaves: Vec<_> = quadtree
+            .collect_leaves()
+            .into_iter()
+            .filter(|node| node.nr_items > 0)
+            .collect();
+        let planned_leaves: Vec<_> = leaf_exception
+            .jobs
+            .iter()
+            .filter(|job| {
+                let node_id = spatial_structs::QuadTreeNodeId::from(
+                    job.source_node_id.as_ref().expect("explicit source node"),
+                );
+                quadtree
+                    .node(&node_id)
+                    .is_some_and(|node| node.children.is_empty())
+            })
+            .collect();
+        assert_eq!(planned_leaves.len(), nonempty_leaves.len());
+        assert!(planned_leaves
+            .iter()
+            .all(|job| { job.representation == TileRepresentationPolicy::FullDetail }));
+        assert!(planned_leaves.iter().all(|job| {
+            let node_id = spatial_structs::QuadTreeNodeId::from(
+                job.source_node_id.as_ref().expect("explicit source node"),
             );
-            assert_eq!(job.content_tile_coord, *source_node_id);
-        }
+            let node = quadtree.node(&node_id).expect("planned leaf in quadtree");
+            tile_footprint_width_meters(node, &world, &source_crs, &source_to_ecef)
+                .expect("leaf width")
+                > 0.1
+        }));
+
+        assert_eq!(at_threshold.content_tile_ids.len(), at_threshold.jobs.len());
+        assert_eq!(
+            at_threshold.first_content_level,
+            at_threshold
+                .jobs
+                .first()
+                .map(|job| job.content_tile_coord.level)
+        );
+        assert_eq!(at_threshold.first_content_width_meters, Some(root_width));
+
+        let root_enu_frame =
+            compute_root_enu_frame(&world, &quadtree).expect("compute root ENU frame");
+        let tileset = formats::cesium3dtiles::Tileset::from_quadtree(
+            &quadtree,
+            &world,
+            0.024,
+            10,
+            false,
+            true,
+            Some(&at_threshold.content_tile_ids),
+            &root_enu_frame,
+        );
+        let tileset_json = serde_json::to_value(tileset).expect("serialize content plan tileset");
+        assert_eq!(
+            tileset_json["root"]["content"]["uri"],
+            format!("t/{}.glb", quadtree.id)
+        );
     }
 
     #[test]
     fn failed_job_pruning_input_uses_explicit_source_tiles() {
         let (world, quadtree) = indexed_resource_world("failed-pruning-input");
         let tileset = resource_tileset(&world, &quadtree);
-        let jobs = explicit_tile_export_jobs(&world, &quadtree, &tileset, false);
+        let jobs =
+            explicit_tile_export_jobs(&world, &quadtree, 0.1, 5.0).expect("plan leaf content");
         let failed_job = jobs
+            .jobs
             .iter()
-            .find(|job| job.source_node_id.is_some())
+            .find(|job| {
+                let node_id = spatial_structs::QuadTreeNodeId::from(
+                    job.source_node_id.as_ref().expect("explicit source node"),
+                );
+                quadtree
+                    .node(&node_id)
+                    .is_some_and(|node| node.children.is_empty())
+            })
             .expect("expected an explicit tile job")
             .clone();
         let expected_tile_id = TileId::from(failed_job.source_node_id.as_ref().unwrap());

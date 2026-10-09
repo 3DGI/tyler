@@ -19,7 +19,7 @@ format.
 ### GLB
 
 ```rust
-use cityjson_convert::{convert_to_glb, ExportOptions, GeometryPlacement};
+use cityjson_convert::{convert_to_glb, ExportOptions, GeometryPlacement, GeometryRepresentation};
 use cityjson_lib::CityModel;
 
 fn export(model: &CityModel) -> anyhow::Result<()> {
@@ -28,6 +28,7 @@ fn export(model: &CityModel) -> anyhow::Result<()> {
         metadata_class_name: "cityobject".to_string(),
         feature_type_colors: Default::default(),
         geometry_placement: GeometryPlacement::SourceCoordinates,
+        representation: GeometryRepresentation::FullDetail,
         clip_bbox: None,
         clip_geographic_region: None,
         smooth_normals: false,
@@ -38,6 +39,11 @@ fn export(model: &CityModel) -> anyhow::Result<()> {
     convert_to_glb(model, "output/tiles.glb", &options)
 }
 ```
+
+`GeometryRepresentation::Simplified { max_error_meters }` is the typed input
+contract for callers that request a lower-detail mesh. The current GLB writer
+validates the allowance but still writes full-detail geometry; mesh
+simplification is implemented separately.
 
 ### CityJSON
 

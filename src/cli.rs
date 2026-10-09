@@ -60,6 +60,16 @@ pub struct Cli {
     /// Add the boundingVolume of the content for the the tiles that have content.
     #[arg(long = "3dtiles-content-add-bv")]
     pub cesium3dtiles_content_add_bv: bool,
+    /// Largest internal-tile footprint that receives simplified GLB content,
+    /// in metres of real-world horizontal distance. Non-empty leaves always
+    /// receive full-detail content, even when their footprint is wider.
+    #[arg(long = "3dtiles-max-content-width", default_value = "4000")]
+    pub cesium3dtiles_max_content_width: f64,
+    /// Maximum geometric error in metres at the coarsest internal content
+    /// level. The allowance halves at each deeper content level. Leaves remain
+    /// full detail and do not use this setting.
+    #[arg(long = "3dtiles-max-geometric-error", default_value = "5")]
+    pub cesium3dtiles_max_geometric_error: f64,
     /// Set the geometric error factor (see 3D Tiles specification) for internal tiles.
     /// Internal tile geometricError is computed as tile width multiplied by this factor.
     /// Higher values make detailed content visible earlier when zooming in.
@@ -666,18 +676,28 @@ mod tests {
         assert!(cli.include_parent_attributes);
     }
 
-    /// CLI arguments review item 12: `--3dtiles-geometric-error-factor`
-    /// replaces the old flag name and still parses the configured float value.
+    /// CLI argument parsing preserves the traversal factor and exposes the
+    /// content width and maximum simplification error in metres.
     #[test]
-    fn verify_geometric_error_factor() {
+    fn verify_3dtiles_content_settings() {
         let dataset_dir = legacy_dataset_dir();
+        let defaults = Cli::try_parse_from(required_args(&dataset_dir)).unwrap();
+        assert!((defaults.cesium3dtiles_max_content_width - 4_000.0).abs() < f64::EPSILON);
+        assert!((defaults.cesium3dtiles_max_geometric_error - 5.0).abs() < f64::EPSILON);
+
         let mut args = required_args(&dataset_dir);
         args.extend([
             "--3dtiles-geometric-error-factor".to_string(),
             "0.05".to_string(),
+            "--3dtiles-max-content-width".to_string(),
+            "1200".to_string(),
+            "--3dtiles-max-geometric-error".to_string(),
+            "2.5".to_string(),
         ]);
         let cli = Cli::try_parse_from(args).unwrap();
         assert!((cli.cesium3dtiles_geometric_error_factor - 0.05).abs() < f64::EPSILON);
+        assert!((cli.cesium3dtiles_max_content_width - 1200.0).abs() < f64::EPSILON);
+        assert!((cli.cesium3dtiles_max_geometric_error - 2.5).abs() < f64::EPSILON);
     }
 
     /// CLI arguments review item 8: `--object-attributes` now accepts a

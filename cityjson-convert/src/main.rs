@@ -138,6 +138,7 @@ fn main() -> anyhow::Result<()> {
                 metadata_class_name: cli.metadata_class_name,
                 feature_type_colors: BTreeMap::default(),
                 geometry_placement: GeometryPlacement::SourceCoordinates,
+                representation: cityjson_convert::GeometryRepresentation::FullDetail,
                 clip_bbox: None,
                 clip_geographic_region: None,
                 smooth_normals: cli.smooth_normals,
