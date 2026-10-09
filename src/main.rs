@@ -643,43 +643,14 @@ fn tile_footprint_width_meters(
     source_to_ecef: &cityjson_lib::ops::Transformer,
 ) -> Result<f64, Box<dyn std::error::Error>> {
     let bbox = node.bbox(&world.grid);
-    let tile_enu_frame = RootEnuFrame::from_bbox(source_crs, &bbox)?;
-    let z = f64::midpoint(bbox[2], bbox[5]);
-    let corners = [
-        [bbox[0], bbox[1], z],
-        [bbox[0], bbox[4], z],
-        [bbox[3], bbox[1], z],
-        [bbox[3], bbox[4], z],
-    ];
-    let mut min_east = f64::INFINITY;
-    let mut min_north = f64::INFINITY;
-    let mut max_east = f64::NEG_INFINITY;
-    let mut max_north = f64::NEG_INFINITY;
-
-    for source_position in corners {
-        let ecef_position = source_to_ecef.transform(source_position)?;
-        let delta = [
-            ecef_position[0] - tile_enu_frame.ecef_origin[0],
-            ecef_position[1] - tile_enu_frame.ecef_origin[1],
-            ecef_position[2] - tile_enu_frame.ecef_origin[2],
-        ];
-        let east = dot_product(delta, tile_enu_frame.east);
-        let north = dot_product(delta, tile_enu_frame.north);
-        min_east = min_east.min(east);
-        min_north = min_north.min(north);
-        max_east = max_east.max(east);
-        max_north = max_north.max(north);
-    }
-
-    let width = (max_east - min_east).max(max_north - min_north);
-    if !width.is_finite() || width < 0.0 {
-        return Err(format!("could not calculate metre width for tile {}", node.id).into());
-    }
-    Ok(width)
-}
-
-fn dot_product(lhs: [f64; 3], rhs: [f64; 3]) -> f64 {
-    lhs[0] * rhs[0] + lhs[1] * rhs[1] + lhs[2] * rhs[2]
+    crate::coordinates::horizontal_footprint_width_meters(source_crs, &bbox, source_to_ecef)
+        .map_err(|error| {
+            format!(
+                "could not calculate metre width for tile {}: {error}",
+                node.id
+            )
+            .into()
+        })
 }
 
 fn quadtree_leaf_tile_export_jobs(
@@ -1672,7 +1643,6 @@ trait OutputFormatBackend: Sync {
         world: &parser::World,
         quadtree: &spatial_structs::QuadTree,
         grid_cellsize: u32,
-        geometric_error_factor: f64,
         debug_data_output_path: &Path,
     ) -> Result<PreparedOutput, Box<dyn std::error::Error>>;
 
@@ -1709,7 +1679,6 @@ impl OutputFormatBackend for Cesium3dTilesBackend {
         world: &parser::World,
         quadtree: &spatial_structs::QuadTree,
         grid_cellsize: u32,
-        geometric_error_factor: f64,
         debug_data_output_path: &Path,
     ) -> Result<PreparedOutput, Box<dyn std::error::Error>> {
         let tileset_path = cli.output.join("tileset.json");
@@ -1736,7 +1705,6 @@ impl OutputFormatBackend for Cesium3dTilesBackend {
         let tileset = formats::cesium3dtiles::Tileset::from_quadtree(
             quadtree,
             world,
-            geometric_error_factor,
             grid_cellsize,
             cli.cesium3dtiles_content_bv_from_tile,
             cli.cesium3dtiles_content_add_bv,
@@ -1744,7 +1712,7 @@ impl OutputFormatBackend for Cesium3dTilesBackend {
                 .as_ref()
                 .map(|plan| &plan.content_tile_ids),
             &root_enu_frame,
-        );
+        )?;
 
         if cli.debug_dump_grid {
             info!(
@@ -1977,7 +1945,6 @@ impl OutputFormatBackend for ObjBackend {
         world: &parser::World,
         quadtree: &spatial_structs::QuadTree,
         _grid_cellsize: u32,
-        _geometric_error_factor: f64,
         _debug_data_output_path: &Path,
     ) -> Result<PreparedOutput, Box<dyn std::error::Error>> {
         Ok(PreparedOutput::Obj(TileFilesPreparedOutput {
@@ -2038,7 +2005,6 @@ impl OutputFormatBackend for CityjsonBackend {
         world: &parser::World,
         quadtree: &spatial_structs::QuadTree,
         _grid_cellsize: u32,
-        _geometric_error_factor: f64,
         _debug_data_output_path: &Path,
     ) -> Result<PreparedOutput, Box<dyn std::error::Error>> {
         Ok(PreparedOutput::Cityjson(TileFilesPreparedOutput {
@@ -2108,7 +2074,6 @@ impl OutputFormatBackend for CityjsonseqBackend {
         world: &parser::World,
         quadtree: &spatial_structs::QuadTree,
         _grid_cellsize: u32,
-        _geometric_error_factor: f64,
         _debug_data_output_path: &Path,
     ) -> Result<PreparedOutput, Box<dyn std::error::Error>> {
         Ok(PreparedOutput::Cityjsonseq(TileFilesPreparedOutput {
@@ -2186,7 +2151,6 @@ impl OutputFormatBackend for TsvBackend {
         world: &parser::World,
         quadtree: &spatial_structs::QuadTree,
         _grid_cellsize: u32,
-        _geometric_error_factor: f64,
         _debug_data_output_path: &Path,
     ) -> Result<PreparedOutput, Box<dyn std::error::Error>> {
         Ok(PreparedOutput::Tsv(Box::new(prepare_tabular_output(
@@ -2269,7 +2233,6 @@ impl OutputFormatBackend for GpkgBackend {
         world: &parser::World,
         quadtree: &spatial_structs::QuadTree,
         _grid_cellsize: u32,
-        _geometric_error_factor: f64,
         _debug_data_output_path: &Path,
     ) -> Result<PreparedOutput, Box<dyn std::error::Error>> {
         let legacy_metadata_dir = cli.output.join(".tyler-gpkg-metadata");
@@ -2449,10 +2412,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // Since we have a default value, we can safely unwrap.
     let grid_cellsize = cli.grid_cellsize.unwrap();
-    let geometric_error_factor = cli.cesium3dtiles_geometric_error_factor;
-    if geometric_error_factor < 0.0 {
-        return Err("--3dtiles-geometric-error-factor must be non-negative".into());
-    }
     if !cli.cesium3dtiles_max_content_width.is_finite()
         || cli.cesium3dtiles_max_content_width <= 0.0
     {
@@ -2612,7 +2571,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &world,
         &quadtree,
         grid_cellsize,
-        geometric_error_factor,
         &debug_data_output_path,
     )?;
     let export_jobs = backend.jobs(&prepared_output);
@@ -2836,13 +2794,13 @@ mod tests {
         formats::cesium3dtiles::Tileset::from_quadtree(
             quadtree,
             world,
-            1.0,
             200,
             false,
             true,
             None,
             &root_enu_frame,
         )
+        .expect("generate resource tileset")
     }
 
     fn feature_root_id(model: &cityjson_lib::CityModel) -> Option<String> {
@@ -4340,13 +4298,13 @@ mod tests {
         let tileset = formats::cesium3dtiles::Tileset::from_quadtree(
             &quadtree,
             &world,
-            0.024,
             10,
             false,
             true,
             Some(&at_threshold.content_tile_ids),
             &root_enu_frame,
-        );
+        )
+        .expect("generate content plan tileset");
         let tileset_json = serde_json::to_value(tileset).expect("serialize content plan tileset");
         assert_eq!(
             tileset_json["root"]["content"]["uri"],
@@ -4356,21 +4314,28 @@ mod tests {
 
     #[test]
     fn failed_job_pruning_input_uses_explicit_source_tile_ids() {
-        let (world, quadtree) = indexed_resource_world("failed-pruning-input");
-        let jobs =
-            explicit_tile_export_jobs(&world, &quadtree, 0.1, 5.0).expect("plan leaf content");
-        let failed_job = jobs
+        let (mut world, _) = indexed_resource_world("failed-pruning-input");
+        world.grid = spatial_structs::SquareGrid::new(
+            &world.grid.bbox,
+            10,
+            world.crs.to_epsg().expect("EPSG code"),
+        );
+        world
+            .index_with_grid()
+            .expect("reindex resource world on smaller cells");
+        let quadtree = spatial_structs::QuadTree::from_world(
+            &world,
+            spatial_structs::QuadTreeCapacity::Vertices(1),
+        );
+        assert!(!quadtree.children.is_empty());
+        let content_plan = explicit_tile_export_jobs(&world, &quadtree, f64::MAX, 5.0)
+            .expect("plan internal and leaf content");
+        let root_coord = TileCoord::from(&quadtree.id);
+        let failed_job = content_plan
             .jobs
             .iter()
-            .find(|job| {
-                let node_id = spatial_structs::QuadTreeNodeId::from(
-                    job.source_node_id.as_ref().expect("explicit source node"),
-                );
-                quadtree
-                    .node(&node_id)
-                    .is_some_and(|node| node.children.is_empty())
-            })
-            .expect("expected an explicit tile job")
+            .find(|job| job.content_tile_coord == root_coord)
+            .expect("root internal tile should receive content")
             .clone();
         let expected_tile_id = TileId::from(failed_job.source_node_id.as_ref().unwrap());
 
@@ -4378,6 +4343,45 @@ mod tests {
 
         assert_eq!(failed_tile_ids.len(), 1);
         assert!(failed_tile_ids.contains(&expected_tile_id));
+
+        let root_enu_frame =
+            compute_root_enu_frame(&world, &quadtree).expect("compute root ENU frame");
+        let mut tileset = formats::cesium3dtiles::Tileset::from_quadtree(
+            &quadtree,
+            &world,
+            200,
+            false,
+            true,
+            Some(&content_plan.content_tile_ids),
+            &root_enu_frame,
+        )
+        .expect("generate tileset with planned internal content");
+        tileset.prune_failed_content(&failed_tile_ids, &quadtree);
+
+        let tileset_json = serde_json::to_value(tileset).expect("serialize failed tileset");
+        let root = &tileset_json["root"];
+        assert!(root["content"].is_null());
+        let children = root["children"]
+            .as_array()
+            .expect("failed root should retain successful descendants");
+        let maximum_child_error = children
+            .iter()
+            .map(|child| child["geometricError"].as_f64().expect("child error"))
+            .fold(0.0, f64::max);
+        let source_crs = format!("EPSG:{}", world.crs.to_epsg().expect("EPSG code"));
+        let source_to_ecef =
+            cityjson_lib::ops::transformer(&source_crs, "EPSG:4978").expect("source transform");
+        let footprint_width_meters =
+            tile_footprint_width_meters(&quadtree, &world, &source_crs, &source_to_ecef)
+                .expect("root footprint width");
+        let expected_traversal_error = (0.024 * footprint_width_meters).max(maximum_child_error);
+        let actual_error = root["geometricError"]
+            .as_f64()
+            .expect("root geometricError");
+        assert!(
+            (actual_error - expected_traversal_error).abs() <= f64::EPSILON,
+            "failed root should use the spatial term and maximum retained child error"
+        );
     }
 
     #[test]

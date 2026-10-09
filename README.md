@@ -399,16 +399,17 @@ content remains encoded in the shared root ENU frame.
 
 #### Geometric error
 
-*tyler* currently writes full-detail content only on leaf tiles. Internal tiles
-are traversal nodes, not simplified renderable representations. Their
-`geometricError` is therefore computed from spatial tile size:
+For internal tiles, the spatial traversal error uses the tile's real-world
+horizontal footprint before its bounds expand to enclose complete CityObjects:
 
 ```text
-geometricError = tile_width * geometric_error_factor
+geometricError = max(0.024 * footprint_width_metres, maximum_child_error)
 ```
 
-Leaf tiles use `geometricError: 0.0`. Tune the factor with
-`--3dtiles-geometric-error-factor`; higher values make detailed content refine earlier.
+The factor is fixed internally. Content-free ancestors and internal tiles whose
+content export fails use this formula. Leaves use `geometricError: 0.0`.
+Internal content tiles also use the spatial estimate until the converter returns
+measured representation errors.
 
 For explicit tilesets, it is possible to add a tightly-fitted bounding volume to the [tile's content](https://docs.ogc.org/cs/22-025r4/22-025r4.html#core-content-bounding-volume).
 You can enable this with the `--3dtiles-content-add-bv` option.

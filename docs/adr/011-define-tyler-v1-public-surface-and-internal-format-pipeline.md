@@ -171,8 +171,7 @@ tyler data/tile-index.cjindex \
   --format obj \
   --object-type Building \
   --lod-building 2 \
-  --color-building '#d8b365' \
-  --3dtiles-geometric-error-factor 0.018
+  --color-building '#d8b365'
 ```
 
 ```sh
@@ -359,7 +358,6 @@ flags that do not change that backend's output at all.
 | `--3dtiles-*` | `--3dtiles-content-bv-from-tile`        | yes     | ignored  | ignored     | ignored | ignored | ignored |
 | `--3dtiles-*` | `--3dtiles-content-clip-to-tile-bounds` | yes     | ignored  | ignored     | ignored | ignored | ignored |
 | `--3dtiles-*` | `--3dtiles-content-add-bv`              | yes     | ignored  | ignored     | ignored | ignored | ignored |
-| `--3dtiles-*` | `--3dtiles-geometric-error-factor`      | yes     | ignored  | ignored     | ignored | ignored | ignored |
 | `--gpkg-*`    | `--gpkg-split-lod`                      | ignored | ignored  | ignored     | ignored | yes     | ignored |
 | `--gpkg-*`    | `--gpkg-split-semantics`                | ignored | ignored  | ignored     | ignored | yes     | ignored |
 | `--gpkg-*`    | `--gpkg-include-metadata`               | ignored | ignored  | ignored     | ignored | yes     | ignored |

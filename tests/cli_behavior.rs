@@ -430,8 +430,6 @@ fn tileset_flags_change_output_artifacts_and_numeric_fields() {
         &[
             "--3dtiles-content-add-bv",
             "--3dtiles-content-bv-from-tile",
-            "--geometric-error-factor",
-            "0.05",
             "--qtree-capacity",
             "1",
             "--grid-minz=-10",
@@ -447,10 +445,9 @@ fn tileset_flags_change_output_artifacts_and_numeric_fields() {
         .expect("modified geometricError should be numeric");
     let modified_region = region_from_bounding_volume(&modified_root["boundingVolume"]);
     assert!(
-        (default_geometric_error - modified_geometric_error).abs() > f64::EPSILON,
-        "expected geometricError to change"
+        (default_geometric_error - modified_geometric_error).abs() <= f64::EPSILON,
+        "grid height and content bounding-volume settings should not change traversal error"
     );
-    assert!(modified_geometric_error > default_geometric_error);
     assert!(modified_region[4] <= default_region[4]);
     assert!(modified_region[5] >= default_region[5]);
 

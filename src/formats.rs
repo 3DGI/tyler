@@ -36,6 +36,8 @@ pub mod cesium3dtiles {
     use crate::spatial_structs::{Bbox, CellId, QuadTree, QuadTreeNodeId, SquareGrid};
     use cityjson_lib::ops::Transformer;
 
+    const TRAVERSAL_GEOMETRIC_ERROR_FACTOR: f64 = 0.024;
+
     /// [Tileset](https://github.com/CesiumGS/3d-tiles/tree/main/specification#tileset).
     ///
     /// Not supported: `extras`.
@@ -155,24 +157,25 @@ pub mod cesium3dtiles {
         pub fn from_quadtree(
             quadtree: &QuadTree,
             world: &crate::parser::World,
-            geometric_error_factor: f64,
             _arg_cellsize: u32,
             content_bv_from_tile: bool,
             content_add_bv: bool,
             content_tile_ids: Option<&HashSet<TileId>>,
             root_enu_frame: &RootEnuFrame,
-        ) -> Self {
-            let crs_from = format!("EPSG:{}", world.crs.to_epsg().unwrap());
-            let transformer = cityjson_lib::ops::transformer(&crs_from, "EPSG:4979").unwrap();
+        ) -> Result<Self, Box<dyn std::error::Error>> {
+            let crs_from = format!("EPSG:{}", world.crs.to_epsg()?);
+            let transformer = cityjson_lib::ops::transformer(&crs_from, "EPSG:4979")?;
+            let source_to_ecef = cityjson_lib::ops::transformer(&crs_from, "EPSG:4978")?;
             let root = Self::generate_tiles(
                 quadtree,
                 world,
+                &crs_from,
                 &transformer,
-                geometric_error_factor,
+                &source_to_ecef,
                 content_bv_from_tile,
                 content_add_bv,
                 content_tile_ids,
-            );
+            )?;
             log::info!(
                 "Root ENU frame - input CRS origin: [{:.2}, {:.2}, {:.2}], geodetic: [{:.8}, {:.8}, {:.2}], ECEF: [{:.2}, {:.2}, {:.2}]",
                 root_enu_frame.source_origin[0],
@@ -200,7 +203,7 @@ pub mod cesium3dtiles {
             root_with_transform.transform = Some(root_transform);
             let geometric_error = root_with_transform.geometric_error;
 
-            Self {
+            Ok(Self {
                 asset: Default::default(),
                 geometric_error,
                 root: root_with_transform,
@@ -208,7 +211,7 @@ pub mod cesium3dtiles {
                 extensions_used: Some(vec![ExtensionName::ContentGltf]),
                 extensions_required: Some(vec![ExtensionName::ContentGltf]),
                 extensions: Some(extensions),
-            }
+            })
         }
 
         // TODO: The function outputs a Tile even if the quadtree node has 0 items,
@@ -218,12 +221,13 @@ pub mod cesium3dtiles {
         fn generate_tiles(
             quadtree: &QuadTree,
             world: &crate::parser::World,
+            source_crs: &str,
             transformer: &Transformer,
-            geometric_error_factor: f64,
+            source_to_ecef: &Transformer,
             content_bv_from_tile: bool,
             content_add_bv: bool,
             content_tile_ids: Option<&HashSet<TileId>>,
-        ) -> Tile {
+        ) -> Result<Tile, Box<dyn std::error::Error>> {
             if !quadtree.children.is_empty() {
                 let tile_id = TileId::from(&quadtree.id);
 
@@ -234,8 +238,13 @@ pub mod cesium3dtiles {
                 // Set the bounding volume height from the grid height, which can be set with
                 // an argument, or else calculated from the data (content).
                 let spatial_bbox = quadtree.bbox(&world.grid);
-                let tile_width =
-                    (spatial_bbox[3] - spatial_bbox[0]).max(spatial_bbox[4] - spatial_bbox[1]);
+                let footprint_width_meters = crate::coordinates::horizontal_footprint_width_meters(
+                    source_crs,
+                    &spatial_bbox,
+                    source_to_ecef,
+                )?;
+                let spatial_traversal_error =
+                    footprint_width_meters * TRAVERSAL_GEOMETRIC_ERROR_FACTOR;
                 let mut tile_bbox = spatial_bbox;
                 let tile_content_bbox =
                     (quadtree.nr_items > 0).then(|| quadtree.node_content_bbox(world, None, None));
@@ -251,8 +260,7 @@ pub mod cesium3dtiles {
                     );
                     tile_bbox[5] = tile_bbox[2] + tile_bbox[2] * 0.01;
                 }
-                let bounding_volume =
-                    BoundingVolume::region_from_bbox(&tile_bbox, transformer).unwrap();
+                let bounding_volume = BoundingVolume::region_from_bbox(&tile_bbox, transformer)?;
 
                 let has_content = content_tile_ids.is_some_and(|ids| ids.contains(&tile_id));
                 let content = if has_content {
@@ -275,30 +283,33 @@ pub mod cesium3dtiles {
                     tile_children.push(Self::generate_tiles(
                         child,
                         world,
+                        source_crs,
                         transformer,
-                        geometric_error_factor,
+                        source_to_ecef,
                         content_bv_from_tile,
                         content_add_bv,
                         content_tile_ids,
-                    ));
+                    )?);
                 }
                 let maximum_child_error = tile_children
                     .iter()
                     .map(|child| child.geometric_error)
                     .fold(0.0, f64::max);
-                let geometric_error =
-                    (tile_width * geometric_error_factor).max(maximum_child_error);
-                Tile {
+                // The converter does not yet return measured representation errors, so
+                // internal content uses this spatial fallback until that data is available.
+                let geometric_error = spatial_traversal_error.max(maximum_child_error);
+                Ok(Tile {
                     id: tile_id,
                     bounding_volume,
                     geometric_error,
+                    spatial_traversal_error,
                     viewer_request_volume: None,
                     refine: Some(Refinement::Replace),
                     transform: None,
                     content,
                     children: Some(tile_children),
                     implicit_tiling: None,
-                }
+                })
             } else {
                 let tile_id = TileId::from(&quadtree.id);
 
@@ -317,8 +328,7 @@ pub mod cesium3dtiles {
                     );
                     tile_bbox[5] = tile_bbox[2] + tile_bbox[2] * 0.01;
                 }
-                let bounding_volume =
-                    BoundingVolume::region_from_bbox(&tile_bbox, transformer).unwrap();
+                let bounding_volume = BoundingVolume::region_from_bbox(&tile_bbox, transformer)?;
                 let has_content = quadtree.nr_items > 0
                     && content_tile_ids.is_none_or(|ids| ids.contains(&tile_id));
                 let content = if has_content {
@@ -337,17 +347,18 @@ pub mod cesium3dtiles {
                     None
                 };
 
-                Tile {
+                Ok(Tile {
                     id: tile_id,
                     bounding_volume,
                     geometric_error: 0.0,
+                    spatial_traversal_error: 0.0,
                     viewer_request_volume: None,
                     refine: Some(Refinement::Replace),
                     transform: None,
                     content,
                     children: None,
                     implicit_tiling: None,
-                }
+                })
             }
         }
 
@@ -1212,6 +1223,8 @@ pub mod cesium3dtiles {
         pub id: TileId,
         bounding_volume: BoundingVolume,
         pub geometric_error: GeometricError,
+        #[serde(skip)]
+        spatial_traversal_error: GeometricError,
         #[serde(skip_serializing_if = "Option::is_none")]
         viewer_request_volume: Option<BoundingVolume>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -1361,6 +1374,18 @@ pub mod cesium3dtiles {
                     }
                 }
                 self.children = (!retained_children.is_empty()).then_some(retained_children);
+            }
+
+            if let Some(children) = &self.children {
+                let maximum_child_error = children
+                    .iter()
+                    .map(|child| child.geometric_error)
+                    .fold(0.0, f64::max);
+                self.geometric_error = if self.content.is_none() {
+                    self.spatial_traversal_error.max(maximum_child_error)
+                } else {
+                    self.geometric_error.max(maximum_child_error)
+                };
             }
 
             let qtree_nodeid: QuadTreeNodeId = (&self.id).into();
@@ -1870,8 +1895,35 @@ pub mod cesium3dtiles {
             }
         }
 
-        fn assert_geometric_error_decreases_to_zero(tile: &Tile) {
+        fn assert_geometric_error_decreases_to_zero(
+            tile: &Tile,
+            quadtree: &QuadTree,
+            world: &crate::parser::World,
+            source_crs: &str,
+            source_to_ecef: &Transformer,
+        ) {
             if let Some(children) = &tile.children {
+                let maximum_child_error = children
+                    .iter()
+                    .map(|child| child.geometric_error)
+                    .fold(0.0, f64::max);
+                let qtree_node_id: QuadTreeNodeId = (&tile.id).into();
+                let qtree_node = quadtree
+                    .node(&qtree_node_id)
+                    .expect("tileset node should map to a quadtree node");
+                let footprint_width_meters = crate::coordinates::horizontal_footprint_width_meters(
+                    source_crs,
+                    &qtree_node.bbox(&world.grid),
+                    source_to_ecef,
+                )
+                .expect("calculate spatial footprint width");
+                let expected_error = (footprint_width_meters * TRAVERSAL_GEOMETRIC_ERROR_FACTOR)
+                    .max(maximum_child_error);
+                assert!(
+                    (tile.geometric_error - expected_error).abs() <= f64::EPSILON,
+                    "tile {} geometricError should use its metre footprint and maximum child error",
+                    tile.id
+                );
                 for child in children {
                     assert!(
                         tile.geometric_error >= child.geometric_error,
@@ -1881,7 +1933,13 @@ pub mod cesium3dtiles {
                         child.id,
                         child.geometric_error
                     );
-                    assert_geometric_error_decreases_to_zero(child);
+                    assert_geometric_error_decreases_to_zero(
+                        child,
+                        quadtree,
+                        world,
+                        source_crs,
+                        source_to_ecef,
+                    );
                 }
             } else {
                 assert!(
@@ -1950,21 +2008,21 @@ pub mod cesium3dtiles {
             quadtree.export(&world, None).unwrap();
 
             let source_crs = format!("EPSG:{}", world.crs.to_epsg().unwrap());
+            let source_to_ecef = cityjson_lib::ops::transformer(&source_crs, "EPSG:4978").unwrap();
             let root_bbox = quadtree.bbox(&world.grid);
             let root_enu_frame =
                 RootEnuFrame::from_bbox(&source_crs, &root_bbox).expect("root ENU frame");
-            let tileset = Tileset::from_quadtree(
+            let tileset =
+                Tileset::from_quadtree(&quadtree, &world, 200, true, true, None, &root_enu_frame)
+                    .expect("generate test tileset");
+            assert_tile_bounding_volumes_are_regions(&tileset.root);
+            assert_geometric_error_decreases_to_zero(
+                &tileset.root,
                 &quadtree,
                 &world,
-                0.024,
-                200,
-                true,
-                true,
-                None,
-                &root_enu_frame,
+                &source_crs,
+                &source_to_ecef,
             );
-            assert_tile_bounding_volumes_are_regions(&tileset.root);
-            assert_geometric_error_decreases_to_zero(&tileset.root);
             if tileset.root.children.is_some() {
                 assert!(
                     (tileset.geometric_error - tileset.root.geometric_error).abs() <= f64::EPSILON

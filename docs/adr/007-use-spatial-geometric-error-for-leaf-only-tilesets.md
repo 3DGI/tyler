@@ -29,11 +29,12 @@ larger sparse tile.
 
 ## Decision
 
-For leaf-only 3D Tiles output, Tyler will compute internal-tile
-`geometricError` from tile footprint size:
+Tyler computes internal-tile spatial traversal error from the horizontal
+footprint in real-world metres, before the bounds expand to contain complete
+CityObjects:
 
 ```text
-geometricError = tile_width * geometric_error_factor
+geometricError = max(0.024 * footprint_width_metres, maximum_child_error)
 ```
 
 Leaf tiles use:
@@ -42,14 +43,10 @@ Leaf tiles use:
 geometricError = 0.0
 ```
 
-The CLI option is `--geometric-error-factor` and keeps `-e` as the short option.
-
-The default factor is `0.024`, which preserves roughly the old default behavior
-near the deepest parent for the default 250 m grid cell size:
-
-```text
-500 m parent tile * 0.024 = 12 m geometricError
-```
+The factor `0.024` is an internal constant. Content-free traversal nodes and
+internal tiles whose content export fails use this formula. Internal content
+tiles also use the spatial estimate until the converter provides measured
+representation errors.
 
 The top-level tileset `geometricError` is set to the root tile
 `geometricError`.
@@ -58,7 +55,8 @@ The top-level tileset `geometricError` is set to the root tile
 
 Good:
 
-- explicit trees have a simple monotonic error ladder based on spatial size
+- explicit trees have a monotonic error hierarchy based on spatial size and
+  child errors
 - full-detail leaves use the standard `0.0` geometric error
 - vertex count continues to control tile subdivision and tile cost, while
   `geometricError` controls spatial refinement
@@ -67,7 +65,8 @@ Good:
 
 Trade-offs:
 
-- the factor is still empirical and may need dataset/viewer tuning
+- the fixed factor is empirical and may need a future policy change after
+  validation with representative data and viewers
 - dense urban tiles no longer refine earlier solely because they contain more
   vertices; if this is desired later, it should be a separate cost-aware loading
   policy rather than the primary geometric-error metric
@@ -77,7 +76,6 @@ Trade-offs:
 
 ## Validation
 
-- CLI test verifies `--geometric-error-factor` parsing
-- 3D Tiles format test verifies generated geometric errors decrease toward
+- 3D Tiles format test verifies the spatial error formula and hierarchy toward
   zero-valued leaves
 - full `cargo test` passes

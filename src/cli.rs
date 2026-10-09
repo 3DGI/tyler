@@ -70,11 +70,6 @@ pub struct Cli {
     /// full detail and do not use this setting.
     #[arg(long = "3dtiles-max-geometric-error", default_value = "5")]
     pub cesium3dtiles_max_geometric_error: f64,
-    /// Set the geometric error factor (see 3D Tiles specification) for internal tiles.
-    /// Internal tile geometricError is computed as tile width multiplied by this factor.
-    /// Higher values make detailed content visible earlier when zooming in.
-    #[arg(long = "3dtiles-geometric-error-factor", default_value = "0.024")]
-    pub cesium3dtiles_geometric_error_factor: f64,
     /// Set the 2D cell size for the grid that is used for constructing the quadtree.
     /// In input units (eg. meters). Note that the cell size will be adjusted so that it is
     /// possible to construct a tightly fit square, containing 4^n cells. The final cell size will
@@ -676,8 +671,8 @@ mod tests {
         assert!(cli.include_parent_attributes);
     }
 
-    /// CLI argument parsing preserves the traversal factor and exposes the
-    /// content width and maximum simplification error in metres.
+    /// CLI argument parsing exposes the content width and maximum
+    /// simplification error in metres.
     #[test]
     fn verify_3dtiles_content_settings() {
         let dataset_dir = legacy_dataset_dir();
@@ -687,15 +682,12 @@ mod tests {
 
         let mut args = required_args(&dataset_dir);
         args.extend([
-            "--3dtiles-geometric-error-factor".to_string(),
-            "0.05".to_string(),
             "--3dtiles-max-content-width".to_string(),
             "1200".to_string(),
             "--3dtiles-max-geometric-error".to_string(),
             "2.5".to_string(),
         ]);
         let cli = Cli::try_parse_from(args).unwrap();
-        assert!((cli.cesium3dtiles_geometric_error_factor - 0.05).abs() < f64::EPSILON);
         assert!((cli.cesium3dtiles_max_content_width - 1200.0).abs() < f64::EPSILON);
         assert!((cli.cesium3dtiles_max_geometric_error - 2.5).abs() < f64::EPSILON);
     }
