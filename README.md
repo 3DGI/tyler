@@ -469,10 +469,12 @@ tyler ./dataset -o ./output-factor-048 --format 3dtiles \
 ```
 
 Regenerate for each value; recompilation is unnecessary. Keep viewer settings
-and camera positions the same. The converter currently exports full-detail
-geometry even when simplification is requested. Written errors follow the
-requested allowances, so these experiments evaluate viewing behavior;
-geometry reduction can be evaluated once simplification exists.
+and camera positions the same. Explicit internal content uses voxel reconstruction
+and simplification with each level's allowance; original leaves remain full detail.
+Written errors follow requested allowances, not certified surface-distance bounds.
+Remeshing can lose isolated components, so validate source coverage before relying
+on these errors for quality guarantees. See
+[ADR 015](docs/adr/015-use-rust-voxel-remeshing-for-optional-glb-proxies.md).
 
 For explicit tilesets, it is possible to add a tightly-fitted bounding volume to the [tile's content](https://docs.ogc.org/cs/22-025r4/22-025r4.html#core-content-bounding-volume).
 You can enable this with the `--3dtiles-content-add-bv` option.

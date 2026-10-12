@@ -1,0 +1,772 @@
+{
+  "date": "2026-10-12",
+  "meshopt_revision": "3c8c9126cd98e70f34c6d9c54d02f41af6749406",
+  "meshoptimizer_version": "1.2",
+  "meshoptimizer_revision": "9d9890c73011d75920af614485296d1e03e95448",
+  "comparison_baseline": "1439eaa",
+  "simplify_options": [
+    "ErrorAbsolute"
+  ],
+  "distance_samples_per_direction": 1024,
+  "sampling_seed": 271828,
+  "performance": [
+    {
+      "dataset": "eight-buildings",
+      "requested_error": null,
+      "seconds": 0.015,
+      "peak_rss_kib": 16276,
+      "exit_code": 0,
+      "bytes": 31108,
+      "report": ""
+    },
+    {
+      "dataset": "eight-buildings",
+      "requested_error": 2,
+      "seconds": 0.723,
+      "peak_rss_kib": 87280,
+      "exit_code": 0,
+      "bytes": 24344,
+      "report": "Remesh: requested 2.000 m, grid 1944x2468x30, voxel 0.577 m, estimated error 2.821 m (remesh 1.000 + simplify 0.988 + encoding 0.833); triangles 943 -> 592396 -> 272; GLB 24344 bytes"
+    },
+    {
+      "dataset": "eight-buildings",
+      "requested_error": 5,
+      "seconds": 0.107,
+      "peak_rss_kib": 24416,
+      "exit_code": 0,
+      "bytes": 21948,
+      "report": "Remesh: requested 5.000 m, grid 780x989x14, voxel 1.443 m, estimated error 5.798 m (remesh 2.500 + simplify 2.465 + encoding 0.833); triangles 943 -> 94586 -> 124; GLB 21948 bytes"
+    },
+    {
+      "dataset": "eight-buildings",
+      "requested_error": 10,
+      "seconds": 0.031,
+      "peak_rss_kib": 17428,
+      "exit_code": 0,
+      "bytes": 20784,
+      "report": "Remesh: requested 10.000 m, grid 392x496x9, voxel 2.887 m, estimated error 10.699 m (remesh 5.000 + simplify 4.866 + encoding 0.833); triangles 943 -> 23724 -> 58; GLB 20784 bytes"
+    },
+    {
+      "dataset": "110000_492000",
+      "requested_error": null,
+      "seconds": 0.011,
+      "peak_rss_kib": 17808,
+      "exit_code": 0,
+      "bytes": 75196,
+      "report": ""
+    },
+    {
+      "dataset": "110000_492000",
+      "requested_error": 5,
+      "seconds": 0.177,
+      "peak_rss_kib": 39604,
+      "exit_code": 0,
+      "bytes": 38468,
+      "report": "Remesh: requested 5.000 m, grid 1421x1327x24, voxel 1.443 m, estimated error 5.806 m (remesh 2.500 + simplify 2.464 + encoding 0.842); triangles 3526 -> 181146 -> 488; GLB 38468 bytes"
+    },
+    {
+      "dataset": "110000_492000",
+      "requested_error": 20,
+      "seconds": 0.022,
+      "peak_rss_kib": 18388,
+      "exit_code": 0,
+      "bytes": 29972,
+      "report": "Remesh: requested 20.000 m, grid 358x334x9, voxel 5.774 m, estimated error 20.812 m (remesh 10.000 + simplify 9.972 + encoding 0.841); triangles 3526 -> 11250 -> 62; GLB 29972 bytes"
+    },
+    {
+      "dataset": "110000_492000",
+      "requested_error": 40,
+      "seconds": 0.016,
+      "peak_rss_kib": 17628,
+      "exit_code": 0,
+      "bytes": 29192,
+      "report": "Remesh: requested 40.000 m, grid 181x169x6, voxel 11.547 m, estimated error 39.400 m (remesh 20.000 + simplify 18.576 + encoding 0.824); triangles 3526 -> 2982 -> 26; GLB 29192 bytes"
+    },
+    {
+      "dataset": "174000_440000",
+      "requested_error": null,
+      "seconds": 0.075,
+      "peak_rss_kib": 44668,
+      "exit_code": 0,
+      "bytes": 692400,
+      "report": ""
+    },
+    {
+      "dataset": "174000_440000",
+      "requested_error": 5,
+      "seconds": 0.23,
+      "peak_rss_kib": 79364,
+      "exit_code": 0,
+      "bytes": 245068,
+      "report": "Remesh: requested 5.000 m, grid 1405x1400x44, voxel 1.443 m, estimated error 5.733 m (remesh 2.500 + simplify 2.478 + encoding 0.755); triangles 39229 -> 229654 -> 3756; GLB 245068 bytes"
+    },
+    {
+      "dataset": "174000_440000",
+      "requested_error": 20,
+      "seconds": 0.102,
+      "peak_rss_kib": 59280,
+      "exit_code": 0,
+      "bytes": 170564,
+      "report": "Remesh: requested 20.000 m, grid 354x353x14, voxel 5.774 m, estimated error 20.634 m (remesh 10.000 + simplify 9.879 + encoding 0.754); triangles 39229 -> 15998 -> 208; GLB 170564 bytes"
+    },
+    {
+      "dataset": "174000_440000",
+      "requested_error": 40,
+      "seconds": 0.098,
+      "peak_rss_kib": 59464,
+      "exit_code": 0,
+      "bytes": 166396,
+      "report": "Remesh: requested 40.000 m, grid 179x178x9, voxel 11.547 m, estimated error 40.396 m (remesh 20.000 + simplify 19.658 + encoding 0.738); triangles 39229 -> 4958 -> 18; GLB 166396 bytes"
+    },
+    {
+      "dataset": "120000_484000",
+      "requested_error": null,
+      "seconds": 1.551,
+      "peak_rss_kib": 590616,
+      "exit_code": 0,
+      "bytes": 13802108,
+      "report": ""
+    },
+    {
+      "dataset": "120000_484000",
+      "requested_error": 5,
+      "seconds": 7.521,
+      "peak_rss_kib": 1013376,
+      "exit_code": 0,
+      "bytes": 3935048,
+      "report": "Remesh: requested 5.000 m, grid 1408x1567x65, voxel 1.443 m, estimated error 5.810 m (remesh 2.500 + simplify 2.480 + encoding 0.830); triangles 775314 -> 5270688 -> 54932; GLB 3935048 bytes"
+    },
+    {
+      "dataset": "120000_484000",
+      "requested_error": 20,
+      "seconds": 2.235,
+      "peak_rss_kib": 799020,
+      "exit_code": 0,
+      "bytes": 2910024,
+      "report": "Remesh: requested 20.000 m, grid 355x394x19, voxel 5.774 m, estimated error 20.718 m (remesh 10.000 + simplify 9.889 + encoding 0.829); triangles 775314 -> 320752 -> 7200; GLB 2910024 bytes"
+    },
+    {
+      "dataset": "120000_484000",
+      "requested_error": 40,
+      "seconds": 2.046,
+      "peak_rss_kib": 786212,
+      "exit_code": 0,
+      "bytes": 2777352,
+      "report": "Remesh: requested 40.000 m, grid 179x199x11, voxel 11.547 m, estimated error 40.719 m (remesh 20.000 + simplify 19.889 + encoding 0.829); triangles 775314 -> 83444 -> 1572; GLB 2777352 bytes"
+    }
+  ],
+  "distances": [
+    {
+      "dataset": "110000_492000",
+      "requested_error": 5,
+      "source_triangles": 3526,
+      "proxy_triangles": 488,
+      "metadata_rows": 47,
+      "represented_features": 43,
+      "source_to_proxy": {
+        "sampled_max_m": 16.222,
+        "sampled_rms_m": 1.175
+      },
+      "proxy_to_source": {
+        "sampled_max_m": 6.793,
+        "sampled_rms_m": 0.479
+      }
+    },
+    {
+      "dataset": "110000_492000",
+      "requested_error": 20,
+      "source_triangles": 3526,
+      "proxy_triangles": 62,
+      "metadata_rows": 47,
+      "represented_features": 12,
+      "source_to_proxy": {
+        "sampled_max_m": 892.355,
+        "sampled_rms_m": 82.549
+      },
+      "proxy_to_source": {
+        "sampled_max_m": 11.403,
+        "sampled_rms_m": 2.286
+      }
+    },
+    {
+      "dataset": "110000_492000",
+      "requested_error": 40,
+      "source_triangles": 3526,
+      "proxy_triangles": 26,
+      "metadata_rows": 47,
+      "represented_features": 5,
+      "source_to_proxy": {
+        "sampled_max_m": 1958.322,
+        "sampled_rms_m": 568.079
+      },
+      "proxy_to_source": {
+        "sampled_max_m": 11.065,
+        "sampled_rms_m": 4.683
+      }
+    },
+    {
+      "dataset": "120000_484000",
+      "requested_error": 5,
+      "source_triangles": 775314,
+      "proxy_triangles": 54932,
+      "metadata_rows": 11297,
+      "represented_features": 9412,
+      "source_to_proxy": {
+        "sampled_max_m": 43.943,
+        "sampled_rms_m": 2.433
+      },
+      "proxy_to_source": {
+        "sampled_max_m": 4.993,
+        "sampled_rms_m": 0.532
+      }
+    },
+    {
+      "dataset": "120000_484000",
+      "requested_error": 20,
+      "source_triangles": 775314,
+      "proxy_triangles": 7200,
+      "metadata_rows": 11297,
+      "represented_features": 4039,
+      "source_to_proxy": {
+        "sampled_max_m": 82.585,
+        "sampled_rms_m": 6.122
+      },
+      "proxy_to_source": {
+        "sampled_max_m": 11.032,
+        "sampled_rms_m": 2.137
+      }
+    },
+    {
+      "dataset": "120000_484000",
+      "requested_error": 40,
+      "source_triangles": 775314,
+      "proxy_triangles": 1572,
+      "metadata_rows": 11297,
+      "represented_features": 900,
+      "source_to_proxy": {
+        "sampled_max_m": 184.541,
+        "sampled_rms_m": 19.341
+      },
+      "proxy_to_source": {
+        "sampled_max_m": 15.713,
+        "sampled_rms_m": 3.972
+      }
+    },
+    {
+      "dataset": "174000_440000",
+      "requested_error": 5,
+      "source_triangles": 39229,
+      "proxy_triangles": 3756,
+      "metadata_rows": 630,
+      "represented_features": 500,
+      "source_to_proxy": {
+        "sampled_max_m": 24.309,
+        "sampled_rms_m": 1.645
+      },
+      "proxy_to_source": {
+        "sampled_max_m": 3.25,
+        "sampled_rms_m": 0.608
+      }
+    },
+    {
+      "dataset": "174000_440000",
+      "requested_error": 20,
+      "source_triangles": 39229,
+      "proxy_triangles": 208,
+      "metadata_rows": 630,
+      "represented_features": 89,
+      "source_to_proxy": {
+        "sampled_max_m": 1179.02,
+        "sampled_rms_m": 225.666
+      },
+      "proxy_to_source": {
+        "sampled_max_m": 11.124,
+        "sampled_rms_m": 2.375
+      }
+    },
+    {
+      "dataset": "174000_440000",
+      "requested_error": 40,
+      "source_triangles": 39229,
+      "proxy_triangles": 18,
+      "metadata_rows": 630,
+      "represented_features": 10,
+      "source_to_proxy": {
+        "sampled_max_m": 2309.509,
+        "sampled_rms_m": 623.933
+      },
+      "proxy_to_source": {
+        "sampled_max_m": 14.597,
+        "sampled_rms_m": 4.272
+      }
+    },
+    {
+      "dataset": "eight-buildings",
+      "requested_error": 2,
+      "source_triangles": 943,
+      "proxy_triangles": 272,
+      "metadata_rows": 8,
+      "represented_features": 8,
+      "source_to_proxy": {
+        "sampled_max_m": 8.418,
+        "sampled_rms_m": 0.481
+      },
+      "proxy_to_source": {
+        "sampled_max_m": 5.656,
+        "sampled_rms_m": 0.316
+      }
+    },
+    {
+      "dataset": "eight-buildings",
+      "requested_error": 5,
+      "source_triangles": 943,
+      "proxy_triangles": 124,
+      "metadata_rows": 8,
+      "represented_features": 8,
+      "source_to_proxy": {
+        "sampled_max_m": 7.298,
+        "sampled_rms_m": 0.528
+      },
+      "proxy_to_source": {
+        "sampled_max_m": 1.902,
+        "sampled_rms_m": 0.261
+      }
+    },
+    {
+      "dataset": "eight-buildings",
+      "requested_error": 10,
+      "source_triangles": 943,
+      "proxy_triangles": 58,
+      "metadata_rows": 8,
+      "represented_features": 7,
+      "source_to_proxy": {
+        "sampled_max_m": 892.729,
+        "sampled_rms_m": 62.096
+      },
+      "proxy_to_source": {
+        "sampled_max_m": 5.319,
+        "sampled_rms_m": 0.526
+      }
+    }
+  ],
+  "byte_comparison": [
+    {
+      "dataset": "eight-buildings",
+      "requested_error": null,
+      "byte_identical": true
+    },
+    {
+      "dataset": "eight-buildings",
+      "requested_error": 2,
+      "byte_identical": false
+    },
+    {
+      "dataset": "eight-buildings",
+      "requested_error": 5,
+      "byte_identical": false
+    },
+    {
+      "dataset": "eight-buildings",
+      "requested_error": 10,
+      "byte_identical": false
+    },
+    {
+      "dataset": "110000_492000",
+      "requested_error": null,
+      "byte_identical": true
+    },
+    {
+      "dataset": "110000_492000",
+      "requested_error": 5,
+      "byte_identical": false
+    },
+    {
+      "dataset": "110000_492000",
+      "requested_error": 20,
+      "byte_identical": false
+    },
+    {
+      "dataset": "110000_492000",
+      "requested_error": 40,
+      "byte_identical": false
+    },
+    {
+      "dataset": "174000_440000",
+      "requested_error": null,
+      "byte_identical": true
+    },
+    {
+      "dataset": "174000_440000",
+      "requested_error": 5,
+      "byte_identical": false
+    },
+    {
+      "dataset": "174000_440000",
+      "requested_error": 20,
+      "byte_identical": false
+    },
+    {
+      "dataset": "174000_440000",
+      "requested_error": 40,
+      "byte_identical": false
+    },
+    {
+      "dataset": "120000_484000",
+      "requested_error": null,
+      "byte_identical": true
+    },
+    {
+      "dataset": "120000_484000",
+      "requested_error": 5,
+      "byte_identical": false
+    },
+    {
+      "dataset": "120000_484000",
+      "requested_error": 20,
+      "byte_identical": false
+    },
+    {
+      "dataset": "120000_484000",
+      "requested_error": 40,
+      "byte_identical": false
+    }
+  ],
+  "reconstruction_comparison": [
+    {
+      "axis": 0,
+      "voxel_size": 0.2,
+      "options": 0,
+      "triangles": 189992,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 0,
+      "voxel_size": 0.2,
+      "options": 1,
+      "triangles": 373488,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 0,
+      "voxel_size": 0.2,
+      "options": 2,
+      "triangles": 189992,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 0,
+      "voxel_size": 0.2,
+      "options": 3,
+      "triangles": 373488,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 0,
+      "voxel_size": 0.7,
+      "options": 0,
+      "triangles": 16692,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 0,
+      "voxel_size": 0.7,
+      "options": 1,
+      "triangles": 31520,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 0,
+      "voxel_size": 0.7,
+      "options": 2,
+      "triangles": 16692,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 0,
+      "voxel_size": 0.7,
+      "options": 3,
+      "triangles": 31520,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 0,
+      "voxel_size": 1.43,
+      "options": 0,
+      "triangles": 3860,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 0,
+      "voxel_size": 1.43,
+      "options": 1,
+      "triangles": 6816,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 0,
+      "voxel_size": 1.43,
+      "options": 2,
+      "triangles": 3860,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 0,
+      "voxel_size": 1.43,
+      "options": 3,
+      "triangles": 6816,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 0,
+      "voxel_size": 3.0,
+      "options": 0,
+      "triangles": 1044,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 0,
+      "voxel_size": 3.0,
+      "options": 1,
+      "triangles": 1648,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 0,
+      "voxel_size": 3.0,
+      "options": 2,
+      "triangles": 1044,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 0,
+      "voxel_size": 3.0,
+      "options": 3,
+      "triangles": 1648,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 1,
+      "voxel_size": 0.2,
+      "options": 0,
+      "triangles": 146480,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 1,
+      "voxel_size": 0.2,
+      "options": 1,
+      "triangles": 286576,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 1,
+      "voxel_size": 0.2,
+      "options": 2,
+      "triangles": 146480,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 1,
+      "voxel_size": 0.2,
+      "options": 3,
+      "triangles": 286576,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 1,
+      "voxel_size": 0.7,
+      "options": 0,
+      "triangles": 13124,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 1,
+      "voxel_size": 0.7,
+      "options": 1,
+      "triangles": 24416,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 1,
+      "voxel_size": 0.7,
+      "options": 2,
+      "triangles": 13124,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 1,
+      "voxel_size": 0.7,
+      "options": 3,
+      "triangles": 24416,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 1,
+      "voxel_size": 1.43,
+      "options": 0,
+      "triangles": 3424,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 1,
+      "voxel_size": 1.43,
+      "options": 1,
+      "triangles": 5952,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 1,
+      "voxel_size": 1.43,
+      "options": 2,
+      "triangles": 3424,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 1,
+      "voxel_size": 1.43,
+      "options": 3,
+      "triangles": 5952,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 1,
+      "voxel_size": 3.0,
+      "options": 0,
+      "triangles": 832,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 1,
+      "voxel_size": 3.0,
+      "options": 1,
+      "triangles": 1232,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 1,
+      "voxel_size": 3.0,
+      "options": 2,
+      "triangles": 832,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 1,
+      "voxel_size": 3.0,
+      "options": 3,
+      "triangles": 1232,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 2,
+      "voxel_size": 0.2,
+      "options": 0,
+      "triangles": 177400,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 2,
+      "voxel_size": 0.2,
+      "options": 1,
+      "triangles": 348336,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 2,
+      "voxel_size": 0.2,
+      "options": 2,
+      "triangles": 177400,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 2,
+      "voxel_size": 0.2,
+      "options": 3,
+      "triangles": 348336,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 2,
+      "voxel_size": 0.7,
+      "options": 0,
+      "triangles": 15788,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 2,
+      "voxel_size": 0.7,
+      "options": 1,
+      "triangles": 29720,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 2,
+      "voxel_size": 0.7,
+      "options": 2,
+      "triangles": 15788,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 2,
+      "voxel_size": 0.7,
+      "options": 3,
+      "triangles": 29720,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 2,
+      "voxel_size": 1.43,
+      "options": 0,
+      "triangles": 3860,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 2,
+      "voxel_size": 1.43,
+      "options": 1,
+      "triangles": 6816,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 2,
+      "voxel_size": 1.43,
+      "options": 2,
+      "triangles": 3860,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 2,
+      "voxel_size": 1.43,
+      "options": 3,
+      "triangles": 6816,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 2,
+      "voxel_size": 3.0,
+      "options": 0,
+      "triangles": 1044,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 2,
+      "voxel_size": 3.0,
+      "options": 1,
+      "triangles": 1648,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 2,
+      "voxel_size": 3.0,
+      "options": 2,
+      "triangles": 1044,
+      "maximum_position_difference": 0.0
+    },
+    {
+      "axis": 2,
+      "voxel_size": 3.0,
+      "options": 3,
+      "triangles": 1648,
+      "maximum_position_difference": 0.0
+    }
+  ]
+}

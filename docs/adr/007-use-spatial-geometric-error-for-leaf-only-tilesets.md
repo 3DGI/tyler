@@ -69,9 +69,11 @@ dataset may fail to display or reach its content in the viewer.
   be adjusted independently with the same executable and separate outputs.
 - Default 0.024 retains plan 02's calculations; custom factors affect only
   spatial estimates. Compare outputs with identical camera and viewer settings.
-- The converter currently exports full-detail geometry for requested simplified
-  representations. Allowances support viewing experiments now; mesh reduction
-  and measured representation errors remain future converter work.
+- Simplified internal content uses the converter's optional voxel reconstruction
+  and simplification with its planned allowance. Tile errors still use those
+  allowances rather than measured surface-distance bounds; component coverage
+  and validated representation errors remain future work. See
+  [ADR 015](015-use-rust-voxel-remeshing-for-optional-glb-proxies.md).
 
 ## Validation
 

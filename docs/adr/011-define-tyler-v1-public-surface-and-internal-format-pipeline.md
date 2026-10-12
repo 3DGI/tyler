@@ -426,8 +426,11 @@ including debug output, pruning and external tileset entry calculations.
 Content width and simplification allowances apply only to explicit tiling.
 The fixed tileset entry multiplier remains 2. These policies are detailed in
 [ADR 007](007-use-spatial-geometric-error-for-leaf-only-tilesets.md).
-The converter currently emits full-detail geometry for simplified requests;
-Tyler writes the requested allowances until mesh simplification is available.
+Tyler passes simplified requests through `ExportOptions.voxel_remesh`, using
+each level's planned allowance; full-detail requests use `None`. The converter
+reconstructs and simplifies those internal meshes. Tyler still writes the
+planned allowances as selection estimates, not measured surface-distance bounds.
+See [ADR 015](015-use-rust-voxel-remeshing-for-optional-glb-proxies.md).
 
 Tyler does not perform per-vertex geometric clipping against tile bounds. It
 selects whole features whose extent overlaps the tile and hands the resulting

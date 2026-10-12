@@ -163,14 +163,29 @@ enum TileRepresentationPolicy {
     Simplified { max_error_meters: f64 },
 }
 
-impl From<TileRepresentationPolicy> for cityjson_convert::GeometryRepresentation {
-    fn from(policy: TileRepresentationPolicy) -> Self {
-        match policy {
-            TileRepresentationPolicy::FullDetail => Self::FullDetail,
-            TileRepresentationPolicy::Simplified { max_error_meters } => {
-                Self::Simplified { max_error_meters }
-            }
+impl TryFrom<TileRepresentationPolicy> for Option<cityjson_convert::VoxelRemeshOptions> {
+    type Error = Box<dyn std::error::Error>;
+
+    fn try_from(policy: TileRepresentationPolicy) -> Result<Self, Self::Error> {
+        let TileRepresentationPolicy::Simplified { max_error_meters } = policy else {
+            return Ok(None);
+        };
+        if !max_error_meters.is_finite()
+            || max_error_meters <= 0.0
+            || max_error_meters > f64::from(f32::MAX)
+        {
+            return Err("voxel remeshing allowance must be finite, positive, and fit f32".into());
         }
+        let mut geometric_error = max_error_meters as f32;
+        if f64::from(geometric_error) > max_error_meters {
+            geometric_error = geometric_error.next_down();
+        }
+        if geometric_error <= 0.0 {
+            return Err("voxel remeshing allowance is too small to represent".into());
+        }
+        Ok(Some(cityjson_convert::VoxelRemeshOptions {
+            geometric_error,
+        }))
     }
 }
 
@@ -283,12 +298,12 @@ fn build_glb_export_options(
         metadata_class_name: cli.cesium3dtiles_metadata_class.clone(),
         feature_type_colors,
         geometry_placement,
-        representation: cityjson_convert::GeometryRepresentation::FullDetail,
         clip_bbox,
         clip_geographic_region: None,
         smooth_normals: cli.smooth_normals,
         quantize_geometry: true,
         meshopt_compression: true,
+        voxel_remesh: None,
     }
 }
 
@@ -1786,9 +1801,7 @@ impl OutputFormatBackend for Cesium3dTilesBackend {
                 })
                 .count();
             if simplified_tiles > 0 {
-                warn!(
-                    "{simplified_tiles} internal tiles request simplified content, but cityjson-convert currently writes full-detail geometry until mesh simplification support is implemented"
-                );
+                info!("Planned voxel remeshing for {simplified_tiles} internal content tiles");
             }
             let export_jobs = content_plan.jobs;
             info!("Writing unpruned 3D Tiles tileset");
@@ -1828,7 +1841,7 @@ impl OutputFormatBackend for Cesium3dTilesBackend {
             .join(&file_name)
             .with_extension("glb");
         let mut export_options = context.export_options.clone();
-        export_options.representation = job.representation.into();
+        export_options.voxel_remesh = job.representation.try_into()?;
         match job.clip {
             TileClip::None => {}
             TileClip::GeographicRegion(bounds) => {
@@ -4175,6 +4188,26 @@ mod tests {
 
     #[test]
     fn explicit_quadtree_content_plan_observes_threshold_and_leaf_exception() {
+        // Planned f64 allowances must reach the f32 remesher without increasing
+        // the requested budget or silently clamping unrepresentable values.
+        let rounded: Option<cityjson_convert::VoxelRemeshOptions> =
+            TileRepresentationPolicy::Simplified {
+                max_error_meters: 1.1,
+            }
+            .try_into()
+            .expect("representable fractional allowance");
+        let rounded = f64::from(
+            rounded
+                .expect("simplified policy enables remeshing")
+                .geometric_error,
+        );
+        assert!(rounded <= 1.1 && 1.1 - rounded < f64::from(f32::EPSILON));
+        for max_error_meters in [f64::MAX, f64::MIN_POSITIVE, f64::NAN] {
+            assert!(Option::<cityjson_convert::VoxelRemeshOptions>::try_from(
+                TileRepresentationPolicy::Simplified { max_error_meters }
+            )
+            .is_err());
+        }
         let (mut world, _) = indexed_resource_world("explicit-content-plan");
         world.grid = spatial_structs::SquareGrid::new(
             &world.grid.bbox,
@@ -4219,6 +4252,12 @@ mod tests {
             let node = quadtree.node(&node_id).expect("planned node in quadtree");
             if node.children.is_empty() {
                 assert_eq!(job.representation, TileRepresentationPolicy::FullDetail);
+                let options: Option<cityjson_convert::VoxelRemeshOptions> =
+                    job.representation.try_into().expect("full-detail options");
+                assert!(
+                    options.is_none(),
+                    "full-detail leaves must bypass remeshing"
+                );
                 continue;
             }
 
@@ -4229,6 +4268,15 @@ mod tests {
             let expected_error =
                 8.0 / 2_f64.powi(i32::from(job.content_tile_coord.level - root_level));
             assert!((max_error_meters - expected_error).abs() < f64::EPSILON);
+            let remesh: Option<cityjson_convert::VoxelRemeshOptions> =
+                job.representation.try_into().expect("simplified options");
+            let budget = f64::from(
+                remesh
+                    .expect("internal content must remesh")
+                    .geometric_error,
+            );
+            assert!(budget > 0.0 && budget <= max_error_meters);
+            assert!((budget - expected_error).abs() < f64::EPSILON);
             has_deeper_internal_content |= job.content_tile_coord.level > root_level;
         }
         assert!(

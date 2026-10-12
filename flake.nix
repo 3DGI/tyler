@@ -54,13 +54,14 @@
 
           tyler = pkgs.rustPlatform.buildRustPackage {
             pname = "tyler";
-            version = "0.4.1";
+            version = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).package.version;
 
             src = self;
             cargoLock = {
               lockFile = ./Cargo.lock;
               outputHashes = {
-                "cityjson-index-0.9.0" = "sha256-WrPSNM3u7ckfQTje++L0DCjQCZP+oyBKH6I0d7W2OG4=";
+                "cityjson-index-0.10.0" = "sha256-1jq/5H4faqIqVJml6jM4+KrCuyiaxbSAIkEzY2krffg=";
+                "meshopt-0.7.0" = "sha256-q9K1ZMKPw4RlCFoHpQ0ZrWrQ/h3WeP8TIcmEF8mopo4=";
               };
             };
 

@@ -1,6 +1,7 @@
 # build
 /target
 /target-windows
+/result
 
 # IDE
 .idea
