@@ -188,7 +188,7 @@ struct TileExportJob {
 #[derive(Debug)]
 struct ExplicitTileContentPlan {
     jobs: Vec<TileExportJob>,
-    content_tile_ids: HashSet<TileId>,
+    content_tile_errors: HashMap<TileId, f64>,
     first_content_level: Option<u16>,
     first_content_width_meters: Option<f64>,
 }
@@ -585,7 +585,7 @@ fn explicit_tile_export_jobs(
                 .first()
                 .map(|candidate| (candidate.0.level, candidate.2))
         });
-    let mut content_tile_ids = HashSet::with_capacity(candidates.len());
+    let mut content_tile_errors = HashMap::with_capacity(candidates.len());
     let mut jobs = Vec::with_capacity(candidates.len());
 
     for (coord, feature_ids, _footprint_width_meters, is_leaf) in candidates {
@@ -605,7 +605,13 @@ fn explicit_tile_export_jobs(
             TileRepresentationPolicy::Simplified { max_error_meters }
         };
         let tile_id = TileId::from(&coord);
-        content_tile_ids.insert(tile_id);
+        content_tile_errors.insert(
+            tile_id,
+            match representation {
+                TileRepresentationPolicy::FullDetail => 0.0,
+                TileRepresentationPolicy::Simplified { max_error_meters } => max_error_meters,
+            },
+        );
         jobs.push(TileExportJob {
             source_node_id: Some(coord.clone()),
             content_tile_coord: coord,
@@ -620,7 +626,7 @@ fn explicit_tile_export_jobs(
 
     Ok(ExplicitTileContentPlan {
         jobs,
-        content_tile_ids,
+        content_tile_errors,
         first_content_level,
         first_content_width_meters,
     })
@@ -1710,7 +1716,7 @@ impl OutputFormatBackend for Cesium3dTilesBackend {
             cli.cesium3dtiles_content_add_bv,
             explicit_content_plan
                 .as_ref()
-                .map(|plan| &plan.content_tile_ids),
+                .map(|plan| &plan.content_tile_errors),
             &root_enu_frame,
         )?;
 
@@ -4283,7 +4289,10 @@ mod tests {
                 > 0.1
         }));
 
-        assert_eq!(at_threshold.content_tile_ids.len(), at_threshold.jobs.len());
+        assert_eq!(
+            at_threshold.content_tile_errors.len(),
+            at_threshold.jobs.len()
+        );
         assert_eq!(
             at_threshold.first_content_level,
             at_threshold
@@ -4303,11 +4312,95 @@ mod tests {
             10,
             false,
             true,
-            Some(&at_threshold.content_tile_ids),
+            Some(&at_threshold.content_tile_errors),
             &root_enu_frame,
         )
         .expect("generate content plan tileset");
-        let tileset_json = serde_json::to_value(tileset).expect("serialize content plan tileset");
+        for tile in tileset.flatten(None) {
+            if let Some(allowance) = at_threshold.content_tile_errors.get(&tile.id) {
+                assert!((tile.geometric_error - *allowance).abs() <= f64::EPSILON);
+            }
+        }
+        let tileset_json = serde_json::to_value(&tileset).expect("serialize content plan tileset");
+        assert_eq!(tileset_json["root"]["geometricError"], 8.0);
+        assert!(
+            tileset_json["geometricError"]
+                .as_f64()
+                .expect("tileset error")
+                >= 16.0
+        );
+
+        let unsplit_errors: HashMap<_, _> = tileset
+            .flatten(None)
+            .into_iter()
+            .map(|tile| (tile.id.clone(), tile.geometric_error))
+            .collect();
+        let mut split_tileset = tileset.clone();
+        split_tileset.prune_failed_content(&HashSet::new(), &quadtree);
+        let external_tilesets = split_tileset.split(root_level + 1);
+        assert!(!external_tilesets.is_empty());
+        for (_, external) in external_tilesets {
+            let external_json =
+                serde_json::to_value(&external).expect("serialize external tileset");
+            for tile in external.flatten(None) {
+                assert!((tile.geometric_error - unsplit_errors[&tile.id]).abs() <= f64::EPSILON);
+            }
+            let external_root = external.flatten(None)[0];
+            let reference_tile = split_tileset
+                .flatten(None)
+                .into_iter()
+                .find(|tile| tile.id == external_root.id)
+                .expect("parent reference tile");
+            assert!(
+                (reference_tile.geometric_error - external_root.geometric_error).abs()
+                    <= f64::EPSILON
+            );
+            assert!(reference_tile.children.is_none());
+            let node_id = spatial_structs::QuadTreeNodeId::from(&external_root.id);
+            let node = quadtree.node(&node_id).expect("external root node");
+            let mut bounds = node.bbox(&world.grid);
+            let content_bounds = node.node_content_bbox(&world, None, None);
+            for axis in [0, 1] {
+                bounds[axis] = bounds[axis].min(content_bounds[axis]);
+                bounds[axis + 3] = bounds[axis + 3].max(content_bounds[axis + 3]);
+            }
+            let size_estimate = 0.024
+                * coordinates::horizontal_footprint_width_meters(
+                    &source_crs,
+                    &bounds,
+                    &source_to_ecef,
+                )
+                .expect("external bounds width");
+            let expected_entry_error = size_estimate.max(2.0 * external_root.geometric_error);
+            assert_eq!(external_json["geometricError"], expected_entry_error);
+            assert!(expected_entry_error > external_root.geometric_error);
+        }
+
+        let single_root = spatial_structs::QuadTree::from_world(
+            &world,
+            spatial_structs::QuadTreeCapacity::Vertices(usize::MAX),
+        );
+        assert!(single_root.children.is_empty());
+        let single_plan = explicit_tile_export_jobs(&world, &single_root, f64::MAX, 8.0)
+            .expect("plan single full-detail root");
+        let single_tileset = formats::cesium3dtiles::Tileset::from_quadtree(
+            &single_root,
+            &world,
+            10,
+            false,
+            true,
+            Some(&single_plan.content_tile_errors),
+            &root_enu_frame,
+        )
+        .expect("generate single full-detail root");
+        let single_json = serde_json::to_value(single_tileset).expect("serialize single root");
+        assert_eq!(single_json["root"]["geometricError"], 0.0);
+        assert!(
+            single_json["geometricError"]
+                .as_f64()
+                .expect("single entry error")
+                > 0.0
+        );
         assert_eq!(
             tileset_json["root"]["content"]["uri"],
             format!("t/{}.glb", quadtree.id)
@@ -4354,7 +4447,7 @@ mod tests {
             200,
             false,
             true,
-            Some(&content_plan.content_tile_ids),
+            Some(&content_plan.content_tile_errors),
             &root_enu_frame,
         )
         .expect("generate tileset with planned internal content");
@@ -4385,6 +4478,51 @@ mod tests {
             "failed root should use the spatial term and maximum retained child error"
         );
 
+        // An inflated descendant error must disappear when its subtree fails.
+        let mut inflated_errors = content_plan.content_tile_errors.clone();
+        let child_id = content_plan
+            .jobs
+            .iter()
+            .find(|job| {
+                job.content_tile_coord != root_coord
+                    && matches!(
+                        job.representation,
+                        TileRepresentationPolicy::Simplified { .. }
+                    )
+            })
+            .map(|job| TileId::from(&job.content_tile_coord))
+            .expect("fixture has simplified descendant content");
+        inflated_errors.insert(child_id, 5_000.0);
+        let mut surviving_root = formats::cesium3dtiles::Tileset::from_quadtree(
+            &quadtree,
+            &world,
+            200,
+            false,
+            true,
+            Some(&inflated_errors),
+            &root_enu_frame,
+        )
+        .expect("generate tileset with inflated child allowance");
+        assert!((surviving_root.flatten(None)[0].geometric_error - 5_000.0).abs() <= f64::EPSILON);
+        let failed_descendants: HashSet<_> = content_plan
+            .content_tile_errors
+            .keys()
+            .filter(|id| **id != expected_tile_id)
+            .cloned()
+            .collect();
+        surviving_root.prune_failed_content(&failed_descendants, &quadtree);
+        let surviving_json =
+            serde_json::to_value(surviving_root).expect("serialize surviving root");
+        assert!(surviving_json["root"]["children"].is_null());
+        assert!(!surviving_json["root"]["content"].is_null());
+        assert_eq!(surviving_json["root"]["geometricError"], 5.0);
+        assert!(
+            surviving_json["geometricError"]
+                .as_f64()
+                .expect("entry error")
+                >= 10.0
+        );
+
         let all_failed_tile_ids = failed_source_tile_ids(&content_plan.jobs);
         let mut empty_tileset = formats::cesium3dtiles::Tileset::from_quadtree(
             &quadtree,
@@ -4392,7 +4530,7 @@ mod tests {
             200,
             false,
             true,
-            Some(&content_plan.content_tile_ids),
+            Some(&content_plan.content_tile_errors),
             &root_enu_frame,
         )
         .expect("generate tileset for all-failed export");

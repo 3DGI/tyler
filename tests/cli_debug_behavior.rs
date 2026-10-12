@@ -756,10 +756,9 @@ fn object_type_building_single_tile_tileset_preserves_zero_root_geometric_error(
         .as_f64()
         .expect("tileset geometricError should be numeric");
     assert!(
-        tileset_geometric_error.abs() <= f64::EPSILON,
-        "single-tile tileset geometricError should match its leaf root"
+        tileset_geometric_error > 0.0,
+        "single-tile tileset needs a positive spatial entry error"
     );
-    assert!((tileset_geometric_error - root_geometric_error).abs() <= f64::EPSILON);
 
     let unpruned_tileset = read_json(&output_dir.join("tileset_unpruned.json"));
     let unpruned_root = &unpruned_tileset["root"];
@@ -775,10 +774,8 @@ fn object_type_building_single_tile_tileset_preserves_zero_root_geometric_error(
         .as_f64()
         .expect("unpruned tileset geometricError should be numeric");
     assert!(
-        unpruned_tileset_geometric_error.abs() <= f64::EPSILON,
-        "unpruned single-tile tileset geometricError should match its leaf root"
+        unpruned_tileset_geometric_error > 0.0,
+        "unpruned single-tile tileset needs a positive spatial entry error"
     );
-    assert!(
-        (unpruned_tileset_geometric_error - unpruned_root_geometric_error).abs() <= f64::EPSILON
-    );
+    assert!((unpruned_tileset_geometric_error - tileset_geometric_error).abs() <= f64::EPSILON);
 }

@@ -160,7 +160,7 @@ pub mod cesium3dtiles {
             _arg_cellsize: u32,
             content_bv_from_tile: bool,
             content_add_bv: bool,
-            content_tile_ids: Option<&HashSet<TileId>>,
+            content_tile_errors: Option<&HashMap<TileId, GeometricError>>,
             root_enu_frame: &RootEnuFrame,
         ) -> Result<Self, Box<dyn std::error::Error>> {
             let min_z = world.grid.bbox[2];
@@ -179,7 +179,7 @@ pub mod cesium3dtiles {
                 &source_to_ecef,
                 content_bv_from_tile,
                 content_add_bv,
-                content_tile_ids,
+                content_tile_errors,
             )?;
             log::info!(
                 "Root ENU frame - input CRS origin: [{:.2}, {:.2}, {:.2}], geodetic: [{:.8}, {:.8}, {:.2}], ECEF: [{:.2}, {:.2}, {:.2}]",
@@ -206,7 +206,7 @@ pub mod cesium3dtiles {
             // Apply root transform to root tile
             let mut root_with_transform = root;
             root_with_transform.transform = Some(root_transform);
-            let geometric_error = root_with_transform.geometric_error;
+            let geometric_error = root_with_transform.tileset_geometric_error();
 
             Ok(Self {
                 asset: Default::default(),
@@ -231,7 +231,7 @@ pub mod cesium3dtiles {
             source_to_ecef: &Transformer,
             content_bv_from_tile: bool,
             content_add_bv: bool,
-            content_tile_ids: Option<&HashSet<TileId>>,
+            content_tile_errors: Option<&HashMap<TileId, GeometricError>>,
         ) -> Result<Tile, Box<dyn std::error::Error>> {
             if !quadtree.children.is_empty() {
                 let tile_id = TileId::from(&quadtree.id);
@@ -255,9 +255,15 @@ pub mod cesium3dtiles {
                 if let Some(content_bbox) = &tile_content_bbox {
                     Self::enclose_bbox(&mut tile_bbox, content_bbox);
                 }
+                let tileset_spatial_error = crate::coordinates::horizontal_footprint_width_meters(
+                    source_crs,
+                    &tile_bbox,
+                    source_to_ecef,
+                )? * TRAVERSAL_GEOMETRIC_ERROR_FACTOR;
                 let bounding_volume = BoundingVolume::region_from_bbox(&tile_bbox, transformer)?;
 
-                let has_content = content_tile_ids.is_some_and(|ids| ids.contains(&tile_id));
+                let has_content =
+                    content_tile_errors.is_some_and(|errors| errors.contains_key(&tile_id));
                 let content = if has_content {
                     tile_content_bbox.as_ref().map(|content_bbox| {
                         Self::content_for_tile(
@@ -282,21 +288,30 @@ pub mod cesium3dtiles {
                         source_to_ecef,
                         content_bv_from_tile,
                         content_add_bv,
-                        content_tile_ids,
+                        content_tile_errors,
                     )?);
                 }
                 let maximum_child_error = tile_children
                     .iter()
                     .map(|child| child.geometric_error)
                     .fold(0.0, f64::max);
-                // The converter does not yet return measured representation errors, so
-                // internal content uses this spatial fallback until that data is available.
-                let geometric_error = spatial_traversal_error.max(maximum_child_error);
+                let representation_error = content_tile_errors
+                    .and_then(|errors| errors.get(&tile_id))
+                    .copied()
+                    .unwrap_or(0.0);
+                let starting_error = if content.is_some() {
+                    representation_error
+                } else {
+                    spatial_traversal_error
+                };
+                let geometric_error = starting_error.max(maximum_child_error);
                 Ok(Tile {
                     id: tile_id,
                     bounding_volume,
                     geometric_error,
                     spatial_traversal_error,
+                    representation_error,
+                    tileset_spatial_error,
                     viewer_request_volume: None,
                     refine: Some(Refinement::Replace),
                     transform: None,
@@ -313,9 +328,14 @@ pub mod cesium3dtiles {
                 if let Some(content_bbox) = &tile_content_bbox {
                     Self::enclose_bbox(&mut tile_bbox, content_bbox);
                 }
+                let tileset_spatial_error = crate::coordinates::horizontal_footprint_width_meters(
+                    source_crs,
+                    &tile_bbox,
+                    source_to_ecef,
+                )? * TRAVERSAL_GEOMETRIC_ERROR_FACTOR;
                 let bounding_volume = BoundingVolume::region_from_bbox(&tile_bbox, transformer)?;
                 let has_content = quadtree.nr_items > 0
-                    && content_tile_ids.is_none_or(|ids| ids.contains(&tile_id));
+                    && content_tile_errors.is_none_or(|errors| errors.contains_key(&tile_id));
                 let content = if has_content {
                     tile_content_bbox.as_ref().map(|content_bbox| {
                         Self::content_for_tile(
@@ -336,6 +356,8 @@ pub mod cesium3dtiles {
                     bounding_volume,
                     geometric_error: 0.0,
                     spatial_traversal_error: 0.0,
+                    representation_error: 0.0,
+                    tileset_spatial_error,
                     viewer_request_volume: None,
                     refine: Some(Refinement::Replace),
                     transform: None,
@@ -1083,7 +1105,7 @@ pub mod cesium3dtiles {
             qtree: &QuadTree,
         ) {
             self.root.prune_failed_content(failed_tile_ids, qtree);
-            self.geometric_error = self.root.geometric_error;
+            self.geometric_error = self.root.tileset_geometric_error();
         }
 
         /// Splits a tileset into several tilesets at the given level, to create
@@ -1106,7 +1128,7 @@ pub mod cesium3dtiles {
                     // Keep the tile's content, bounds, and error on the child root
                     // before replacing the parent's content URI with the link.
                     let root = tile.clone();
-                    let geometric_error = root.geometric_error;
+                    let geometric_error = root.tileset_geometric_error();
                     child_tilesets.push((
                         filename.clone(),
                         Tileset {
@@ -1213,6 +1235,10 @@ pub mod cesium3dtiles {
         pub geometric_error: GeometricError,
         #[serde(skip)]
         spatial_traversal_error: GeometricError,
+        #[serde(skip)]
+        representation_error: GeometricError,
+        #[serde(skip)]
+        tileset_spatial_error: GeometricError,
         #[serde(skip_serializing_if = "Option::is_none")]
         viewer_request_volume: Option<BoundingVolume>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -1238,6 +1264,15 @@ pub mod cesium3dtiles {
     impl Eq for Tile {}
 
     impl Tile {
+        /// The tileset entry error is a viewing policy, separate from tile refinement.
+        fn tileset_geometric_error(&self) -> GeometricError {
+            if self.content.is_none() && self.children.is_none() {
+                0.0
+            } else {
+                self.tileset_spatial_error.max(2.0 * self.geometric_error)
+            }
+        }
+
         #[allow(dead_code)]
         fn flatten_recurse<'collect>(
             &'collect self,
@@ -1372,12 +1407,14 @@ pub mod cesium3dtiles {
                 self.geometric_error = if self.content.is_none() {
                     self.spatial_traversal_error.max(maximum_child_error)
                 } else {
-                    self.geometric_error.max(maximum_child_error)
+                    self.representation_error.max(maximum_child_error)
                 };
             } else if self.content.is_none() {
                 // A root with no successful descendants cannot be removed from
                 // the tileset, so represent the empty result as a zero-error leaf.
                 self.geometric_error = 0.0;
+            } else {
+                self.geometric_error = self.representation_error;
             }
 
             let qtree_nodeid: QuadTreeNodeId = (&self.id).into();
@@ -2097,10 +2134,10 @@ pub mod cesium3dtiles {
                 )
                 .expect("generate test tileset");
                 let transformer = cityjson_lib::ops::transformer(&source_crs, "EPSG:4979").unwrap();
-                let content_ids: HashSet<_> = tileset
+                let content_ids: HashMap<_, _> = tileset
                     .flatten(None)
                     .iter()
-                    .map(|tile| tile.id.clone())
+                    .map(|tile| (tile.id.clone(), 0.0))
                     .collect();
                 for grid_interval in [
                     [world.grid.bbox[2], world.grid.bbox[5]],
@@ -2196,14 +2233,14 @@ pub mod cesium3dtiles {
                     &source_crs,
                     &source_to_ecef,
                 );
-                if tileset.root.children.is_some() {
-                    assert!(
-                        (tileset.geometric_error - tileset.root.geometric_error).abs()
-                            <= f64::EPSILON
-                    );
-                } else {
+                let expected_entry_error = tileset
+                    .root
+                    .tileset_spatial_error
+                    .max(2.0 * tileset.root.geometric_error);
+                assert!((tileset.geometric_error - expected_entry_error).abs() <= f64::EPSILON);
+                assert!(tileset.geometric_error > 0.0);
+                if tileset.root.children.is_none() {
                     assert!(tileset.root.geometric_error.abs() <= f64::EPSILON);
-                    assert!(tileset.geometric_error.abs() <= f64::EPSILON);
                 }
                 let root_transform = tileset
                     .root
