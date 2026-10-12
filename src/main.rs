@@ -4293,6 +4293,8 @@ mod tests {
         );
         assert_eq!(at_threshold.first_content_width_meters, Some(root_width));
 
+        world.grid.bbox[2] = 1.25;
+        world.grid.bbox[5] = 2.75;
         let root_enu_frame =
             compute_root_enu_frame(&world, &quadtree).expect("compute root ENU frame");
         let tileset = formats::cesium3dtiles::Tileset::from_quadtree(
@@ -4406,8 +4408,14 @@ mod tests {
 
     #[test]
     fn geographic_implicit_jobs_are_sorted_and_non_overlapping() {
-        let (world, quadtree) = indexed_resource_world("geographic-implicit-jobs");
-        let tileset = resource_tileset(&world, &quadtree);
+        let (mut world, quadtree) = indexed_resource_world("geographic-implicit-jobs");
+        // Stored debug-grid heights, including fractional values, are authoritative.
+        world.grid.bbox[2] = 1.25;
+        world.grid.bbox[5] = 2.75;
+        let mut tileset = resource_tileset(&world, &quadtree);
+        let original_root = serde_json::to_value(&tileset).expect("explicit tileset")["root"]
+            ["boundingVolume"]
+            .clone();
         let source_crs = format!("EPSG:{}", world.crs.to_epsg().expect("EPSG code"));
         let source_to_geographic =
             cityjson_lib::ops::transformer(&source_crs, "EPSG:4979").expect("source CRS transform");
@@ -4439,6 +4447,40 @@ mod tests {
         assert!(jobs
             .iter()
             .all(|job| matches!(job.clip, TileClip::GeographicRegion(_))));
+        let mut expected_heights = [f64::INFINITY, f64::NEG_INFINITY];
+        let mut enclosed = quadtree.bbox(&world.grid);
+        let raw = quadtree.node_content_bbox(&world, None, None);
+        for axis in 0..2 {
+            enclosed[axis] = enclosed[axis].min(raw[axis]);
+            enclosed[axis + 3] = enclosed[axis + 3].max(raw[axis + 3]);
+        }
+        for x in [enclosed[0], enclosed[3]] {
+            for y in [enclosed[1], enclosed[4]] {
+                for z in [enclosed[2], enclosed[5]] {
+                    let height = source_to_geographic
+                        .transform([x, y, z])
+                        .expect("transform capped root corner")[2];
+                    expected_heights[0] = expected_heights[0].min(height);
+                    expected_heights[1] = expected_heights[1].max(height);
+                }
+            }
+        }
+        assert_eq!(original_root["region"][4], expected_heights[0]);
+        assert_eq!(original_root["region"][5], expected_heights[1]);
+        let subtrees =
+            make_implicit_subtrees(&mut tileset, &content_tile_ids, Path::new("subtrees"));
+        assert_eq!(
+            serde_json::to_value(&tileset).expect("implicit tileset")["root"]["boundingVolume"],
+            original_root
+        );
+        world.grid.bbox[2] = raw[2];
+        world.grid.bbox[5] = raw[5];
+        let mut unbounded = resource_tileset(&world, &quadtree);
+        assert_eq!(
+            subtrees,
+            make_implicit_subtrees(&mut unbounded, &content_tile_ids, Path::new("subtrees")),
+            "height limits preserve content availability"
+        );
     }
 
     #[test]

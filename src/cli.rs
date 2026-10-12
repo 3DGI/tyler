@@ -80,14 +80,12 @@ pub struct Cli {
     /// features.tsv exists, it is also loaded.
     #[arg(long = "debug-load-grid", value_parser = existing_canonical_path)]
     pub debug_load_grid: Option<PathBuf>,
-    /// Limit the minimum z coordinate for the bounding box that is computed from the
-    /// features. Useful if the features contain errors with extremely small z
-    /// coordinates. In input units (eg. meters).
+    /// Bound the minimum grid and 3D Tiles metadata height in input CRS units
+    /// (eg. meters), retaining source geometry. Useful for extremely small Z outliers.
     #[arg(long)]
     pub grid_minz: Option<i32>,
-    /// Limit the maximum z coordinate for the bounding box that is computed from the
-    /// features. Useful if the features contain errors with extremely large z
-    /// coordinates. In input units (eg. meters).
+    /// Bound the maximum grid and 3D Tiles metadata height in input CRS units
+    /// (eg. meters), retaining source geometry. Useful for extremely large Z outliers.
     #[arg(long)]
     pub grid_maxz: Option<i32>,
     /// Export the grid into .tsv files in the debug output directory.
