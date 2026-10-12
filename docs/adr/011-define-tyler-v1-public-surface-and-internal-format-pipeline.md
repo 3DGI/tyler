@@ -415,6 +415,20 @@ Tyler remains responsible for tiling. Its ownership includes:
   semantic, material, or color annotations needed by the output configuration
 - coordinating shared work across output backends
 
+For 3D Tiles, Tyler owns geometry placement through
+`--3dtiles-max-content-width` (4000 metres), requested simplification allowances
+through `--3dtiles-max-geometric-error` (5 metres, halved at each deeper content
+level), and spatial viewing estimates through
+`--3dtiles-geometric-error-factor` (0.024). Original leaves remain full detail.
+The factor accepts finite, non-negative values, including zero for experiments;
+calculated overflow is rejected. It applies to explicit and implicit output,
+including debug output, pruning and external tileset entry calculations.
+Content width and simplification allowances apply only to explicit tiling.
+The fixed tileset entry multiplier remains 2. These policies are detailed in
+[ADR 007](007-use-spatial-geometric-error-for-leaf-only-tilesets.md).
+The converter currently emits full-detail geometry for simplified requests;
+Tyler writes the requested allowances until mesh simplification is available.
+
 Tyler does not perform per-vertex geometric clipping against tile bounds. It
 selects whole features whose extent overlaps the tile and hands the resulting
 `CityModel` to `cityjson-convert` in source CRS.

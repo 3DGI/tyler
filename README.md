@@ -399,17 +399,80 @@ content remains encoded in the shared root ENU frame.
 
 #### Geometric error
 
-For internal tiles, the spatial traversal error uses the tile's real-world
-horizontal footprint before its bounds expand to enclose complete CityObjects:
+A tile is a patch of the dataset. Larger tiles can have smaller child tiles.
+Some contain geometry; others guide the viewer toward their children. Larger
+error numbers generally make the viewer enter the dataset and refine to smaller
+tiles farther away, with the same viewer settings.
+
+| Setting | Default | Controls |
+| --- | ---: | --- |
+| `--3dtiles-max-content-width` | 4000 metres | Largest internal patch eligible for simplified geometry |
+| `--3dtiles-max-geometric-error` | 5 metres | Simplification allowance at the first eligible content level |
+| `--3dtiles-geometric-error-factor` | 0.024 | Size-based traversal and tileset entry errors |
+
+Content width decides where geometry is placed. Non-empty internal tiles at or
+below the limit receive geometry. Wider tiles guide the viewer toward children.
+Original leaves always receive full-detail geometry, even if wider than the
+limit. Widths usually halve between levels, so limits of 3000 and 2000 metres
+can select the same first content level.
+
+The first eligible content level receives the full maximum error allowance;
+each deeper level receives half. With a maximum of 5 metres, the sequence is
+5, 2.5, 1.25 metres, with original leaves always at zero additional error.
+Changing the width limit moves where this sequence starts.
+
+The factor supplies a starting error where no geometry can be assessed:
 
 ```text
-geometricError = max(0.024 * footprint_width_metres, maximum_child_error)
+Content tile starting error = requested simplification allowance
+Content-free tile starting error = factor × tile patch width in metres
+Final tile error = max(starting error, largest surviving child error)
+Empty tile error = 0
+
+Non-empty tileset error = max(factor × enclosing dataset width, 2 × final root error)
+Empty tileset error = 0
 ```
 
-The factor is fixed internally. Content-free ancestors and internal tiles whose
-content export fails use this formula. Leaves use `geometricError: 0.0`.
-Internal content tiles also use the spatial estimate until the converter returns
-measured representation errors.
+After failed exports are removed, a parent whose geometry failed uses the
+size-based estimate if children survive. Successful simplified geometry keeps
+its allowance even if all children fail. External tilesets use the same entry
+rule. Tile patch widths are measured before extending bounds around complete
+objects; tileset estimates use those enclosing bounds. The multiplier 2 remains
+fixed. Both size estimates are chosen viewing rules, not measured mesh errors.
+
+For widths of 8000, 4000, 2000 and 1000 metres, with original leaves at 1000
+metres and defaults, final errors are 192, 5, 2.5 and 0 metres. If the enclosing
+dataset is 8000 metres wide, its tileset error is 384 metres. A factor of 0.012
+halves the root and tileset errors without changing content allowances. A
+maximum error of 10 doubles the content allowances. A width limit of 2000
+makes the 4000-metre tiles traversal nodes (96 metres), and starts the 5-metre
+allowance at 2000 metres. A single full-detail root 1000 metres wide has zero
+tile error and a 24-metre tileset entry error at the default factor.
+
+The factor must be finite and non-negative; calculated errors that overflow are
+rejected. Zero removes the size contribution, while surviving child errors can
+still make a parent error positive. If all relevant errors become zero, the
+viewer may fail to display or reach the geometry. Zero is available for
+experiments. The factor also applies to implicit tiling's spatial errors;
+content-width and simplification settings apply only to explicit tiling.
+
+Compare the same executable in separate output directories:
+
+```shell
+tyler ./dataset -o ./output-factor-012 --format 3dtiles \
+  --3dtiles-max-content-width 4000 --3dtiles-max-geometric-error 5 \
+  --3dtiles-geometric-error-factor 0.012
+
+tyler ./dataset -o ./output-factor-048 --format 3dtiles \
+  --3dtiles-max-content-width 4000 --3dtiles-max-geometric-error 5 \
+  --3dtiles-geometric-error-factor 0.048
+```
+
+Regenerate for each value; recompilation is unnecessary. Keep viewer settings
+and camera positions the same. The converter currently exports full-detail
+geometry even when simplification is requested. Written errors follow the
+requested allowances, so these experiments evaluate viewing behavior;
+geometry reduction can be evaluated once simplification exists.
 
 For explicit tilesets, it is possible to add a tightly-fitted bounding volume to the [tile's content](https://docs.ogc.org/cs/22-025r4/22-025r4.html#core-content-bounding-volume).
 You can enable this with the `--3dtiles-content-add-bv` option.

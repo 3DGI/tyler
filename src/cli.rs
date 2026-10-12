@@ -70,6 +70,11 @@ pub struct Cli {
     /// full detail and do not use this setting.
     #[arg(long = "3dtiles-max-geometric-error", default_value = "5")]
     pub cesium3dtiles_max_geometric_error: f64,
+    /// Finite, non-negative multiplier for size-based traversal and tileset
+    /// entry errors. Applies to explicit and implicit tiling. Zero disables
+    /// the size contribution and can prevent the viewer from reaching content.
+    #[arg(long = "3dtiles-geometric-error-factor", default_value = "0.024", value_parser = geometric_error_factor)]
+    pub cesium3dtiles_geometric_error_factor: f64,
     /// Set the 2D cell size for the grid that is used for constructing the quadtree.
     /// In input units (eg. meters). Note that the cell size will be adjusted so that it is
     /// possible to construct a tightly fit square, containing 4^n cells. The final cell size will
@@ -573,6 +578,15 @@ fn hex_color(s: &str) -> Result<String, String> {
     Ok(String::from(s))
 }
 
+fn geometric_error_factor(value: &str) -> Result<f64, String> {
+    let requirement = "--3dtiles-geometric-error-factor must be a finite, non-negative number";
+    let factor = value.parse::<f64>().map_err(|_| requirement.to_owned())?;
+    if !factor.is_finite() || factor < 0.0 {
+        return Err(requirement.to_owned());
+    }
+    Ok(factor)
+}
+
 #[cfg(test)]
 mod tests {
     use super::Cli;
@@ -677,6 +691,23 @@ mod tests {
         let defaults = Cli::try_parse_from(required_args(&dataset_dir)).unwrap();
         assert!((defaults.cesium3dtiles_max_content_width - 4_000.0).abs() < f64::EPSILON);
         assert!((defaults.cesium3dtiles_max_geometric_error - 5.0).abs() < f64::EPSILON);
+        assert!((defaults.cesium3dtiles_geometric_error_factor - 0.024).abs() < f64::EPSILON);
+        for value in ["0", "0.012", "0.048"] {
+            let mut factor_args = required_args(&dataset_dir);
+            factor_args.push(format!("--3dtiles-geometric-error-factor={value}"));
+            let cli = Cli::try_parse_from(factor_args).unwrap();
+            assert!(
+                (cli.cesium3dtiles_geometric_error_factor - value.parse::<f64>().unwrap()).abs()
+                    < f64::EPSILON
+            );
+        }
+        for value in ["-0.1", "NaN", "inf", "-inf", "1e309"] {
+            let mut factor_args = required_args(&dataset_dir);
+            factor_args.push(format!("--3dtiles-geometric-error-factor={value}"));
+            let error = Cli::try_parse_from(factor_args).unwrap_err().to_string();
+            assert!(error.contains("--3dtiles-geometric-error-factor"));
+            assert!(error.contains("finite, non-negative number"));
+        }
 
         let mut args = required_args(&dataset_dir);
         args.extend([

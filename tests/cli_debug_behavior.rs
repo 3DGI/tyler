@@ -745,13 +745,7 @@ fn object_type_building_single_tile_tileset_preserves_zero_root_geometric_error(
         root.get("children").is_none(),
         "single-building dataset should produce a single root tile"
     );
-    let root_geometric_error = root["geometricError"]
-        .as_f64()
-        .expect("root geometricError should be numeric");
-    assert!(
-        root_geometric_error.abs() <= f64::EPSILON,
-        "root tile geometricError can remain zero"
-    );
+    assert_eq!(root["geometricError"], 0.0);
     let tileset_geometric_error = tileset["geometricError"]
         .as_f64()
         .expect("tileset geometricError should be numeric");
@@ -763,19 +757,53 @@ fn object_type_building_single_tile_tileset_preserves_zero_root_geometric_error(
     let unpruned_tileset = read_json(&output_dir.join("tileset_unpruned.json"));
     let unpruned_root = &unpruned_tileset["root"];
     assert!(unpruned_root["content"].is_object());
-    let unpruned_root_geometric_error = unpruned_root["geometricError"]
-        .as_f64()
-        .expect("unpruned root geometricError should be numeric");
-    assert!(
-        unpruned_root_geometric_error.abs() <= f64::EPSILON,
-        "unpruned root geometricError can remain zero"
-    );
+    assert_eq!(unpruned_root["geometricError"], 0.0);
     let unpruned_tileset_geometric_error = unpruned_tileset["geometricError"]
         .as_f64()
         .expect("unpruned tileset geometricError should be numeric");
-    assert!(
-        unpruned_tileset_geometric_error > 0.0,
-        "unpruned single-tile tileset needs a positive spatial entry error"
-    );
     assert!((unpruned_tileset_geometric_error - tileset_geometric_error).abs() <= f64::EPSILON);
+    // Compare complete exports, debug-only output, and implicit output using the same executable.
+    for mode in [
+        None,
+        Some("--debug-3dtiles-tileset-only"),
+        Some("--3dtiles-implicit"),
+    ] {
+        let mut errors = Vec::new();
+        for factor in ["0.012", "0.048"] {
+            let compared_output = unique_test_dir("factor-comparison");
+            let mut args = vec![
+                "--object-type",
+                "Building",
+                "--3dtiles-geometric-error-factor",
+                factor,
+            ];
+            if let Some(mode) = mode {
+                args.push(mode);
+            }
+            let result = run_tyler(&dataset, &compared_output, &args);
+            assert_success(&result, "custom factor export");
+            let compared = read_json(&compared_output.join("tileset.json"));
+            let error = compared["geometricError"]
+                .as_f64()
+                .expect("compared entry error");
+            errors.push(error);
+            // The tileset writer rounds numbers to six decimal places.
+            assert!(
+                (error - tileset_geometric_error * factor.parse::<f64>().unwrap() / 0.024).abs()
+                    <= 1.5e-6
+            );
+            assert_eq!(compared["root"]["geometricError"], 0.0);
+            assert!(compared.get("geometricErrorFactor").is_none());
+            if mode.is_none() {
+                assert_eq!(
+                    read_json(&compared_output.join("tileset_unpruned.json"))["geometricError"],
+                    error
+                );
+                assert!(compared_output
+                    .join(compared["root"]["content"]["uri"].as_str().unwrap())
+                    .is_file());
+            }
+        }
+        assert!((errors[1] - 4.0 * errors[0]).abs() <= 2.5e-6);
+    }
 }

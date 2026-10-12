@@ -1,81 +1,81 @@
-# Use Spatial Geometric Error for Leaf-Only Tilesets
+# Use Spatial Traversal Errors and Requested Content Allowances
 
 ## Status
 
-Accepted
+Accepted; updated by geometric-error plans 02 and 04.
 
 ## Context
 
-Tyler currently writes full-detail GLB content only on leaf tiles. Internal
-tiles are traversal and culling nodes, not simplified renderable versions of the
-same source geometry. In this model, `geometricError` does not measure mesh
-decimation error on internal tiles; it controls when the viewer should refine
-toward the detailed leaves.
-
-The previous explicit-tileset calculation mixed two heuristics:
-
-- internal tiles used a configured above-leaf error and grid cell size
-- leaf tiles used a small fraction of tile bbox diagonal, with a positive
-  minimum
-
-This could produce non-monotonic trees where a child had larger
-`geometricError` than its parent. It also gave full-detail leaves positive error,
-even though there are no children below them to refine to.
-
-The quadtree split criterion is based on vertex count. That is useful for
-controlling tile cost, but vertex count is not itself a spatial error metric. A
-small dense tile can have many vertices without needing to refine earlier than a
-larger sparse tile.
+Vertex count controls subdivision and tile cost, but does not measure spatial
+refinement or geometry simplification. A tile is a patch of the dataset; some
+patches contain geometry and others direct the viewer toward smaller children.
+Larger error numbers generally cause entry and refinement farther away with
+the same viewer settings.
 
 ## Decision
 
-Tyler computes internal-tile spatial traversal error from the horizontal
-footprint in real-world metres, before the bounds expand to contain complete
-CityObjects:
+Explicit tiling uses three independent settings:
+
+| Setting | Default | Responsibility |
+| --- | ---: | --- |
+| `--3dtiles-max-content-width` | 4000 metres | Largest internal patch eligible for simplified content |
+| `--3dtiles-max-geometric-error` | 5 metres | First eligible content level's simplification allowance |
+| `--3dtiles-geometric-error-factor` | 0.024 | Spatial traversal and tileset entry error multiplier |
+
+Non-empty internal patches at or below the width limit receive content.
+Original leaves always receive full-detail geometry, even when wider than the
+limit. The first content level receives the configured maximum allowance;
+each deeper level receives half, and original leaves use zero. Moving the
+width limit restarts this sequence at the newly selected first content level.
+Widths usually halve, so different width limits can select the same level.
 
 ```text
-geometricError = max(0.024 * footprint_width_metres, maximum_child_error)
+Starting content error = requested simplification allowance
+Starting traversal error = factor × patch width in metres
+Final tile error = max(starting error, largest surviving child error)
+Empty tile error = 0
+
+Non-empty tileset error = max(factor × enclosing dataset width, 2 × final root error)
+Empty tileset error = 0
 ```
 
-Leaf tiles use:
+The tile patch width is measured before bounds expand around complete objects.
+The enclosing dataset width includes that expansion. External tilesets use the
+same separate entry rule. A single full-detail root has zero refinement error
+but retains a size-based tileset entry error. The multiplier 2 remains fixed;
+both spatial estimates are viewing rules rather than measured geometry errors.
 
-```text
-geometricError = 0.0
-```
+Store starting traversal and representation errors separately so failed exports
+can be removed and errors recalculated. Failed parent content falls back to
+spatial error when successful children survive. Successful simplified content
+keeps its allowance even when all children fail. Store enclosing widths and
+pass the same configured factor to generation, pruning and external splitting.
+Internal estimates and the factor are excluded from serialized tileset JSON.
 
-The factor `0.024` is an internal constant. Content-free traversal nodes and
-internal tiles whose content export fails use this formula. Internal content
-tiles also use the spatial estimate until the converter provides measured
-representation errors.
+The factor applies to explicit, implicit, debug and tileset-only output. Implicit
+tiling retains its spatial calculation and viewer-driven per-level reduction;
+content width and simplification allowance remain explicit-only settings.
 
-The top-level tileset `geometricError` is set to the root tile
-`geometricError`.
+The CLI accepts finite, non-negative factors, including zero for experiments,
+and rejects negative values, NaN and infinity before planning or exporting.
+Calculated errors that overflow to infinity return errors. Zero removes the
+size contribution, but child errors can remain positive; an entirely zero-error
+dataset may fail to display or reach its content in the viewer.
 
 ## Consequences
 
-Good:
-
-- explicit trees have a monotonic error hierarchy based on spatial size and
-  child errors
-- full-detail leaves use the standard `0.0` geometric error
-- vertex count continues to control tile subdivision and tile cost, while
-  `geometricError` controls spatial refinement
-- implicit tilesets inherit a root error that is tied to root footprint size,
-  so Cesium's per-level implicit error reduction starts from a spatial value
-
-Trade-offs:
-
-- the fixed factor is empirical and may need a future policy change after
-  validation with representative data and viewers
-- dense urban tiles no longer refine earlier solely because they contain more
-  vertices; if this is desired later, it should be a separate cost-aware loading
-  policy rather than the primary geometric-error metric
-- when Tyler adds true simplified parent content, geometric error should be
-  revisited and based on actual simplification error, such as removed geometry,
-  mesh decimation, or texture error
+- Parents retain errors at least as large as surviving children.
+- Geometry placement, requested simplification and spatial viewing policy can
+  be adjusted independently with the same executable and separate outputs.
+- Default 0.024 retains plan 02's calculations; custom factors affect only
+  spatial estimates. Compare outputs with identical camera and viewer settings.
+- The converter currently exports full-detail geometry for requested simplified
+  representations. Allowances support viewing experiments now; mesh reduction
+  and measured representation errors remain future converter work.
 
 ## Validation
 
-- 3D Tiles format test verifies the spatial error formula and hierarchy toward
-  zero-valued leaves
-- full `cargo test` passes
+Existing active tests cover CLI validation, custom factors, content schedules,
+failed exports, external entry errors, full-detail roots, implicit and debug
+output, overflow rejection and two-factor CLI comparisons. `just ci` is the
+acceptance check, without additional Clippy allowances.
