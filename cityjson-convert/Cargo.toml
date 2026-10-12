@@ -1,6 +1,6 @@
 [package]
 name = "cityjson-convert"
-version = "1.0.0-alpha1"
+version = "1.0.0-alpha2"
 edition = "2021"
 authors = ["Balázs Dukai <balazs.dukai@3dgi.nl>", "Ravi Peters <ravi.peters@3dgi.nl>"]
 description = "CityJSON format converter"

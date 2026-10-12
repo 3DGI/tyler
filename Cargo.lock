@@ -256,7 +256,7 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "cityjson-convert"
-version = "1.0.0-alpha1"
+version = "1.0.0-alpha2"
 dependencies = [
  "anyhow",
  "cityjson-index",
@@ -2513,7 +2513,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tyler"
-version = "1.0.0-alpha1"
+version = "1.0.0-alpha2"
 dependencies = [
  "bincode",
  "bitvec",
