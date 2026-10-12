@@ -82,8 +82,6 @@ use log::{debug, error, info, log_enabled, warn, Level};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-const MAX_CONCURRENT_TILE_EXPORTS: usize = 4;
-
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
 #[clap(rename_all = "lower")]
 pub enum OutputFormatKind {
@@ -2701,13 +2699,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             tile_outcomes = bincode::deserialize_from(tiles_results_file)?
         } else {
             info!("Converting and optimizing {tiles_len} tiles");
-            let export_threads = std::thread::available_parallelism()
-                .map_or(1, std::num::NonZeroUsize::get)
-                .min(MAX_CONCURRENT_TILE_EXPORTS);
-            let export_pool = rayon::ThreadPoolBuilder::new()
-                .num_threads(export_threads)
-                .build()?;
-            export_pool.install(|| tile_outcomes_iter.collect_into_vec(&mut tile_outcomes));
+            tile_outcomes_iter.collect_into_vec(&mut tile_outcomes);
             if should_dump_debug_data(&cli) {
                 debug!(
                     "Exporting the tiles_results instance to bincode to {:?}",
