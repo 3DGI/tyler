@@ -1,0 +1,9 @@
+{
+  "features": {
+    "ghcr.io/balazsdukai/devcontainer-tools/tools:1": {
+      "version": "1.3.3",
+      "resolved": "ghcr.io/balazsdukai/devcontainer-tools/tools@sha256:155139daa6039e886c30a6b38ad0469ed6242a03bdb7f896113f2996a1f9d016",
+      "integrity": "sha256:155139daa6039e886c30a6b38ad0469ed6242a03bdb7f896113f2996a1f9d016"
+    }
+  }
+}

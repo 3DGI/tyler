@@ -64,7 +64,7 @@ impl VoxelGrid {
             let extent = f64::from(max[axis]) - f64::from(min[axis]);
             let dimension = (extent / f64::from(voxel_size)).ceil() + 3.0;
             if dimension > f64::from(1 << 23) {
-                return Err(anyhow!("voxel grid exceeds float coordinate precision",));
+                return Err(anyhow!("voxel grid exceeds float coordinate precision"));
             }
             let width = (dimension.max(4.0) - 2.0) * f64::from(voxel_size);
             // Keep standalone grid placement at float precision, like the source algorithm.
