@@ -1,0 +1,182 @@
+[
+  {
+    "dataset": "eight-buildings",
+    "requested_error": null,
+    "seconds": 0.008,
+    "peak_rss_kib": 16380,
+    "exit_code": 0,
+    "bytes": 31108,
+    "report": ""
+  },
+  {
+    "dataset": "eight-buildings",
+    "requested_error": 2,
+    "seconds": 0.029,
+    "peak_rss_kib": 33256,
+    "exit_code": 0,
+    "bytes": 23368,
+    "report": "Remesh: requested 2.000 m, resolution 256 (CLAMPED), voxel 5.603 m, estimated error 11.523 m (remesh 9.704 + simplify 0.986 + encoding 0.833); triangles 943 -> 6334 -> 202; GLB 23368 bytes"
+  },
+  {
+    "dataset": "eight-buildings",
+    "requested_error": 5,
+    "seconds": 0.029,
+    "peak_rss_kib": 33084,
+    "exit_code": 0,
+    "bytes": 21936,
+    "report": "Remesh: requested 5.000 m, resolution 256 (CLAMPED), voxel 5.603 m, estimated error 12.713 m (remesh 9.704 + simplify 2.177 + encoding 0.833); triangles 943 -> 6334 -> 120; GLB 21936 bytes"
+  },
+  {
+    "dataset": "eight-buildings",
+    "requested_error": 10,
+    "seconds": 0.03,
+    "peak_rss_kib": 32692,
+    "exit_code": 0,
+    "bytes": 20920,
+    "report": "Remesh: requested 10.000 m, resolution 256 (CLAMPED), voxel 5.603 m, estimated error 15.438 m (remesh 9.704 + simplify 4.901 + encoding 0.833); triangles 943 -> 6334 -> 64; GLB 20920 bytes"
+  },
+  {
+    "dataset": "110000_492000",
+    "requested_error": null,
+    "seconds": 0.013,
+    "peak_rss_kib": 17432,
+    "exit_code": 0,
+    "bytes": 75196,
+    "report": ""
+  },
+  {
+    "dataset": "110000_492000",
+    "requested_error": 5,
+    "seconds": 0.034,
+    "peak_rss_kib": 34308,
+    "exit_code": 0,
+    "bytes": 37036,
+    "report": "Remesh: requested 5.000 m, resolution 256 (CLAMPED), voxel 8.057 m, estimated error 17.266 m (remesh 13.954 + simplify 2.470 + encoding 0.842); triangles 3526 -> 6042 -> 410; GLB 37036 bytes"
+  },
+  {
+    "dataset": "110000_492000",
+    "requested_error": 20,
+    "seconds": 0.033,
+    "peak_rss_kib": 34772,
+    "exit_code": 0,
+    "bytes": 30224,
+    "report": "Remesh: requested 20.000 m, resolution 256 (CLAMPED), voxel 8.057 m, estimated error 24.664 m (remesh 13.954 + simplify 9.869 + encoding 0.841); triangles 3526 -> 6042 -> 74; GLB 30224 bytes"
+  },
+  {
+    "dataset": "110000_492000",
+    "requested_error": 40,
+    "seconds": 0.02,
+    "peak_rss_kib": 23772,
+    "exit_code": 0,
+    "bytes": 29184,
+    "report": "Remesh: requested 40.000 m, resolution 180, voxel 11.497 m, estimated error 40.680 m (remesh 19.913 + simplify 19.943 + encoding 0.824); triangles 3526 -> 3024 -> 26; GLB 29184 bytes"
+  },
+  {
+    "dataset": "174000_440000",
+    "requested_error": null,
+    "seconds": 0.084,
+    "peak_rss_kib": 44216,
+    "exit_code": 0,
+    "bytes": 692400,
+    "report": ""
+  },
+  {
+    "dataset": "174000_440000",
+    "requested_error": 5,
+    "seconds": 0.12,
+    "peak_rss_kib": 60648,
+    "exit_code": 0,
+    "bytes": 220016,
+    "report": "Remesh: requested 5.000 m, resolution 256 (CLAMPED), voxel 7.967 m, estimated error 17.052 m (remesh 13.799 + simplify 2.498 + encoding 0.755); triangles 39229 -> 8624 -> 2508; GLB 220016 bytes"
+  },
+  {
+    "dataset": "174000_440000",
+    "requested_error": 20,
+    "seconds": 0.117,
+    "peak_rss_kib": 60356,
+    "exit_code": 0,
+    "bytes": 170992,
+    "report": "Remesh: requested 20.000 m, resolution 256 (CLAMPED), voxel 7.967 m, estimated error 24.408 m (remesh 13.799 + simplify 9.854 + encoding 0.755); triangles 39229 -> 8624 -> 224; GLB 170992 bytes"
+  },
+  {
+    "dataset": "174000_440000",
+    "requested_error": 40,
+    "seconds": 0.099,
+    "peak_rss_kib": 58780,
+    "exit_code": 0,
+    "bytes": 166564,
+    "report": "Remesh: requested 40.000 m, resolution 178, voxel 11.498 m, estimated error 40.590 m (remesh 19.915 + simplify 19.937 + encoding 0.738); triangles 39229 -> 4268 -> 26; GLB 166564 bytes"
+  },
+  {
+    "dataset": "120000_484000",
+    "requested_error": null,
+    "seconds": 1.636,
+    "peak_rss_kib": 589860,
+    "exit_code": 0,
+    "bytes": 13802108,
+    "report": ""
+  },
+  {
+    "dataset": "120000_484000",
+    "requested_error": 5,
+    "seconds": 2.313,
+    "peak_rss_kib": 834484,
+    "exit_code": 0,
+    "bytes": 3502168,
+    "report": "Remesh: requested 5.000 m, resolution 256 (CLAMPED), voxel 8.887 m, estimated error 18.685 m (remesh 15.393 + simplify 2.461 + encoding 0.831); triangles 775314 -> 149818 -> 34760; GLB 3502168 bytes"
+  },
+  {
+    "dataset": "120000_484000",
+    "requested_error": 20,
+    "seconds": 2.601,
+    "peak_rss_kib": 833856,
+    "exit_code": 0,
+    "bytes": 2941888,
+    "report": "Remesh: requested 20.000 m, resolution 256 (CLAMPED), voxel 8.887 m, estimated error 26.218 m (remesh 15.393 + simplify 9.996 + encoding 0.829); triangles 775314 -> 149818 -> 8648; GLB 2941888 bytes"
+  },
+  {
+    "dataset": "120000_484000",
+    "requested_error": 40,
+    "seconds": 2.152,
+    "peak_rss_kib": 823444,
+    "exit_code": 0,
+    "bytes": 2778308,
+    "report": "Remesh: requested 40.000 m, resolution 198, voxel 11.517 m, estimated error 40.736 m (remesh 19.948 + simplify 19.959 + encoding 0.829); triangles 775314 -> 95250 -> 1598; GLB 2778308 bytes"
+  },
+  {
+    "dataset": "dense-eight",
+    "requested_error": null,
+    "seconds": 0.018,
+    "peak_rss_kib": 74444,
+    "exit_code": 0,
+    "bytes": 21900,
+    "report": ""
+  },
+  {
+    "dataset": "dense-eight",
+    "requested_error": 0.5,
+    "seconds": 0.03,
+    "peak_rss_kib": 74444,
+    "exit_code": 0,
+    "bytes": 21072,
+    "report": "Remesh: requested 0.500 m, resolution 129, voxel 0.144 m, estimated error 1.120 m (remesh 0.249 + simplify 0.141 + encoding 0.730); triangles 96 -> 27056 -> 38; GLB 21072 bytes"
+  },
+  {
+    "dataset": "dense-eight",
+    "requested_error": 2,
+    "seconds": 0.015,
+    "peak_rss_kib": 74444,
+    "exit_code": 0,
+    "bytes": 21000,
+    "report": "Remesh: requested 2.000 m, resolution 34, voxel 0.571 m, estimated error 2.552 m (remesh 0.990 + simplify 0.832 + encoding 0.730); triangles 96 -> 1784 -> 34; GLB 21000 bytes"
+  },
+  {
+    "dataset": "dense-eight",
+    "requested_error": 5,
+    "seconds": 0.014,
+    "peak_rss_kib": 74444,
+    "exit_code": 0,
+    "bytes": 20296,
+    "report": "Remesh: requested 5.000 m, resolution 15, voxel 1.407 m, estimated error 5.368 m (remesh 2.437 + simplify 2.200 + encoding 0.730); triangles 96 -> 284 -> 4; GLB 20296 bytes"
+  }
+]

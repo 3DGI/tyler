@@ -7,7 +7,9 @@ use std::io::Write;
 use std::path::Path;
 
 use crate::triangle_mesh::{build_triangle_mesh, TriangleMeshOptions};
-use crate::{ExportOptions, GeographicClipRegion, GeometryPlacement};
+use crate::{
+    ExportOptions, GeographicClipRegion, GeometryPlacement, GlbExportReport, RemeshReport,
+};
 use anyhow::{bail, Context, Result};
 use cityjson_lib::cityjson_types::v2_0::{AttributeValue, CityObject};
 use cityjson_lib::ops::Transformer;
@@ -91,19 +93,52 @@ pub fn write_city_model_glb<P: AsRef<Path>>(
     model: &CityModel,
     output_path: P,
     options: &ExportOptions,
-) -> Result<()> {
+) -> Result<GlbExportReport> {
+    if let Some(remesh) = options.voxel_remesh {
+        anyhow::ensure!(
+            remesh.geometric_error.is_finite() && remesh.geometric_error > 0.0,
+            "remeshing geometric error must be finite and positive"
+        );
+        anyhow::ensure!(
+            options.clip_bbox.is_none() && options.clip_geographic_region.is_none(),
+            "voxel remeshing does not support clipped geometry"
+        );
+    }
     let coordinate_transform = CoordinateTransform::from_model(model, options)?;
     let clip_volume = ClipVolume::from_options(options)?;
     let mut collector =
         MeshCollector::new(coordinate_transform, options.smooth_normals, clip_volume);
     collector.add_model(model)?;
-    let processed = collector.finish()?;
+    let mut processed = collector.finish()?;
+    let original_rounding = processed.float_rounding_allowance();
+    let mut remeshing = if let Some(remesh_options) = options.voxel_remesh {
+        let (scene, report) = processed.remesh(remesh_options, options.smooth_normals)?;
+        processed = scene;
+        Some(report)
+    } else {
+        None
+    };
+    if let Some(report) = &mut remeshing {
+        report.output_triangles = processed.index_count() / 3;
+        report.encoding_error_estimate = original_rounding
+            + processed.float_rounding_allowance()
+            + if options.quantize_geometry {
+                processed.quantization_error_allowance()
+            } else {
+                0.0
+            };
+        report.estimated_geometric_error += report.encoding_error_estimate;
+    }
     debug!(
         "Processed {} vertices and {} indices for the output GLB",
         processed.vertex_count(),
         processed.index_count()
     );
-    processed.write_glb(output_path, options)
+    processed.write_glb(output_path.as_ref(), options)?;
+    Ok(GlbExportReport {
+        remeshing,
+        output_bytes: std::fs::metadata(output_path.as_ref())?.len(),
+    })
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -1361,6 +1396,94 @@ fn is_degenerate_triangle(points: [[f32; 3]; 3]) -> bool {
 }
 
 impl ProcessedScene {
+    fn float_rounding_allowance(&self) -> f64 {
+        let magnitude = self
+            .node_translation()
+            .into_iter()
+            .map(|v| f64::from(v).abs())
+            .chain(
+                self.bounds
+                    .into_iter()
+                    .flat_map(|b| b.min.into_iter().chain(b.max))
+                    .map(|v| f64::from(v).abs()),
+            )
+            .fold(0.0_f64, f64::max);
+        // Allow for casts, recentering, and float node-transform arithmetic.
+        4.0 * f64::from(f32::EPSILON) * magnitude * 3.0_f64.sqrt()
+    }
+
+    fn quantization_error_allowance(&self) -> f64 {
+        let scale = self
+            .bounds
+            .into_iter()
+            .flat_map(|b| b.min.into_iter().chain(b.max))
+            .map(|v| f64::from(v).abs())
+            .fold(0.0_f64, f64::max);
+        3.0_f64.sqrt() * scale / (2.0 * 32767.0)
+    }
+
+    fn remesh(
+        self,
+        options: crate::VoxelRemeshOptions,
+        smooth_normals: bool,
+    ) -> Result<(Self, RemeshReport)> {
+        let mut triangles = Vec::with_capacity(self.index_count() / 3);
+        for primitive in &self.primitives {
+            for triangle in primitive.indices.chunks_exact(3) {
+                let vertices = [
+                    primitive.vertices[triangle[0] as usize],
+                    primitive.vertices[triangle[1] as usize],
+                    primitive.vertices[triangle[2] as usize],
+                ];
+                triangles.push(crate::remeshing::Triangle {
+                    positions: vertices.map(|vertex| vertex.position),
+                    feature_id: vertices[0].feature_id,
+                });
+            }
+        }
+        triangles.sort_by(|a, b| {
+            self.features[a.feature_id as usize]
+                .object_id
+                .cmp(&self.features[b.feature_id as usize].object_id)
+        });
+        let (triangles, report) = crate::remeshing::remesh(&triangles, options)?;
+        // The processed mesh is already in a local Cartesian frame. Reuse the
+        // collector's normal generation and encoders in that frame, restoring its
+        // previous placement as the node translation base.
+        let mut collector = MeshCollector::new(
+            CoordinateTransform {
+                placement: CoordinatePlacement::SourceCoordinates,
+                node_translation_base: self.node_translation(),
+            },
+            smooth_normals,
+            None,
+        );
+        collector.features = self.features;
+        for triangle in triangles {
+            if is_degenerate_triangle(triangle.positions) {
+                continue;
+            }
+            let feature_type = &collector.features[triangle.feature_id as usize].feature_type;
+            collector
+                .primitives
+                .entry(feature_type.clone())
+                .or_default()
+                .add_triangle(
+                    triangle.feature_id,
+                    triangle.positions.map(|position| position.map(f64::from)),
+                    triangle.positions,
+                    MeshCollector::compute_face_normal,
+                    smooth_normals,
+                );
+        }
+        let scene = collector.finish()?;
+        anyhow::ensure!(
+            scene.index_count() > 0,
+            "remeshing produced no non-degenerate triangles"
+        );
+        Ok((scene, report))
+    }
+
     fn from_collector(collector: MeshCollector) -> Result<Self> {
         let MeshCollector {
             features,
@@ -1918,8 +2041,8 @@ fn encode_primitives_raw(
                 .vertices
                 .iter()
                 .map(|vertex| vertex.feature_id)
-                .collect::<BTreeSet<_>>()
-                .len(),
+                .max()
+                .map_or(0, |id| id as usize + 1),
         });
     }
     Ok(primitive_encodings)
@@ -1955,8 +2078,8 @@ fn encode_quantized_primitives(
                 .feature_ids
                 .iter()
                 .copied()
-                .collect::<BTreeSet<_>>()
-                .len(),
+                .max()
+                .map_or(0, |id| id as usize + 1),
         });
     }
     Ok(primitive_encodings)
@@ -2003,7 +2126,12 @@ fn build_materials(
     primitive_encodings
         .iter()
         .map(|encoding| {
-            create_default_material(resolve_feature_type_color(&encoding.feature_type, options))
+            let mut material = create_default_material(resolve_feature_type_color(
+                &encoding.feature_type,
+                options,
+            ))?;
+            material.double_sided = options.voxel_remesh.is_none();
+            Ok(material)
         })
         .collect()
 }

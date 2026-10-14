@@ -1,10 +1,12 @@
 pub mod gltf_writer;
 pub mod gpkg_writer;
 pub mod obj_writer;
+mod remeshing;
 pub mod tabular;
 #[path = "triangle-mesh.rs"]
 mod triangle_mesh;
 pub mod tsv_writer;
+pub mod voxel_remesh;
 
 pub use gpkg_writer::{
     convert_to_gpkg, write_metadata_gpkg, write_tiled_metadata_gpkg, GpkgExportOptions,
@@ -35,6 +37,40 @@ use std::path::Path;
 
 use anyhow::Result;
 use cityjson_lib::CityModel;
+
+/// Optional reconstruction of all input geometry in a single voxel grid.
+/// Coordinates and the error budget must be in Cartesian metres. Library callers
+/// select source `LoDs` before conversion; remeshing never selects them implicitly.
+#[derive(Clone, Copy, Debug)]
+pub struct VoxelRemeshOptions {
+    /// Requested quality budget, split equally between remeshing and simplification.
+    /// This is an estimate, not a certified surface-distance bound.
+    pub geometric_error: f32,
+}
+
+/// Statistics for the experimental remesh/simplify/attribute-transfer pipeline.
+#[derive(Clone, Debug)]
+pub struct RemeshReport {
+    pub requested_geometric_error: f64,
+    /// Padded rectangular grid dimensions, one per Cartesian axis.
+    pub grid_dimensions: [u32; 3],
+    pub effective_voxel_size: f64,
+    pub remeshing_error_estimate: f64,
+    pub simplification_error: f64,
+    pub encoding_error_estimate: f64,
+    /// Selection estimate, including encoding, rather than a guaranteed bound.
+    pub estimated_geometric_error: f64,
+    pub input_triangles: usize,
+    pub remeshed_triangles: usize,
+    pub output_triangles: usize,
+}
+
+/// GLB export statistics for CLI reporting and future parent-tile generation.
+#[derive(Clone, Debug, Default)]
+pub struct GlbExportReport {
+    pub remeshing: Option<RemeshReport>,
+    pub output_bytes: u64,
+}
 
 pub type JsonExportOptions = cityjson_lib::json::WriteOptions;
 
@@ -89,6 +125,7 @@ pub struct ExportOptions {
     pub smooth_normals: bool,
     pub quantize_geometry: bool,
     pub meshopt_compression: bool,
+    pub voxel_remesh: Option<VoxelRemeshOptions>,
 }
 
 impl Default for ExportOptions {
@@ -103,6 +140,7 @@ impl Default for ExportOptions {
             smooth_normals: false,
             quantize_geometry: true,
             meshopt_compression: true,
+            voxel_remesh: None,
         }
     }
 }
@@ -116,13 +154,13 @@ pub struct ObjExportOptions {
 ///
 /// # Errors
 ///
-/// Returns an error when the output directory cannot be created or GLB writing
-/// fails.
+/// Returns an error for invalid remeshing budgets, remeshing
+/// with clipping, empty remeshed output, directory creation failures, or GLB writing failures.
 pub fn convert_to_glb<P: AsRef<Path>>(
     model: &CityModel,
     output: P,
     options: &ExportOptions,
-) -> Result<()> {
+) -> Result<GlbExportReport> {
     let output = output.as_ref();
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent)?;

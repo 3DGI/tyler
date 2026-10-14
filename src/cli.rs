@@ -60,10 +60,20 @@ pub struct Cli {
     /// Add the boundingVolume of the content for the the tiles that have content.
     #[arg(long = "3dtiles-content-add-bv")]
     pub cesium3dtiles_content_add_bv: bool,
-    /// Set the geometric error factor (see 3D Tiles specification) for internal tiles.
-    /// Internal tile geometricError is computed as tile width multiplied by this factor.
-    /// Higher values make detailed content visible earlier when zooming in.
-    #[arg(long = "3dtiles-geometric-error-factor", default_value = "0.024")]
+    /// Largest internal-tile footprint that receives simplified GLB content,
+    /// in metres of real-world horizontal distance. Non-empty leaves always
+    /// receive full-detail content, even when their footprint is wider.
+    #[arg(long = "3dtiles-max-content-width", default_value = "4000")]
+    pub cesium3dtiles_max_content_width: f64,
+    /// Maximum geometric error in metres at the coarsest internal content
+    /// level. The allowance halves at each deeper content level. Leaves remain
+    /// full detail and do not use this setting.
+    #[arg(long = "3dtiles-max-geometric-error", default_value = "5")]
+    pub cesium3dtiles_max_geometric_error: f64,
+    /// Finite, non-negative multiplier for size-based traversal and tileset
+    /// entry errors. Applies to explicit and implicit tiling. Zero disables
+    /// the size contribution and can prevent the viewer from reaching content.
+    #[arg(long = "3dtiles-geometric-error-factor", default_value = "0.024", value_parser = geometric_error_factor)]
     pub cesium3dtiles_geometric_error_factor: f64,
     /// Set the 2D cell size for the grid that is used for constructing the quadtree.
     /// In input units (eg. meters). Note that the cell size will be adjusted so that it is
@@ -75,14 +85,12 @@ pub struct Cli {
     /// features.tsv exists, it is also loaded.
     #[arg(long = "debug-load-grid", value_parser = existing_canonical_path)]
     pub debug_load_grid: Option<PathBuf>,
-    /// Limit the minimum z coordinate for the bounding box that is computed from the
-    /// features. Useful if the features contain errors with extremely small z
-    /// coordinates. In input units (eg. meters).
+    /// Bound the minimum grid and 3D Tiles metadata height in input CRS units
+    /// (eg. meters), retaining source geometry. Useful for extremely small Z outliers.
     #[arg(long)]
     pub grid_minz: Option<i32>,
-    /// Limit the maximum z coordinate for the bounding box that is computed from the
-    /// features. Useful if the features contain errors with extremely large z
-    /// coordinates. In input units (eg. meters).
+    /// Bound the maximum grid and 3D Tiles metadata height in input CRS units
+    /// (eg. meters), retaining source geometry. Useful for extremely large Z outliers.
     #[arg(long)]
     pub grid_maxz: Option<i32>,
     /// Export the grid into .tsv files in the debug output directory.
@@ -570,6 +578,15 @@ fn hex_color(s: &str) -> Result<String, String> {
     Ok(String::from(s))
 }
 
+fn geometric_error_factor(value: &str) -> Result<f64, String> {
+    let requirement = "--3dtiles-geometric-error-factor must be a finite, non-negative number";
+    let factor = value.parse::<f64>().map_err(|_| requirement.to_owned())?;
+    if !factor.is_finite() || factor < 0.0 {
+        return Err(requirement.to_owned());
+    }
+    Ok(factor)
+}
+
 #[cfg(test)]
 mod tests {
     use super::Cli;
@@ -666,18 +683,42 @@ mod tests {
         assert!(cli.include_parent_attributes);
     }
 
-    /// CLI arguments review item 12: `--3dtiles-geometric-error-factor`
-    /// replaces the old flag name and still parses the configured float value.
+    /// CLI argument parsing exposes the content width and maximum
+    /// simplification error in metres.
     #[test]
-    fn verify_geometric_error_factor() {
+    fn verify_3dtiles_content_settings() {
         let dataset_dir = legacy_dataset_dir();
+        let defaults = Cli::try_parse_from(required_args(&dataset_dir)).unwrap();
+        assert!((defaults.cesium3dtiles_max_content_width - 4_000.0).abs() < f64::EPSILON);
+        assert!((defaults.cesium3dtiles_max_geometric_error - 5.0).abs() < f64::EPSILON);
+        assert!((defaults.cesium3dtiles_geometric_error_factor - 0.024).abs() < f64::EPSILON);
+        for value in ["0", "0.012", "0.048"] {
+            let mut factor_args = required_args(&dataset_dir);
+            factor_args.push(format!("--3dtiles-geometric-error-factor={value}"));
+            let cli = Cli::try_parse_from(factor_args).unwrap();
+            assert!(
+                (cli.cesium3dtiles_geometric_error_factor - value.parse::<f64>().unwrap()).abs()
+                    < f64::EPSILON
+            );
+        }
+        for value in ["-0.1", "NaN", "inf", "-inf", "1e309"] {
+            let mut factor_args = required_args(&dataset_dir);
+            factor_args.push(format!("--3dtiles-geometric-error-factor={value}"));
+            let error = Cli::try_parse_from(factor_args).unwrap_err().to_string();
+            assert!(error.contains("--3dtiles-geometric-error-factor"));
+            assert!(error.contains("finite, non-negative number"));
+        }
+
         let mut args = required_args(&dataset_dir);
         args.extend([
-            "--3dtiles-geometric-error-factor".to_string(),
-            "0.05".to_string(),
+            "--3dtiles-max-content-width".to_string(),
+            "1200".to_string(),
+            "--3dtiles-max-geometric-error".to_string(),
+            "2.5".to_string(),
         ]);
         let cli = Cli::try_parse_from(args).unwrap();
-        assert!((cli.cesium3dtiles_geometric_error_factor - 0.05).abs() < f64::EPSILON);
+        assert!((cli.cesium3dtiles_max_content_width - 1200.0).abs() < f64::EPSILON);
+        assert!((cli.cesium3dtiles_max_geometric_error - 2.5).abs() < f64::EPSILON);
     }
 
     /// CLI arguments review item 8: `--object-attributes` now accepts a

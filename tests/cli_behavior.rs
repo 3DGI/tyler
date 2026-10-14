@@ -125,12 +125,10 @@ fn metadata_feature_count(glb_json: &Value) -> u64 {
 }
 
 fn first_tile_with_content(tile: &Value) -> Option<&Value> {
-    if tile.get("content").is_some() {
-        return Some(tile);
+    if let Some(children) = tile.get("children").and_then(Value::as_array) {
+        return children.iter().find_map(first_tile_with_content);
     }
-    tile.get("children")
-        .and_then(Value::as_array)
-        .and_then(|children| children.iter().find_map(first_tile_with_content))
+    tile.get("content").is_some().then_some(tile)
 }
 
 fn leaf_content_tile(tile: &Value) -> &Value {
@@ -418,10 +416,12 @@ fn tileset_flags_change_output_artifacts_and_numeric_fields() {
 
     let content_region = region_from_bounding_volume(&content_tile["content"]["boundingVolume"]);
     let tile_region = region_from_bounding_volume(&content_tile["boundingVolume"]);
-    assert_ne!(
-        content_region, tile_region,
-        "without --3dtiles-content-bv-from-tile the content BV should not be forced to match the tile BV"
-    );
+    assert!(tile_region[0] <= content_region[0]);
+    assert!(tile_region[1] <= content_region[1]);
+    assert!(tile_region[2] >= content_region[2]);
+    assert!(tile_region[3] >= content_region[3]);
+    assert!(tile_region[4] <= content_region[4]);
+    assert!(tile_region[5] >= content_region[5]);
 
     let modified_output = unique_test_dir("tileset-modified");
     let output = run_tyler(
@@ -430,8 +430,6 @@ fn tileset_flags_change_output_artifacts_and_numeric_fields() {
         &[
             "--3dtiles-content-add-bv",
             "--3dtiles-content-bv-from-tile",
-            "--geometric-error-factor",
-            "0.05",
             "--qtree-capacity",
             "1",
             "--grid-minz=-10",
@@ -447,10 +445,9 @@ fn tileset_flags_change_output_artifacts_and_numeric_fields() {
         .expect("modified geometricError should be numeric");
     let modified_region = region_from_bounding_volume(&modified_root["boundingVolume"]);
     assert!(
-        (default_geometric_error - modified_geometric_error).abs() > f64::EPSILON,
-        "expected geometricError to change"
+        (default_geometric_error - modified_geometric_error).abs() <= f64::EPSILON,
+        "grid height and content bounding-volume settings should not change traversal error"
     );
-    assert!(modified_geometric_error > default_geometric_error);
     assert!(modified_region[4] <= default_region[4]);
     assert!(modified_region[5] >= default_region[5]);
 

@@ -123,7 +123,10 @@ impl QuadTree {
             if sum_items <= limit {
                 QuadTree {
                     id,
-                    side_length: tiles[0].side_length * 2,
+                    side_length: tiles[0]
+                        .side_length
+                        .checked_mul(2)
+                        .expect("quadtree side length must fit in u64"),
                     children: vec![],
                     cells,
                     nr_items: sum_items,
@@ -138,7 +141,10 @@ impl QuadTree {
                 }
                 QuadTree {
                     id,
-                    side_length: tiles[0].side_length * 2,
+                    side_length: tiles[0]
+                        .side_length
+                        .checked_mul(2)
+                        .expect("quadtree side length must fit in u64"),
                     children: tiles.clone(),
                     cells: vec![],
                     nr_items: sum_items,
@@ -166,8 +172,19 @@ impl QuadTree {
     }
 
     pub fn bbox(&self, grid: &SquareGrid) -> Bbox {
-        let minx = grid.origin[0] + (self.id.x * grid.cellsize as usize) as f64;
-        let miny = grid.origin[1] + (self.id.y * grid.cellsize as usize) as f64;
+        let cellsize = grid.cellsize as usize;
+        let x_offset = self
+            .id
+            .x
+            .checked_mul(cellsize)
+            .expect("quadtree x offset must fit in usize");
+        let y_offset = self
+            .id
+            .y
+            .checked_mul(cellsize)
+            .expect("quadtree y offset must fit in usize");
+        let minx = grid.origin[0] + x_offset as f64;
+        let miny = grid.origin[1] + y_offset as f64;
         [
             minx,
             miny,

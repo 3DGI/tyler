@@ -1,0 +1,242 @@
+[
+  {
+    "dataset": "110000_492000",
+    "requested_error": 5,
+    "source_triangles": 3526,
+    "proxy_triangles": 474,
+    "metadata_rows": 47,
+    "represented_features": 43,
+    "source_to_proxy": {
+      "sampled_max_m": 14.807,
+      "sampled_rms_m": 1.321
+    },
+    "proxy_to_source": {
+      "sampled_max_m": 9.597,
+      "sampled_rms_m": 0.834
+    }
+  },
+  {
+    "dataset": "110000_492000",
+    "requested_error": 20,
+    "source_triangles": 3526,
+    "proxy_triangles": 60,
+    "metadata_rows": 47,
+    "represented_features": 11,
+    "source_to_proxy": {
+      "sampled_max_m": 892.404,
+      "sampled_rms_m": 82.579
+    },
+    "proxy_to_source": {
+      "sampled_max_m": 6.538,
+      "sampled_rms_m": 2.448
+    }
+  },
+  {
+    "dataset": "110000_492000",
+    "requested_error": 40,
+    "source_triangles": 3526,
+    "proxy_triangles": 28,
+    "metadata_rows": 47,
+    "represented_features": 5,
+    "source_to_proxy": {
+      "sampled_max_m": 1958.334,
+      "sampled_rms_m": 567.34
+    },
+    "proxy_to_source": {
+      "sampled_max_m": 11.477,
+      "sampled_rms_m": 4.389
+    }
+  },
+  {
+    "dataset": "120000_484000",
+    "requested_error": 5,
+    "source_triangles": 775314,
+    "proxy_triangles": 55292,
+    "metadata_rows": 11297,
+    "represented_features": 9422,
+    "source_to_proxy": {
+      "sampled_max_m": 44.288,
+      "sampled_rms_m": 2.289
+    },
+    "proxy_to_source": {
+      "sampled_max_m": 3.309,
+      "sampled_rms_m": 0.56
+    }
+  },
+  {
+    "dataset": "120000_484000",
+    "requested_error": 20,
+    "source_triangles": 775314,
+    "proxy_triangles": 7408,
+    "metadata_rows": 11297,
+    "represented_features": 4128,
+    "source_to_proxy": {
+      "sampled_max_m": 80.093,
+      "sampled_rms_m": 5.925
+    },
+    "proxy_to_source": {
+      "sampled_max_m": 11.143,
+      "sampled_rms_m": 2.125
+    }
+  },
+  {
+    "dataset": "120000_484000",
+    "requested_error": 40,
+    "source_triangles": 775314,
+    "proxy_triangles": 1596,
+    "metadata_rows": 11297,
+    "represented_features": 961,
+    "source_to_proxy": {
+      "sampled_max_m": 159.483,
+      "sampled_rms_m": 15.31
+    },
+    "proxy_to_source": {
+      "sampled_max_m": 17.493,
+      "sampled_rms_m": 3.954
+    }
+  },
+  {
+    "dataset": "174000_440000",
+    "requested_error": 5,
+    "source_triangles": 39229,
+    "proxy_triangles": 3762,
+    "metadata_rows": 630,
+    "represented_features": 501,
+    "source_to_proxy": {
+      "sampled_max_m": 24.305,
+      "sampled_rms_m": 1.69
+    },
+    "proxy_to_source": {
+      "sampled_max_m": 2.87,
+      "sampled_rms_m": 0.613
+    }
+  },
+  {
+    "dataset": "174000_440000",
+    "requested_error": 20,
+    "source_triangles": 39229,
+    "proxy_triangles": 218,
+    "metadata_rows": 630,
+    "represented_features": 98,
+    "source_to_proxy": {
+      "sampled_max_m": 1192.135,
+      "sampled_rms_m": 227.674
+    },
+    "proxy_to_source": {
+      "sampled_max_m": 10.114,
+      "sampled_rms_m": 2.266
+    }
+  },
+  {
+    "dataset": "174000_440000",
+    "requested_error": 40,
+    "source_triangles": 39229,
+    "proxy_triangles": 28,
+    "metadata_rows": 630,
+    "represented_features": 17,
+    "source_to_proxy": {
+      "sampled_max_m": 2370.985,
+      "sampled_rms_m": 652.026
+    },
+    "proxy_to_source": {
+      "sampled_max_m": 14.629,
+      "sampled_rms_m": 3.817
+    }
+  },
+  {
+    "dataset": "dense-eight",
+    "requested_error": 0.5,
+    "source_triangles": 96,
+    "proxy_triangles": 38,
+    "metadata_rows": 8,
+    "represented_features": 8,
+    "source_to_proxy": {
+      "sampled_max_m": 1.695,
+      "sampled_rms_m": 0.444
+    },
+    "proxy_to_source": {
+      "sampled_max_m": 0.068,
+      "sampled_rms_m": 0.018
+    }
+  },
+  {
+    "dataset": "dense-eight",
+    "requested_error": 2,
+    "source_triangles": 96,
+    "proxy_triangles": 30,
+    "metadata_rows": 8,
+    "represented_features": 8,
+    "source_to_proxy": {
+      "sampled_max_m": 2.627,
+      "sampled_rms_m": 0.604
+    },
+    "proxy_to_source": {
+      "sampled_max_m": 0.718,
+      "sampled_rms_m": 0.143
+    }
+  },
+  {
+    "dataset": "dense-eight",
+    "requested_error": 5,
+    "source_triangles": 96,
+    "proxy_triangles": 4,
+    "metadata_rows": 8,
+    "represented_features": 4,
+    "source_to_proxy": {
+      "sampled_max_m": 9.735,
+      "sampled_rms_m": 4.871
+    },
+    "proxy_to_source": {
+      "sampled_max_m": 0.852,
+      "sampled_rms_m": 0.382
+    }
+  },
+  {
+    "dataset": "eight-buildings",
+    "requested_error": 2,
+    "source_triangles": 943,
+    "proxy_triangles": 280,
+    "metadata_rows": 8,
+    "represented_features": 8,
+    "source_to_proxy": {
+      "sampled_max_m": 10.367,
+      "sampled_rms_m": 0.728
+    },
+    "proxy_to_source": {
+      "sampled_max_m": 4.567,
+      "sampled_rms_m": 0.334
+    }
+  },
+  {
+    "dataset": "eight-buildings",
+    "requested_error": 5,
+    "source_triangles": 943,
+    "proxy_triangles": 114,
+    "metadata_rows": 8,
+    "represented_features": 8,
+    "source_to_proxy": {
+      "sampled_max_m": 7.393,
+      "sampled_rms_m": 0.574
+    },
+    "proxy_to_source": {
+      "sampled_max_m": 3.428,
+      "sampled_rms_m": 0.369
+    }
+  },
+  {
+    "dataset": "eight-buildings",
+    "requested_error": 10,
+    "source_triangles": 943,
+    "proxy_triangles": 58,
+    "metadata_rows": 8,
+    "represented_features": 7,
+    "source_to_proxy": {
+      "sampled_max_m": 892.755,
+      "sampled_rms_m": 62.099
+    },
+    "proxy_to_source": {
+      "sampled_max_m": 5.256,
+      "sampled_rms_m": 0.662
+    }
+  }
+]

@@ -171,8 +171,7 @@ tyler data/tile-index.cjindex \
   --format obj \
   --object-type Building \
   --lod-building 2 \
-  --color-building '#d8b365' \
-  --3dtiles-geometric-error-factor 0.018
+  --color-building '#d8b365'
 ```
 
 ```sh
@@ -359,7 +358,6 @@ flags that do not change that backend's output at all.
 | `--3dtiles-*` | `--3dtiles-content-bv-from-tile`        | yes     | ignored  | ignored     | ignored | ignored | ignored |
 | `--3dtiles-*` | `--3dtiles-content-clip-to-tile-bounds` | yes     | ignored  | ignored     | ignored | ignored | ignored |
 | `--3dtiles-*` | `--3dtiles-content-add-bv`              | yes     | ignored  | ignored     | ignored | ignored | ignored |
-| `--3dtiles-*` | `--3dtiles-geometric-error-factor`      | yes     | ignored  | ignored     | ignored | ignored | ignored |
 | `--gpkg-*`    | `--gpkg-split-lod`                      | ignored | ignored  | ignored     | ignored | yes     | ignored |
 | `--gpkg-*`    | `--gpkg-split-semantics`                | ignored | ignored  | ignored     | ignored | yes     | ignored |
 | `--gpkg-*`    | `--gpkg-include-metadata`               | ignored | ignored  | ignored     | ignored | yes     | ignored |
@@ -416,6 +414,23 @@ Tyler remains responsible for tiling. Its ownership includes:
   membership, LoD filtering, object-type filtering, attribute selection, and
   semantic, material, or color annotations needed by the output configuration
 - coordinating shared work across output backends
+
+For 3D Tiles, Tyler owns geometry placement through
+`--3dtiles-max-content-width` (4000 metres), requested simplification allowances
+through `--3dtiles-max-geometric-error` (5 metres, halved at each deeper content
+level), and spatial viewing estimates through
+`--3dtiles-geometric-error-factor` (0.024). Original leaves remain full detail.
+The factor accepts finite, non-negative values, including zero for experiments;
+calculated overflow is rejected. It applies to explicit and implicit output,
+including debug output, pruning and external tileset entry calculations.
+Content width and simplification allowances apply only to explicit tiling.
+The fixed tileset entry multiplier remains 2. These policies are detailed in
+[ADR 007](007-use-spatial-geometric-error-for-leaf-only-tilesets.md).
+Tyler passes simplified requests through `ExportOptions.voxel_remesh`, using
+each level's planned allowance; full-detail requests use `None`. The converter
+reconstructs and simplifies those internal meshes. Tyler still writes the
+planned allowances as selection estimates, not measured surface-distance bounds.
+See [ADR 015](015-use-rust-voxel-remeshing-for-optional-glb-proxies.md).
 
 Tyler does not perform per-vertex geometric clipping against tile bounds. It
 selects whole features whose extent overlaps the tile and hands the resulting

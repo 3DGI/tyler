@@ -1,4 +1,5 @@
 use crate::spatial_structs::Bbox;
+use cityjson_lib::ops::Transformer;
 
 #[derive(Clone, Copy, Debug)]
 pub struct RootEnuFrame {
@@ -61,6 +62,50 @@ impl RootEnuFrame {
             1.0,
         ]
     }
+}
+
+pub fn horizontal_footprint_width_meters(
+    source_crs: &str,
+    bbox: &Bbox,
+    source_to_ecef: &Transformer,
+) -> Result<f64, Box<dyn std::error::Error>> {
+    let tile_enu_frame = RootEnuFrame::from_bbox(source_crs, bbox)?;
+    let z = f64::midpoint(bbox[2], bbox[5]);
+    let corners = [
+        [bbox[0], bbox[1], z],
+        [bbox[0], bbox[4], z],
+        [bbox[3], bbox[1], z],
+        [bbox[3], bbox[4], z],
+    ];
+    let mut min_east = f64::INFINITY;
+    let mut min_north = f64::INFINITY;
+    let mut max_east = f64::NEG_INFINITY;
+    let mut max_north = f64::NEG_INFINITY;
+
+    for source_position in corners {
+        let ecef_position = source_to_ecef.transform(source_position)?;
+        let delta = [
+            ecef_position[0] - tile_enu_frame.ecef_origin[0],
+            ecef_position[1] - tile_enu_frame.ecef_origin[1],
+            ecef_position[2] - tile_enu_frame.ecef_origin[2],
+        ];
+        let east = dot_product(delta, tile_enu_frame.east);
+        let north = dot_product(delta, tile_enu_frame.north);
+        min_east = min_east.min(east);
+        min_north = min_north.min(north);
+        max_east = max_east.max(east);
+        max_north = max_north.max(north);
+    }
+
+    let width = (max_east - min_east).max(max_north - min_north);
+    if !width.is_finite() || width < 0.0 {
+        return Err("could not calculate horizontal footprint width in metres".into());
+    }
+    Ok(width)
+}
+
+fn dot_product(lhs: [f64; 3], rhs: [f64; 3]) -> f64 {
+    lhs[0] * rhs[0] + lhs[1] * rhs[1] + lhs[2] * rhs[2]
 }
 
 fn enu_basis(longitude_degrees: f64, latitude_degrees: f64) -> ([f64; 3], [f64; 3], [f64; 3]) {

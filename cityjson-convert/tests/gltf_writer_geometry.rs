@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use cityjson_convert::{
     convert_to_cityjson, convert_to_cityjsonseq, convert_to_glb, convert_to_obj,
     CityJsonSeqExportOptions, ExportOptions, GeographicClipRegion, GeometryPlacement,
-    JsonExportOptions, ObjExportOptions,
+    JsonExportOptions, ObjExportOptions, VoxelRemeshOptions,
 };
 use cityjson_lib::json;
 use serde_json::Value;
@@ -70,7 +70,7 @@ fn read_glb_json(bytes: &[u8]) -> Value {
     serde_json::from_slice(&bytes[20..20 + json_length]).expect("GLB JSON chunk should parse")
 }
 
-fn read_json_lines(path: &PathBuf) -> Vec<Value> {
+fn read_json_lines(path: &Path) -> Vec<Value> {
     fs::read_to_string(path)
         .expect("read json lines")
         .lines()
@@ -79,7 +79,7 @@ fn read_json_lines(path: &PathBuf) -> Vec<Value> {
         .collect()
 }
 
-fn read_obj_lines(path: &PathBuf) -> Vec<String> {
+fn read_obj_lines(path: &Path) -> Vec<String> {
     fs::read_to_string(path)
         .expect("read OBJ output")
         .lines()
@@ -87,7 +87,7 @@ fn read_obj_lines(path: &PathBuf) -> Vec<String> {
         .collect()
 }
 
-fn read_obj_vertices_and_faces(path: &PathBuf) -> (Vec<[f64; 3]>, Vec<[usize; 3]>) {
+fn read_obj_vertices_and_faces(path: &Path) -> (Vec<[f64; 3]>, Vec<[usize; 3]>) {
     let mut vertices = Vec::new();
     let mut faces = Vec::new();
     for line in read_obj_lines(path) {
@@ -338,8 +338,82 @@ fn convert_to_cityjsonseq_writes_header_and_features() {
     assert_eq!(items[2]["type"], "CityJSONFeature");
 }
 
+fn assert_cjconvert_lod_selection() {
+    let directory = tempfile::tempdir().unwrap();
+    let model =
+        json::merge_feature_stream_slice(include_bytes!("data/multi_lod_building_part.city.jsonl"))
+            .unwrap();
+    let input = directory.path().join("input.city.json");
+    convert_to_cityjson(&model, &input, &JsonExportOptions::default()).unwrap();
+    let mut document: Value = serde_json::from_slice(&fs::read(&input).unwrap()).unwrap();
+    let child = document["CityObjects"]["multi-lod-building-part"]
+        .as_object_mut()
+        .unwrap();
+    let attributes = child.remove("attributes").unwrap();
+    child.insert("parents".into(), serde_json::json!(["parent-building"]));
+    document["CityObjects"]["parent-building"] = serde_json::json!({
+        "type": "Building",
+        "attributes": attributes,
+        "children": ["multi-lod-building-part"]
+    });
+    fs::write(&input, serde_json::to_vec(&document).unwrap()).unwrap();
+    let mut counts = Vec::new();
+    for (name, args) in [
+        ("all", Vec::new()),
+        ("selected", vec!["--lod", "2.2"]),
+        ("proxy", vec!["--lod", "2.2", "--remesh-error", "4"]),
+        ("proxy-all", vec!["--remesh-error", "4"]),
+    ] {
+        let output = directory.path().join(format!("{name}.glb"));
+        let result = Command::new(env!("CARGO_BIN_EXE_cjconvert"))
+            .arg(&input)
+            .arg("--output")
+            .arg(&output)
+            .args(["--no-quantization", "--no-meshopt-compression"])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let root = read_glb_json(&fs::read(output).unwrap());
+        let properties =
+            &root["extensions"]["EXT_structural_metadata"]["propertyTables"][0]["properties"];
+        assert!(
+            properties.get("name").is_some(),
+            "parent metadata must survive LoD selection"
+        );
+        let primitive = &root["meshes"][0]["primitives"][0];
+        let accessor = usize::try_from(primitive["indices"].as_u64().unwrap()).unwrap();
+        counts.push(root["accessors"][accessor]["count"].as_u64().unwrap());
+        if name.starts_with("proxy") {
+            assert!(String::from_utf8_lossy(&result.stderr).contains("estimated error"));
+        }
+    }
+    assert!(counts[0] > counts[1]);
+    for args in [
+        vec!["--lod", "999"],
+        vec!["--lod", "2.2", "--remesh-error", "NaN"],
+        vec!["--lod", "2.2", "--remesh-error", "0"],
+        vec!["--format", "obj", "--remesh-error", "4"],
+    ] {
+        let output = directory.path().join("invalid.glb");
+        let result = Command::new(env!("CARGO_BIN_EXE_cjconvert"))
+            .arg(&input)
+            .arg("--output")
+            .arg(&output)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(!result.status.success());
+        assert!(!output.exists());
+    }
+}
+
 #[test]
-fn cjconvert_can_write_cityjson_cityjsonseq_and_obj() {
+fn cjconvert_can_write_all_formats_with_optional_lod_selection() {
     let cityjson_output = stable_output_path_with_suffix("cjconvert_cityjson", "city.json");
     let cityjsonseq_output = stable_output_path_with_suffix("cjconvert_cityjsonseq", "city.jsonl");
     let obj_output = stable_output_path_with_suffix("cjconvert_obj", "obj");
@@ -393,6 +467,156 @@ fn cjconvert_can_write_cityjson_cityjsonseq_and_obj() {
     assert!(obj_lines.iter().any(|line| line.starts_with("o ")));
     assert!(obj_lines.iter().any(|line| line.starts_with("v ")));
     assert!(obj_lines.iter().any(|line| line.starts_with("f ")));
+    assert_cjconvert_lod_selection();
+    for format in ["cityjson", "cityjsonseq", "obj", "tsv", "gpkg"] {
+        assert_cjconvert_format_lod_selection(format);
+    }
+}
+
+fn assert_cjconvert_format_lod_selection(format: &str) {
+    let directory = tempfile::tempdir().unwrap();
+    let model =
+        json::merge_feature_stream_slice(include_bytes!("data/multi_lod_building_part.city.jsonl"))
+            .unwrap();
+    let input = directory.path().join("input.city.json");
+    convert_to_cityjson(&model, &input, &JsonExportOptions::default()).unwrap();
+    let mut document: Value = serde_json::from_slice(&fs::read(&input).unwrap()).unwrap();
+    document["metadata"] =
+        serde_json::json!({"referenceSystem": "https://www.opengis.net/def/crs/EPSG/0/7415"});
+    for geometry in document["CityObjects"]["multi-lod-building-part"]["geometry"]
+        .as_array_mut()
+        .unwrap()
+    {
+        let values = if geometry["type"] == "Solid" {
+            serde_json::json!([[0, 0, 0, 0, 0, 0]])
+        } else {
+            serde_json::json!([0])
+        };
+        geometry["semantics"] = serde_json::json!({
+            "surfaces": [{"type": "WallSurface"}], "values": values
+        });
+    }
+    fs::write(&input, serde_json::to_vec(&document).unwrap()).unwrap();
+    let input = if format == "cityjsonseq" {
+        let mut feature: Value = serde_json::from_slice(&fs::read(&input).unwrap()).unwrap();
+        feature["type"] = serde_json::json!("CityJSONFeature");
+        feature["id"] = serde_json::json!("multi-lod-building-part");
+        let base = serde_json::json!({
+            "type": "CityJSON", "version": "2.0", "CityObjects": {}, "vertices": [],
+            "transform": {"scale": [1, 1, 1], "translate": [0, 0, 0]}
+        });
+        let unmatched = serde_json::json!({
+            "type": "CityJSONFeature", "id": "unmatched", "vertices": [[0,0,0],[1,0,0],[0,1,0]],
+            "CityObjects": {"unmatched": {"type": "BuildingPart", "attributes": {"name": "keep"},
+                "geometry": [{"type": "MultiSurface", "lod": "1.2", "boundaries": [[[0,1,2]]]}]}}
+        });
+        let sequence = directory.path().join("input.city.jsonl");
+        fs::write(&sequence, format!("{base}\n{feature}\n{unmatched}\n")).unwrap();
+        sequence
+    } else {
+        input
+    };
+    let output = directory.path().join(format!("selected.{format}"));
+    let result = Command::new(env!("CARGO_BIN_EXE_cjconvert"))
+        .arg(&input)
+        .args([
+            "--format",
+            format,
+            "--lod",
+            "2.2",
+            "--tsv-include-semantics",
+        ])
+        .arg("--output")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_selected_lod_output(format, &output);
+    let result = Command::new(env!("CARGO_BIN_EXE_cjconvert"))
+        .arg(&input)
+        .args(["--format", format, "--lod", "999", "--output"])
+        .arg(directory.path().join("missing"))
+        .output()
+        .unwrap();
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("matched no geometry"));
+    assert!(!directory.path().join("missing").exists());
+}
+
+fn assert_selected_lod_output(format: &str, output: &Path) {
+    match format {
+        "cityjson" | "cityjsonseq" => {
+            let documents = if format == "cityjsonseq" {
+                let items = read_json_lines(output);
+                assert_eq!(items.len(), 3);
+                assert_eq!(
+                    items[2]["CityObjects"]["unmatched"]["attributes"]["name"],
+                    "keep"
+                );
+                items
+            } else {
+                vec![serde_json::from_slice(&fs::read(output).unwrap()).unwrap()]
+            };
+            let geometries = documents
+                .iter()
+                .flat_map(|document| document["CityObjects"].as_object().unwrap().values())
+                .filter_map(|object| object["geometry"].as_array())
+                .flatten()
+                .collect::<Vec<_>>();
+            assert_eq!(geometries.len(), 1);
+            assert_eq!(geometries[0]["lod"], "2.2");
+        }
+        "obj" => assert_eq!(
+            read_obj_lines(output)
+                .iter()
+                .filter(|line| line.starts_with("f "))
+                .count(),
+            12
+        ),
+        "tsv" => {
+            let semantics =
+                fs::read_to_string(output.with_file_name("selected_semantics.tsv")).unwrap();
+            let mut lines = semantics.lines();
+            let lod = lines
+                .next()
+                .unwrap()
+                .split('\t')
+                .position(|column| column == "geometry_lod")
+                .unwrap();
+            let rows = lines.collect::<Vec<_>>();
+            assert!(!rows.is_empty());
+            assert!(rows
+                .iter()
+                .all(|row| row.split('\t').nth(lod) == Some("2.2")));
+        }
+        "gpkg" => {
+            let connection = rusqlite::Connection::open(output).unwrap();
+            let table: String = connection
+                .query_row("SELECT table_name FROM gpkg_geometry_columns", [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            let lod: String = connection
+                .query_row(
+                    &format!("SELECT DISTINCT lod FROM \"{table}\""),
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(lod, "2.2");
+            let count: u64 = connection
+                .query_row(&format!("SELECT COUNT(*) FROM \"{table}\""), [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(count, 1);
+        }
+        _ => unreachable!(),
+    }
 }
 
 #[test]
@@ -496,6 +720,208 @@ fn read_f32_vec3_accessor(root: &Value, bin: &[u8], accessor_index: usize) -> Ve
             ]
         })
         .collect()
+}
+
+fn read_integer_accessor(root: &Value, bin: &[u8], accessor_index: usize) -> Vec<u32> {
+    let accessor = &root["accessors"][accessor_index];
+    let view =
+        &root["bufferViews"][usize::try_from(accessor["bufferView"].as_u64().unwrap()).unwrap()];
+    let count = usize::try_from(accessor["count"].as_u64().unwrap()).unwrap();
+    let component = accessor["componentType"].as_u64().unwrap();
+    let size = match component {
+        5121 => 1,
+        5123 => 2,
+        5125 => 4,
+        _ => panic!("unexpected integer component"),
+    };
+    let offset = usize::try_from(accessor["byteOffset"].as_u64().unwrap_or(0)).unwrap();
+    let decoded;
+    let (bytes, stride) = if let Some(extension) = view["extensions"].get("EXT_meshopt_compression")
+    {
+        let start = usize::try_from(extension["byteOffset"].as_u64().unwrap()).unwrap();
+        let length = usize::try_from(extension["byteLength"].as_u64().unwrap()).unwrap();
+        let encoded = &bin[start..start + length];
+        if extension["mode"] == "TRIANGLES" {
+            return meshopt::decode_index_buffer::<u32>(encoded, count).unwrap();
+        }
+        assert_eq!(extension["byteStride"], 4);
+        decoded = meshopt::decode_vertex_buffer::<[u8; 4]>(encoded, count)
+            .unwrap()
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        (decoded.as_slice(), 4)
+    } else {
+        let start = usize::try_from(view["byteOffset"].as_u64().unwrap_or(0)).unwrap();
+        let length = usize::try_from(view["byteLength"].as_u64().unwrap()).unwrap();
+        let stride = view["byteStride"]
+            .as_u64()
+            .map_or(size, |value| usize::try_from(value).unwrap());
+        (&bin[start..start + length], stride)
+    };
+    (0..count)
+        .map(|index| {
+            let start = offset + index * stride;
+            match size {
+                1 => u32::from(bytes[start]),
+                2 => u32::from(u16::from_le_bytes(
+                    bytes[start..start + 2].try_into().unwrap(),
+                )),
+                4 => u32::from_le_bytes(bytes[start..start + 4].try_into().unwrap()),
+                _ => unreachable!(),
+            }
+        })
+        .collect()
+}
+
+fn two_boxes_model(gap: f64) -> cityjson_lib::CityModel {
+    let mut vertices = Vec::new();
+    let mut objects = serde_json::Map::new();
+    for (id, kind, offset) in [("a", "Building", 0.0), ("b", "BuildingPart", 10.0 + gap)] {
+        let base = vertices.len();
+        for point in [
+            [0.0, 0.0, 0.0],
+            [10.0, 0.0, 0.0],
+            [10.0, 10.0, 0.0],
+            [0.0, 10.0, 0.0],
+            [0.0, 0.0, 10.0],
+            [10.0, 0.0, 10.0],
+            [10.0, 10.0, 10.0],
+            [0.0, 10.0, 10.0],
+        ] {
+            vertices.push([point[0] + offset, point[1], point[2]]);
+        }
+        let boundaries = [
+            [0, 3, 2, 1],
+            [4, 5, 6, 7],
+            [0, 1, 5, 4],
+            [1, 2, 6, 5],
+            [2, 3, 7, 6],
+            [3, 0, 4, 7],
+        ]
+        .map(|ring| vec![ring.map(|index| index + base)]);
+        objects.insert(id.into(), serde_json::json!({"type":kind,"attributes":{"name":id},"geometry":[{"type":"MultiSurface","lod":"2.2","boundaries":boundaries}]}));
+    }
+    let input = serde_json::to_vec(&serde_json::json!({"type":"CityJSON","version":"2.0","transform":{"scale":[1,1,1],"translate":[0,0,0]},"CityObjects":objects,"vertices":vertices})).unwrap();
+    json::from_slice(&input).unwrap()
+}
+
+fn assert_remeshed_glb(bytes: &[u8], quantize: bool, compress: bool, output_triangles: usize) {
+    let root = read_glb_json(bytes);
+    let bin = read_glb_bin(bytes);
+    assert_eq!(
+        root["extensions"]["EXT_structural_metadata"]["propertyTables"][0]["count"],
+        2
+    );
+    let mut owners = std::collections::BTreeSet::new();
+    let mut triangle_count = 0;
+    for primitive in root["meshes"][0]["primitives"].as_array().unwrap() {
+        let ids = read_integer_accessor(
+            &root,
+            bin,
+            usize::try_from(primitive["attributes"]["_FEATURE_ID_0"].as_u64().unwrap()).unwrap(),
+        );
+        let indices = read_integer_accessor(
+            &root,
+            bin,
+            usize::try_from(primitive["indices"].as_u64().unwrap()).unwrap(),
+        );
+        let feature_count = primitive["extensions"]["EXT_mesh_features"]["featureIds"][0]
+            ["featureCount"]
+            .as_u64()
+            .unwrap();
+        for triangle in indices.chunks_exact(3) {
+            let owner = ids[usize::try_from(triangle[0]).unwrap()];
+            assert!(u64::from(owner) < feature_count);
+            assert!(owner < 2);
+            assert!(triangle
+                .iter()
+                .all(|index| ids[usize::try_from(*index).unwrap()] == owner));
+            owners.insert(owner);
+            triangle_count += 1;
+        }
+        if !quantize && !compress {
+            let normals = read_f32_vec3_accessor(
+                &root,
+                bin,
+                usize::try_from(primitive["attributes"]["NORMAL"].as_u64().unwrap()).unwrap(),
+            );
+            assert!(normals.iter().flatten().all(|value| value.is_finite()));
+            let position_accessor =
+                usize::try_from(primitive["attributes"]["POSITION"].as_u64().unwrap()).unwrap();
+            let positions = read_f32_vec3_accessor(&root, bin, position_accessor);
+            assert!(positions.iter().flatten().all(|value| value.is_finite()));
+            for position in &positions {
+                for (axis, value) in position.iter().enumerate() {
+                    let accessor = &root["accessors"][position_accessor];
+                    assert!(f64::from(*value) >= accessor["min"][axis].as_f64().unwrap());
+                    assert!(f64::from(*value) <= accessor["max"][axis].as_f64().unwrap());
+                }
+            }
+        }
+    }
+    assert_eq!(owners.len(), 2);
+    assert_eq!(triangle_count, output_triangles);
+    assert!(root["materials"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|material| !material["doubleSided"].as_bool().unwrap_or(false)));
+}
+
+/// Purpose: verify end-to-end categorical transfer. Nearby and separated boxes
+/// with different types/attributes must retain metadata, finite normals, valid
+/// bounds, wide rectangular grids, and one owner per triangle in raw and
+/// compressed/quantized GLBs.
+#[test]
+fn remeshed_glbs_transfer_one_feature_id_per_triangle() {
+    for gap in [0.1, 25.0, 1000.0] {
+        let model = two_boxes_model(gap);
+        for (quantize, compress, smooth) in [
+            (false, false, false),
+            (true, false, true),
+            (false, true, true),
+            (true, true, false),
+        ] {
+            let directory = tempfile::tempdir().unwrap();
+            let output = directory.path().join("proxy.glb");
+            let report = convert_to_glb(
+                &model,
+                &output,
+                &ExportOptions {
+                    voxel_remesh: Some(VoxelRemeshOptions {
+                        geometric_error: 2.0,
+                    }),
+                    quantize_geometry: quantize,
+                    meshopt_compression: compress,
+                    smooth_normals: smooth,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let remesh = report.remeshing.unwrap();
+            assert_eq!(remesh.input_triangles, 24);
+            assert!(remesh.output_triangles > 0);
+            assert!(remesh.remeshing_error_estimate <= remesh.requested_geometric_error / 2.0);
+            if gap > 100.0 {
+                assert!(remesh.grid_dimensions[0] > 1024);
+                assert!(remesh.grid_dimensions[1] < 32);
+                assert!(remesh.grid_dimensions[2] < 32);
+            }
+            assert!(remesh.estimated_geometric_error.is_finite());
+            assert!(
+                (remesh.estimated_geometric_error
+                    - remesh.remeshing_error_estimate
+                    - remesh.simplification_error
+                    - remesh.encoding_error_estimate)
+                    .abs()
+                    < 1.0e-10
+            );
+            let bytes = fs::read(&output).unwrap();
+            assert_eq!(report.output_bytes, u64::try_from(bytes.len()).unwrap());
+            assert_remeshed_glb(&bytes, quantize, compress, remesh.output_triangles);
+        }
+    }
 }
 
 fn normalize(vector: [f32; 3]) -> [f32; 3] {
@@ -1237,6 +1663,18 @@ fn convert_to_glb_can_clip_to_bbox_with_preclip_smooth_normals() {
     ]);
 
     assert_vec3_approx_eq(normals[clipped_boundary_index], expected_boundary_normal);
+
+    let remesh_options = ExportOptions {
+        voxel_remesh: Some(VoxelRemeshOptions {
+            geometric_error: 1.0,
+        }),
+        ..options
+    };
+    assert!(convert_to_glb(&model, &output_path, &remesh_options)
+        .unwrap_err()
+        .to_string()
+        .contains("clipped geometry"));
+    assert_eq!(fs::read(&output_path).unwrap(), glb_bytes);
 }
 
 #[test]
@@ -1314,6 +1752,18 @@ fn convert_to_glb_can_clip_to_geographic_region() {
         touches_north,
         "clipped mesh should include the north boundary"
     );
+
+    let remesh_options = ExportOptions {
+        voxel_remesh: Some(VoxelRemeshOptions {
+            geometric_error: 1.0,
+        }),
+        ..options
+    };
+    assert!(convert_to_glb(&model, &output_path, &remesh_options)
+        .unwrap_err()
+        .to_string()
+        .contains("clipped geometry"));
+    assert_eq!(fs::read(&output_path).unwrap(), glb_bytes);
 }
 
 #[test]
@@ -1508,13 +1958,13 @@ fn convert_to_glb_merges_multiple_features_into_one_centered_mesh() {
         "different feature types should receive different default colors"
     );
 
-    for primitive in primitives {
+    for (index, primitive) in primitives.iter().enumerate() {
         assert!(primitive["attributes"].get("_FEATURE_ID_0").is_some());
         assert_eq!(
             primitive["extensions"]["EXT_mesh_features"]["featureIds"][0]["featureCount"]
                 .as_u64()
                 .unwrap(),
-            1
+            u64::try_from(index + 1).unwrap()
         );
     }
 

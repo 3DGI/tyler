@@ -33,11 +33,101 @@ fn export(model: &CityModel) -> anyhow::Result<()> {
         smooth_normals: false,
         quantize_geometry: true,
         meshopt_compression: true,
+        voxel_remesh: None,
     };
 
-    convert_to_glb(model, "output/tiles.glb", &options)
+    let report = convert_to_glb(model, "output/tiles.glb", &options)?;
+    println!("GLB: {} bytes", report.output_bytes);
+    Ok(())
 }
 ```
+
+### Experimental voxel remeshing
+
+Set `ExportOptions.voxel_remesh` to `Some(VoxelRemeshOptions { geometric_error: 10.0 })`
+to merge all supplied geometry into one voxel reconstruction, then simplify it.
+Input and error units must be Cartesian metres. Select source geometry/LoDs before
+calling the library; it does not select them automatically. Both clipping options
+are incompatible with remeshing.
+
+The optional `--lod` flag selects an exact source LoD for every output format:
+
+```shell
+cjconvert buildings.city.json --output proxy.glb --lod 2.2 --remesh-error 10
+```
+
+Without `--lod`, all source LoDs are exported, including when remeshing.
+Selection preserves object attributes and relationships, including geometry-less
+parents. A LoD that matches no geometry in the input returns an error.
+`--remesh-error` is available only for GLB output and does not require `--lod`.
+The CLI reports rectangular grid dimensions,
+voxel size, error components, triangle counts and GLB bytes to stderr. The voxel
+edge length is `geometric_error / (2 * sqrt(3))`, rounded toward finer quality.
+Each grid axis is sized independently, with empty padding; no resolution clamping
+is applied. One grid merges all supplied geometry, including different object
+types. Memory grows with grid volume, so finer voxels over large areas require more
+memory. Unrepresentable grids return an error instead of changing the voxel size.
+
+Half the requested budget controls voxel reconstruction (using one voxel diagonal
+as its allowance), and half controls absolute simplification error. The returned
+`GlbExportReport.remeshing` includes `estimated_geometric_error`: voxel diagonal +
+simplifier-reported error + quantization/float-rounding allowance. This is a
+selection estimate, not a certified surface-distance bound; remeshing can merge
+gaps, erase thin wires, and fill interiors. Simplification can also remove isolated
+small buildings, making source-to-proxy distance much larger than this estimate.
+Quantization and float rounding can increase the estimate beyond the requested
+budget.
+
+After simplification, each triangle receives the ID of the source triangle nearest
+to its centroid. All three corners share that ID. Original metadata rows are
+retained, including rows with no surviving geometry; ownership around merged
+buildings is approximate. Normals are regenerated and remeshed materials use
+backface culling. Quantization, compression, colours, and smooth normals remain
+available. Remeshing can increase triangle count for already simple source meshes;
+the report shows this explicitly.
+
+For future 3D Tiles parent content, validate a surface-distance error before using
+the proxy for the parent's `geometricError`; the current estimate alone is
+insufficient when disconnected objects disappear. Keep parent errors at least as
+large as child errors, use
+`REPLACE` refinement, and generate each proxy from the selected source geometry.
+Tyler's explicit content planner enables voxel remeshing for simplified internal
+tiles using each level's planned allowance. Full-detail leaves and implicit
+content use `voxel_remesh: None`. These planned tile errors remain selection
+estimates; they are not replaced by certified surface-distance measurements.
+
+See [ADR 015](../docs/adr/015-use-rust-voxel-remeshing-for-optional-glb-proxies.md)
+for the implementation decision, geometric-error limitations, and alternatives.
+See the [Rust remesher evaluation](../docs/performance/voxel-remeshing/rust-voxel-remeshing-evaluation.md) for
+current memory/runtime comparisons. Surface-distance observations are recorded
+in the [native rectangular grid evaluation](../docs/performance/voxel-remeshing/rectangular-voxel-grid-evaluation.md)
+and the [original evaluation](../docs/performance/voxel-remeshing/voxel-remeshing-evaluation.md).
+
+The reconstruction code lives in `cityjson-convert` as a Rust port of
+meshoptimizer v1.3's remesher. Its MIT attribution and licence are retained in
+[`src/voxel_remesh/LICENSE.md`](src/voxel_remesh/LICENSE.md). Native simplification,
+remapping, optimization, and compression use upstream `meshopt` master, pinned
+to `3c8c9126cd98e70f34c6d9c54d02f41af6749406`, with meshoptimizer v1.2. No local
+`meshopt` fork is required. v1.2 has position-updating simplification and vertex
+locks, but lacks v1.3's `PreserveFolds` flag, so the current pipeline uses
+`ErrorAbsolute` alone. Updated measurements are in the
+[upstream v1.2 evaluation](../docs/performance/voxel-remeshing/upstream-meshopt-1.2-evaluation.md).
+
+The public `cityjson_convert::voxel_remesh::remesh` API takes a `VoxelGrid` (origin and voxel size) and a
+`VoxelExtent` (global processing cell range), and returns shared positions,
+triangle indices, grid dimensions, and queryable cell identities. The converter
+uses a centred grid for the current whole-object workflow and welds coincident
+positions before simplification. Packed occupancy and indexed output reduce
+memory; reconstruction builds the grid once and samples the source twice.
+The checked native `simplify_positions_with_update` wrapper in the same module
+retains optional per-vertex locks. Reconstruction modules forbid unsafe code.
+
+These interfaces prepare for shared-grid regional reconstruction. Shell mode can
+process a cropped domain; solid mode requires complete input coverage with padding.
+Clipped GLB remeshing remains unsupported. Future tiled integration needs buffered
+source geometry, valid solid boundary classification, locked clip boundaries, and
+consistent encoding; neighbouring tiles at different resolutions also need a
+transition policy. Shared grid coordinates alone do not guarantee matching GLBs.
 
 ### CityJSON
 

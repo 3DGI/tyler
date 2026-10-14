@@ -1,6 +1,6 @@
 [package]
 name = "tyler"
-version = "1.0.0-alpha1"
+version = "1.0.0-alpha2"
 edition = "2021"
 authors = ["Balázs Dukai <balazs.dukai@3dgi.nl>", "Ravi Peters <ravi.peters@3dgi.nl>"]
 description = "Create tiles from 3D city objects encoded as CityJSONFeatures."
@@ -21,7 +21,7 @@ path = "src/main.rs"
 [dependencies]
 cityjson-lib = { version = "0.10.0", default-features = false }
 cityjson-index = { version = "0.10.0" }
-cityjson-convert = { version = "1.0.0-alpha1", default-features = false }
+cityjson-convert = { version = "1.0.0-alpha2", default-features = false }
 log = "0.4.17"
 env_logger = "0.10.0"
 clap = { version = "4.0.32", features = ["cargo", "derive"] }

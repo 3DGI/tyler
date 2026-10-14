@@ -1,6 +1,6 @@
 [package]
 name = "cityjson-convert"
-version = "1.0.0-alpha1"
+version = "1.0.0-alpha2"
 edition = "2021"
 authors = ["Balázs Dukai <balazs.dukai@3dgi.nl>", "Ravi Peters <ravi.peters@3dgi.nl>"]
 description = "CityJSON format converter"
@@ -18,6 +18,9 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"
+bitflags = "2.13"
+bvh = { version = "0.12", default-features = false, features = ["std"] }
+nalgebra = "0.34"
 cityjson-lib = { version = "0.10.0", default-features = false }
 cityjson-index = { version = "0.10.0", default-features = false }
 clap = { version = "4.6", features = ["cargo", "derive"] }
@@ -26,7 +29,7 @@ earcutr = "0.5.0"
 env_logger = "0.11.0"
 gltf = { version = "1.4", features = ["extensions", "extras"] }
 log = "0.4"
-meshopt = "0.6.2"
+meshopt = { git = "https://github.com/gwihlidal/meshopt-rs.git", rev = "3c8c9126cd98e70f34c6d9c54d02f41af6749406" }
 num-traits = "0.2"
 rusqlite = "0.37.0"
 serde_json = "1.0"
