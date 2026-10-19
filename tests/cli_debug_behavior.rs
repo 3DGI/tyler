@@ -81,6 +81,14 @@ fn read_json(path: &Path) -> Value {
     serde_json::from_slice(&fs::read(path).expect("read json file")).expect("parse json file")
 }
 
+fn first_content_uri(tile: &Value) -> Option<&str> {
+    tile["content"]["uri"].as_str().or_else(|| {
+        tile["children"]
+            .as_array()
+            .and_then(|children| children.iter().find_map(first_content_uri))
+    })
+}
+
 fn parse_tsv(text: &str) -> Vec<Vec<String>> {
     let mut reader = csv::ReaderBuilder::new()
         .delimiter(b'\t')
@@ -144,6 +152,60 @@ fn collect_paths_with_suffix(dir: &Path, suffix: &str, out: &mut Vec<PathBuf>) {
                 out.push(path);
             }
         }
+    }
+}
+
+fn assert_full_tile_file_names(root: &Path, paths: &[PathBuf]) {
+    for path in paths {
+        let relative = path
+            .strip_prefix(root)
+            .expect("tile is under tile directory");
+        let components = relative
+            .components()
+            .map(|component| component.as_os_str().to_str().expect("UTF-8 path"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            components.len(),
+            3,
+            "unexpected tile path: {}",
+            path.display()
+        );
+        let [level, x, file_name] = components.as_slice() else {
+            unreachable!("checked tile path component count");
+        };
+        let prefix = format!("{level}-{x}-");
+        let y = file_name
+            .strip_prefix(&prefix)
+            .and_then(|name| name.split('.').next())
+            .expect("tile filename should include level-x-y");
+        assert!(
+            !y.is_empty() && y.chars().all(|digit| digit.is_ascii_digit()),
+            "tile filename should contain full numeric tile ID: {}",
+            path.display()
+        );
+    }
+}
+
+fn assert_tsv_content_paths(output_dir: &Path, rows: &[Vec<String>]) {
+    let tile_id_ix = rows[0]
+        .iter()
+        .position(|column| column == "tile_id")
+        .expect("metadata.tsv should contain tile_id");
+    let content_path_ix = rows[0]
+        .iter()
+        .position(|column| column == "content_path")
+        .expect("metadata.tsv should contain content_path");
+    for row in rows.iter().skip(1) {
+        let mut tile_id = row[tile_id_ix].split('/');
+        let level = tile_id.next().expect("tile ID level");
+        let x = tile_id.next().expect("tile ID x");
+        let y = tile_id.next().expect("tile ID y");
+        assert!(tile_id.next().is_none(), "tile_id should be level/x/y");
+        assert_eq!(
+            row[content_path_ix],
+            format!("t/{level}/{x}/{level}-{x}-{y}/cityobjects.tsv")
+        );
+        assert!(output_dir.join(&row[content_path_ix]).is_file());
     }
 }
 
@@ -292,6 +354,7 @@ fn format_tsv_writes_tile_tables_and_aggregate_metadata() {
         .iter()
         .position(|column| column == "geographical_extent")
         .expect("metadata.tsv should contain geographical_extent");
+    assert_tsv_content_paths(&output_dir, &rows);
     assert!(
         rows[1][extent_wkt_ix].starts_with("POLYGON(("),
         "geographical_extent should contain polygon WKT"
@@ -320,6 +383,8 @@ fn format_gpkg_writes_tile_databases_and_aggregate_metadata() {
         &[
             "--format",
             "gpkg",
+            "--tiles-dir",
+            "tiles",
             "--gpkg-split-lod",
             "--gpkg-include-semantics",
             "--gpkg-include-hierarchy",
@@ -329,11 +394,12 @@ fn format_gpkg_writes_tile_databases_and_aggregate_metadata() {
     assert_success(&output, "GeoPackage format run");
 
     let mut tile_databases = Vec::new();
-    collect_paths_with_suffix(&output_dir.join("t"), ".gpkg", &mut tile_databases);
+    collect_paths_with_suffix(&output_dir.join("tiles"), ".gpkg", &mut tile_databases);
+    assert_full_tile_file_names(&output_dir.join("tiles"), &tile_databases);
     assert!(
         !tile_databases.is_empty(),
         "expected GeoPackage tiles under {}",
-        output_dir.join("t").display()
+        output_dir.join("tiles").display()
     );
     let tile = rusqlite::Connection::open(&tile_databases[0]).expect("open tile GeoPackage");
     let tables = tile
@@ -371,7 +437,18 @@ fn format_gpkg_writes_tile_databases_and_aggregate_metadata() {
         "metadata.gpkg should contain exactly one row per tile GeoPackage"
     );
     for (tile_id, content_path, extent) in rows {
-        assert_eq!(content_path, format!("t/{tile_id}.gpkg"));
+        let mut tile_id_components = tile_id.split('/');
+        let level = tile_id_components.next().expect("tile ID level");
+        let x = tile_id_components.next().expect("tile ID x");
+        let y = tile_id_components.next().expect("tile ID y");
+        assert!(
+            tile_id_components.next().is_none(),
+            "tile_id should be level/x/y"
+        );
+        assert_eq!(
+            content_path,
+            format!("tiles/{level}/{x}/{level}-{x}-{y}.gpkg")
+        );
         assert!(output_dir.join(&content_path).is_file());
         assert!(extent.starts_with(b"GP"));
     }
@@ -388,25 +465,42 @@ fn format_gpkg_writes_tile_databases_and_aggregate_metadata() {
 }
 
 #[test]
-fn format_cityjson_writes_cityjson_tiles() {
+fn format_cityjson_and_obj_write_full_id_tile_files() {
     let metadata = read_fixture("resources/data/3dbag_x00.city.json");
     let feature = read_fixture("resources/data/3dbag_feature_x71.city.jsonl");
     let dataset = write_ndjson_dataset("format-cityjson", &metadata, &[feature]);
     let output_dir = unique_test_dir("format-cityjson-output");
 
-    let output = run_tyler(&dataset, &output_dir, &["--format", "cityjson"]);
+    let output = run_tyler(
+        &dataset,
+        &output_dir,
+        &["--format", "cityjson", "--tiles-dir", "tiles"],
+    );
     assert_success(&output, "CityJSON format run");
 
     let mut cityjson_tiles = Vec::new();
-    collect_paths_with_suffix(&output_dir.join("t"), ".city.json", &mut cityjson_tiles);
+    collect_paths_with_suffix(&output_dir.join("tiles"), ".city.json", &mut cityjson_tiles);
+    assert_full_tile_file_names(&output_dir.join("tiles"), &cityjson_tiles);
     assert!(
         !cityjson_tiles.is_empty(),
         "expected CityJSON tiles under {}",
-        output_dir.join("t").display()
+        output_dir.join("tiles").display()
     );
     let root = read_json(&cityjson_tiles[0]);
     assert_eq!(root["type"], "CityJSON");
     assert!(!output_dir.join("tileset.json").exists());
+
+    let obj_output_dir = unique_test_dir("format-obj-output");
+    let output = run_tyler(
+        &dataset,
+        &obj_output_dir,
+        &["--format", "obj", "--tiles-dir", "tiles"],
+    );
+    assert_success(&output, "OBJ format run");
+    let mut obj_tiles = Vec::new();
+    collect_paths_with_suffix(&obj_output_dir.join("tiles"), ".obj", &mut obj_tiles);
+    assert!(!obj_tiles.is_empty(), "expected OBJ tiles");
+    assert_full_tile_file_names(&obj_output_dir.join("tiles"), &obj_tiles);
 }
 
 /// Issue <https://github.com/3DGI/tyler/issues/137>
@@ -463,12 +557,23 @@ fn format_cityjsonseq_writes_feature_stream_tiles_matching_debug_shape() {
     let output = run_tyler(
         &dataset,
         &output_dir,
-        &["--format", "cityjsonseq", "--debug-dump-data"],
+        &[
+            "--format",
+            "cityjsonseq",
+            "--tiles-dir",
+            "tiles",
+            "--debug-dump-data",
+        ],
     );
     assert_success(&output, "CityJSONSeq format run");
 
     let mut output_streams = Vec::new();
-    collect_paths_with_suffix(&output_dir.join("t"), ".city.jsonl", &mut output_streams);
+    collect_paths_with_suffix(
+        &output_dir.join("tiles"),
+        ".city.jsonl",
+        &mut output_streams,
+    );
+    assert_full_tile_file_names(&output_dir.join("tiles"), &output_streams);
     assert!(
         !output_streams.is_empty(),
         "expected CityJSONSeq tiles under {}",
@@ -485,6 +590,7 @@ fn format_cityjsonseq_writes_feature_stream_tiles_matching_debug_shape() {
         "expected debug CityJSONSeq streams under {}",
         output_dir.join("debug").join("inputs").display()
     );
+    assert_full_tile_file_names(&output_dir.join("debug").join("inputs"), &debug_streams);
 
     let output_items = fs::read_to_string(&output_streams[0]).expect("read output stream");
     let debug_items = fs::read_to_string(&debug_streams[0]).expect("read debug stream");
@@ -615,13 +721,25 @@ fn debug_3dtiles_tileset_only_skips_glb_conversion() {
     let output = run_tyler(
         &dataset,
         &output_dir,
-        &["--debug-3dtiles-tileset-only", "--qtree-capacity", "1"],
+        &[
+            "--debug-3dtiles-tileset-only",
+            "--3dtiles-implicit",
+            "--tiles-dir",
+            "tiles",
+            "--qtree-capacity",
+            "1",
+        ],
     );
     assert_success(&output, "tileset-only run");
 
     assert!(output_dir.join("tileset.json").is_file());
+    let tileset = read_json(&output_dir.join("tileset.json"));
+    assert_eq!(
+        first_content_uri(&tileset["root"]),
+        Some("tiles/{level}/{x}/{level}-{x}-{y}.glb")
+    );
     assert!(
-        !output_dir.join("t").exists(),
+        !output_dir.join("tiles").exists(),
         "tileset-only mode should skip GLB tile output"
     );
 }
@@ -677,6 +795,15 @@ fn object_attributes_filter_and_type_glb_metadata_schema() {
     assert_success(&output, "object attributes run");
 
     let glb_path = find_first_glb(&output_dir.join("t")).expect("expected at least one GLB");
+    assert_full_tile_file_names(&output_dir.join("t"), std::slice::from_ref(&glb_path));
+    let tileset = read_json(&output_dir.join("tileset.json"));
+    let uri = first_content_uri(&tileset["root"]).expect("explicit tileset content URI");
+    let relative_path = glb_path
+        .strip_prefix(&output_dir)
+        .expect("GLB path under output directory")
+        .to_string_lossy()
+        .replace('\\', "/");
+    assert_eq!(uri, relative_path);
     let glb_json = read_glb_json(&fs::read(glb_path).expect("read glb"));
     let properties = glb_json["extensions"]["EXT_structural_metadata"]["schema"]["classes"]
         ["citymodel"]["properties"]

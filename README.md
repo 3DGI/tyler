@@ -197,7 +197,7 @@ tyler \
     --object-type BuildingPart
 ```
 
-The output tiles are written under `t/<level>/<x>/<y>.city.json`.
+The output tiles are written under `t/<level>/<x>/<level>-<x>-<y>.city.json`.
 Each tile is a merged `CityJSON` document containing the selected features for
 that tile.
 
@@ -214,7 +214,7 @@ tyler \
     --object-type BuildingPart
 ```
 
-The output tiles are written under `t/<level>/<x>/<y>.obj`. Each tile contains
+The output tiles are written under `t/<level>/<x>/<level>-<x>-<y>.obj`. Each tile contains
 geometry-only OBJ records grouped by CityObject ID. Coordinates stay in the
 source CityJSON coordinate space; Tyler does not apply the 3D Tiles ENU
 placement or tile-bound clipping to OBJ output.
@@ -232,7 +232,7 @@ tyler \
     --object-type BuildingPart
 ```
 
-The output tiles are written under `t/<level>/<x>/<y>.city.jsonl`.
+The output tiles are written under `t/<level>/<x>/<level>-<x>-<y>.city.jsonl`.
 Each tile stream starts with a `CityJSON` header, followed by one
 `CityJSONFeature` item per selected source feature. This is the same stream
 shape used by `--debug-dump-data`.
@@ -240,7 +240,7 @@ shape used by `--debug-dump-data`.
 ### Exporting TSV
 
 Use `--format tsv` to write tabular files under
-`t/<level>/<x>/<y>/`. Tyler always writes `metadata.tsv` at the output root,
+`t/<level>/<x>/<level>-<x>-<y>/`. Tyler always writes `metadata.tsv` at the output root,
 with one row per written tile and shared `tile_id`, `content_path`, and `geographical_extent` columns.
 Use the `--tsv-*` options to include null rows, hierarchy, source ordinals,
 semantics, or addresses.
@@ -248,7 +248,7 @@ semantics, or addresses.
 ### Exporting GeoPackage
 
 Use `--format gpkg` to write each non-empty tile to
-`t/<level>/<x>/<y>.gpkg`. Tyler always writes a separate `metadata.gpkg` at the
+`t/<level>/<x>/<level>-<x>-<y>.gpkg`. Tyler always writes a separate `metadata.gpkg` at the
 output root. Its spatial `metadata` layer contains one row per written tile,
 including `tile_id`, the relative `content_path`, projected CityJSON metadata, and
 the quadtree leaf extent.
@@ -309,7 +309,14 @@ For `--format tsv`, it will contain per-tile TSV directories and a root `metadat
 For `--format gpkg`, it will contain a `t/` directory with `.gpkg` tile files and a root `metadata.gpkg`.
 
 For `cjindex` datasets, Tyler writes a derived metadata file under `metadata/`. Per-tile CityJSONFeature streams are kept in memory by default. To inspect them, pass `--debug-dump-data`; Tyler then
-writes `debug/inputs/<tile>.city.jsonl`.
+writes `debug/inputs/<level>/<x>/<level>-<x>-<y>.city.jsonl`.
+
+Tile content is written under the `t/` directory by default. Set `--tiles-dir`
+to choose another single directory name, for example `--tiles-dir tiles`.
+Names may contain ASCII letters, digits, hyphens, underscores, periods, and
+tildes; `.` and `..` are not accepted.
+Tile filenames include the complete `level-x-y` ID while retaining the
+`level/x` directory hierarchy.
 
 #### CityObject type
 

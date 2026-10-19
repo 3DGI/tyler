@@ -151,10 +151,14 @@ fn debug_replay_writes_epsg4979_regions_and_local_enu_glbs() {
     );
     assert_eq!(
         root["content"]["uri"].as_str(),
-        Some("t/{level}/{x}/{y}.glb")
+        Some("t/{level}/{x}/{level}-{x}-{y}.glb")
     );
 
     let glb_path = find_first_glb(&output.join("t")).expect("at least one GLB should be generated");
+    assert_eq!(
+        glb_path.strip_prefix(&output).expect("GLB under output"),
+        Path::new("t/0/0/0-0-0.glb")
+    );
     let glb_json = read_glb_json(&fs::read(glb_path).expect("GLB should be readable"));
     let node_matrix = glb_json["nodes"][0]["matrix"]
         .as_array()

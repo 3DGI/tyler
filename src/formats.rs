@@ -166,6 +166,7 @@ pub mod cesium3dtiles {
         pub fn from_quadtree(
             quadtree: &QuadTree,
             world: &crate::parser::World,
+            tiles_dir: &str,
             geometric_error_factor: f64,
             _arg_cellsize: u32,
             arg_minz: Option<i32>,
@@ -184,6 +185,7 @@ pub mod cesium3dtiles {
             let root = Self::generate_tiles(
                 quadtree,
                 world,
+                tiles_dir,
                 &transformer,
                 geometric_error_factor,
                 arg_minz,
@@ -237,6 +239,7 @@ pub mod cesium3dtiles {
         fn generate_tiles(
             quadtree: &QuadTree,
             world: &crate::parser::World,
+            tiles_dir: &str,
             transformer: &Transformer,
             geometric_error_factor: f64,
             arg_minz: Option<i32>,
@@ -276,6 +279,7 @@ pub mod cesium3dtiles {
                     tile_children.push(Self::generate_tiles(
                         child,
                         world,
+                        tiles_dir,
                         transformer,
                         geometric_error_factor,
                         arg_minz,
@@ -357,7 +361,7 @@ pub mod cesium3dtiles {
                         } else {
                             None
                         },
-                        uri: format!("t/{}.glb", quadtree.id),
+                        uri: tile_content_uri(tiles_dir, &tile_id),
                     });
                 }
 
@@ -389,8 +393,8 @@ pub mod cesium3dtiles {
         }
 
         #[allow(dead_code)]
-        pub fn add_content(&mut self, levels_up: Option<u16>) {
-            self.root.add_content_from_level(levels_up);
+        pub fn add_content(&mut self, tiles_dir: &str, levels_up: Option<u16>) {
+            self.root.add_content_from_level(tiles_dir, levels_up);
         }
 
         /// The number of levels in the quadtree, which is `max_level + 1`.
@@ -404,6 +408,7 @@ pub mod cesium3dtiles {
         #[allow(dead_code)]
         pub fn make_implicit(
             &mut self,
+            tiles_dir: &str,
             grid: &SquareGrid,
             qtree: &QuadTree,
             grid_export: bool,
@@ -751,7 +756,7 @@ pub mod cesium3dtiles {
 
             self.root.content = Some(Content {
                 bounding_volume: None,
-                uri: "t/{level}/{x}/{y}.glb".to_string(),
+                uri: implicit_tile_content_uri(tiles_dir),
             });
             self.root.refine = Some(Refinement::Add);
             self.root.children = None;
@@ -762,6 +767,7 @@ pub mod cesium3dtiles {
         /// that already follow the implicit subdivision coordinate system.
         pub fn make_implicit_from_content_tile_ids(
             &mut self,
+            tiles_dir: &str,
             content_tile_ids: &[TileId],
             subtrees_dir: Option<&str>,
         ) -> Vec<(TileId, Vec<u8>)> {
@@ -779,7 +785,7 @@ pub mod cesium3dtiles {
             });
             self.root.content = Some(Content {
                 bounding_volume: None,
-                uri: "t/{level}/{x}/{y}.glb".to_string(),
+                uri: implicit_tile_content_uri(tiles_dir),
             });
             self.root.refine = Some(Refinement::Add);
             self.root.children = None;
@@ -1280,7 +1286,7 @@ pub mod cesium3dtiles {
         }
 
         #[allow(dead_code)]
-        fn add_content_from_level(&mut self, levels_up: Option<u16>) {
+        fn add_content_from_level(&mut self, tiles_dir: &str, levels_up: Option<u16>) {
             let max_level = self.max_level();
             let mut lower_limit: u16 = 0;
             if let Some(limit) = levels_up {
@@ -1292,7 +1298,7 @@ pub mod cesium3dtiles {
             q.push_back(self);
             while let Some(node) = q.pop_front() {
                 if node.id.level >= lower_limit {
-                    node.add_content();
+                    node.add_content(tiles_dir);
                 }
                 if let Some(ref mut children) = node.children {
                     for child in children.iter_mut() {
@@ -1321,10 +1327,10 @@ pub mod cesium3dtiles {
         // Adds `Content` to the Tile, by generating a content bounding volume from the
         // tile's bounding volume and a filepath from the tile.id.
         #[allow(dead_code)]
-        pub fn add_content(&mut self) {
+        pub fn add_content(&mut self, tiles_dir: &str) {
             self.content = Some(Content {
                 bounding_volume: Some(self.bounding_volume),
-                uri: format!("t/{}.glb", self.id),
+                uri: tile_content_uri(tiles_dir, &self.id),
             })
         }
 
@@ -1369,6 +1375,17 @@ pub mod cesium3dtiles {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             write!(f, "{}/{}/{}", self.level, self.x, self.y)
         }
+    }
+
+    fn tile_content_uri(tiles_dir: &str, tile_id: &TileId) -> String {
+        format!(
+            "{tiles_dir}/{}/{}/{}-{}-{}.glb",
+            tile_id.level, tile_id.x, tile_id.level, tile_id.x, tile_id.y
+        )
+    }
+
+    fn implicit_tile_content_uri(tiles_dir: &str) -> String {
+        format!("{tiles_dir}/{{level}}/{{x}}/{{level}}-{{x}}-{{y}}.glb")
     }
 
     impl From<&QuadTreeNodeId> for TileId {
@@ -1934,6 +1951,7 @@ pub mod cesium3dtiles {
             let tileset = Tileset::from_quadtree(
                 &quadtree,
                 &world,
+                "t",
                 0.024,
                 200,
                 None,
