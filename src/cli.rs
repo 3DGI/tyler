@@ -26,6 +26,10 @@ pub struct Cli {
     /// Directory for the output.
     #[arg(short, long)]
     pub output: PathBuf,
+    /// Name of the directory under the output root where tile contents are written.
+    /// Use ASCII letters, digits, hyphens, underscores, periods, or tildes.
+    #[arg(long, default_value = "t", value_parser = directory_name)]
+    pub tiles_dir: String,
     /// Output format.
     #[arg(long, value_enum, default_value_t)]
     pub format: crate::OutputFormatKind,
@@ -554,6 +558,23 @@ fn existing_canonical_path(s: &str) -> Result<PathBuf, String> {
     }
 }
 
+fn directory_name(s: &str) -> Result<String, String> {
+    if !s
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~'))
+    {
+        return Err(
+            "must contain only ASCII letters, digits, hyphens, underscores, periods, or tildes"
+                .to_owned(),
+        );
+    }
+    let mut components = Path::new(s).components();
+    match (components.next(), components.next()) {
+        (Some(std::path::Component::Normal(_)), None) => Ok(s.to_owned()),
+        _ => Err("must be a single directory name".to_owned()),
+    }
+}
+
 /// Checks is `s` constains a 6 digit hexadecimal value preceded by a '#', eg. #FF0000
 fn hex_color(s: &str) -> Result<String, String> {
     if s.len() != 7 || !s.starts_with('#') {
@@ -718,16 +739,47 @@ mod tests {
     fn validation_accepts_default_format() {
         let cli = Cli::try_parse_from(dataset_args()).unwrap();
 
+        assert_eq!(cli.tiles_dir, "t");
         assert!(cli.validate_parameter_combinations(&[cli.format]).is_ok());
     }
 
     #[test]
     fn validation_accepts_explicit_non_default_format() {
         let mut args = dataset_args();
-        args.extend(["--format".to_string(), "cityjson".to_string()]);
+        args.extend([
+            "--format".to_string(),
+            "cityjson".to_string(),
+            "--tiles-dir".to_string(),
+            "tiles".to_string(),
+        ]);
         let cli = Cli::try_parse_from(args).unwrap();
 
+        assert_eq!(cli.tiles_dir, "tiles");
         assert!(cli.validate_parameter_combinations(&[cli.format]).is_ok());
+
+        for name in ["tiles", "Tiles-1_2.3~"] {
+            let mut args = dataset_args();
+            args.extend(["--tiles-dir".to_string(), name.to_string()]);
+            assert_eq!(Cli::try_parse_from(args).unwrap().tiles_dir, name);
+        }
+        for name in [
+            "",
+            ".",
+            "..",
+            "../tiles",
+            "tiles/",
+            "tiles#1",
+            "tiles?1",
+            "tiles%20",
+            "tiles 1",
+            "tiles\\1",
+            "tiles{level}",
+            "tílés",
+        ] {
+            let mut args = dataset_args();
+            args.extend(["--tiles-dir".to_string(), name.to_string()]);
+            assert!(Cli::try_parse_from(args).is_err(), "accepted {name:?}");
+        }
     }
 
     #[test]
