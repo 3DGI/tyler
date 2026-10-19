@@ -127,6 +127,21 @@ impl std::fmt::Display for TileCoord {
     }
 }
 
+fn tile_file_path(output_tiles_dir: &Path, tile: &TileCoord, extension: &str) -> PathBuf {
+    output_tiles_dir
+        .join(tile.level.to_string())
+        .join(tile.x.to_string())
+        .join(format!("{}-{}-{}", tile.level, tile.x, tile.y))
+        .with_extension(extension)
+}
+
+fn tile_directory_path(output_tiles_dir: &Path, tile: &TileCoord) -> PathBuf {
+    output_tiles_dir
+        .join(tile.level.to_string())
+        .join(tile.x.to_string())
+        .join(format!("{}-{}-{}", tile.level, tile.x, tile.y))
+}
+
 impl From<&spatial_structs::QuadTreeNodeId> for TileCoord {
     fn from(value: &spatial_structs::QuadTreeNodeId) -> Self {
         Self::new(value.level, value.x, value.y)
@@ -1390,6 +1405,7 @@ fn tile_metadata_extent(
 
 fn tile_metadata(
     format_name: &str,
+    tiles_dir: &str,
     job: &TileExportJob,
     world: &parser::World,
     quadtree: &spatial_structs::QuadTree,
@@ -1397,8 +1413,22 @@ fn tile_metadata(
     Ok(cityjson_convert::TileMetadata {
         tile_id: job.content_tile_coord.to_string(),
         content_path: match format_name {
-            "TSV" => format!("t/{}/cityobjects.tsv", job.content_tile_coord),
-            "GeoPackage" => format!("t/{}.gpkg", job.content_tile_coord),
+            "TSV" => format!(
+                "{tiles_dir}/{}/{}/{}-{}-{}/cityobjects.tsv",
+                job.content_tile_coord.level,
+                job.content_tile_coord.x,
+                job.content_tile_coord.level,
+                job.content_tile_coord.x,
+                job.content_tile_coord.y
+            ),
+            "GeoPackage" => format!(
+                "{tiles_dir}/{}/{}/{}-{}-{}.gpkg",
+                job.content_tile_coord.level,
+                job.content_tile_coord.x,
+                job.content_tile_coord.level,
+                job.content_tile_coord.x,
+                job.content_tile_coord.y
+            ),
             _ => return Err(format!("unsupported tabular format {format_name}").into()),
         },
         geographical_extent: tile_metadata_extent(format_name, job, world, quadtree)?,
@@ -1407,13 +1437,10 @@ fn tile_metadata(
 
 fn write_debug_tile_input(
     path_features_input_dir: &Path,
-    file_name: &str,
+    tile: &TileCoord,
     cityjsonseq_bytes: &[u8],
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    fs::create_dir_all(path_features_input_dir)?;
-    let path_tile_ndjson = path_features_input_dir
-        .join(file_name)
-        .with_extension("city.jsonl");
+    let path_tile_ndjson = tile_file_path(path_features_input_dir, tile, "city.jsonl");
     if let Some(parent) = path_tile_ndjson.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -1457,6 +1484,7 @@ struct TabularPreparedOutput {
 
 fn prepare_tabular_output(
     format_name: &str,
+    tiles_dir: &str,
     world: &parser::World,
     quadtree: &spatial_structs::QuadTree,
 ) -> Result<TabularPreparedOutput, Box<dyn std::error::Error>> {
@@ -1466,7 +1494,7 @@ fn prepare_tabular_output(
         .map(|job| {
             Ok((
                 job.content_tile_coord.clone(),
-                tile_metadata(format_name, job, world, quadtree)?,
+                tile_metadata(format_name, tiles_dir, job, world, quadtree)?,
             ))
         })
         .collect::<Result<HashMap<_, _>, Box<dyn std::error::Error>>>()?;
@@ -1567,6 +1595,7 @@ impl OutputFormatBackend for Cesium3dTilesBackend {
         let tileset = formats::cesium3dtiles::Tileset::from_quadtree(
             quadtree,
             world,
+            &cli.tiles_dir,
             geometric_error_factor,
             grid_cellsize,
             cli.grid_minz,
@@ -1605,6 +1634,7 @@ impl OutputFormatBackend for Cesium3dTilesBackend {
                 &mut tileset_implicit,
                 &content_tile_ids,
                 &subtrees_path_unpruned,
+                &cli.tiles_dir,
             );
 
             if cli.debug_cesium3dtiles_tileset_only || should_dump_debug_data(cli) {
@@ -1653,11 +1683,7 @@ impl OutputFormatBackend for Cesium3dTilesBackend {
         context: &TileWriteContext<'_>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let content_tile_id = TileId::from(&job.content_tile_coord);
-        let file_name = content_tile_id.to_string();
-        let output_file = context
-            .output_tiles_dir
-            .join(&file_name)
-            .with_extension("glb");
+        let output_file = tile_file_path(context.output_tiles_dir, &job.content_tile_coord, "glb");
         let mut export_options = context.export_options.clone();
         match job.clip {
             TileClip::None => {}
@@ -1742,6 +1768,7 @@ impl OutputFormatBackend for Cesium3dTilesBackend {
                 &mut prepared.tileset,
                 &content_tile_ids,
                 &prepared.subtrees_path,
+                &cli.tiles_dir,
             );
             info!("Writing subtrees for implicit tiling");
             write_subtrees(&prepared.subtrees_path, &subtrees)?;
@@ -1769,6 +1796,7 @@ impl OutputFormatBackend for Cesium3dTilesBackend {
                 &mut prepared.tileset,
                 &content_tile_ids,
                 &prepared.subtrees_path,
+                &cli.tiles_dir,
             );
             info!("Writing subtrees for implicit tiling");
             write_subtrees(&prepared.subtrees_path, &subtrees)?;
@@ -1812,10 +1840,7 @@ impl OutputFormatBackend for ObjBackend {
         model: &cityjson_lib::CityModel,
         context: &TileWriteContext<'_>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let output_file = context
-            .output_tiles_dir
-            .join(job.content_tile_coord.to_string())
-            .with_extension("obj");
+        let output_file = tile_file_path(context.output_tiles_dir, &job.content_tile_coord, "obj");
         cityjson_convert::convert_to_obj(
             model,
             &output_file,
@@ -1873,10 +1898,11 @@ impl OutputFormatBackend for CityjsonBackend {
         model: &cityjson_lib::CityModel,
         context: &TileWriteContext<'_>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let output_file = context
-            .output_tiles_dir
-            .join(job.content_tile_coord.to_string())
-            .with_extension("city.json");
+        let output_file = tile_file_path(
+            context.output_tiles_dir,
+            &job.content_tile_coord,
+            "city.json",
+        );
         let mut model = model.clone();
         apply_cityobject_colors(&mut model, &context.cityjson_colors)?;
         cityjson_convert::convert_to_cityjson(
@@ -1943,10 +1969,11 @@ impl OutputFormatBackend for CityjsonseqBackend {
         _model: &cityjson_lib::CityModel,
         context: &TileWriteContext<'_>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let output_file = context
-            .output_tiles_dir
-            .join(job.content_tile_coord.to_string())
-            .with_extension("city.jsonl");
+        let output_file = tile_file_path(
+            context.output_tiles_dir,
+            &job.content_tile_coord,
+            "city.jsonl",
+        );
         let mut models = build_tile_cityjsonseq_models(
             context.world,
             &job.feature_ids,
@@ -1995,7 +2022,7 @@ impl OutputFormatBackend for CityjsonseqBackend {
 impl OutputFormatBackend for TsvBackend {
     fn prepare(
         &self,
-        _cli: &crate::cli::Cli,
+        cli: &crate::cli::Cli,
         world: &parser::World,
         quadtree: &spatial_structs::QuadTree,
         _grid_cellsize: u32,
@@ -2003,7 +2030,10 @@ impl OutputFormatBackend for TsvBackend {
         _debug_data_output_path: &Path,
     ) -> Result<PreparedOutput, Box<dyn std::error::Error>> {
         Ok(PreparedOutput::Tsv(Box::new(prepare_tabular_output(
-            "TSV", world, quadtree,
+            "TSV",
+            &cli.tiles_dir,
+            world,
+            quadtree,
         )?)))
     }
 
@@ -2020,9 +2050,7 @@ impl OutputFormatBackend for TsvBackend {
         model: &cityjson_lib::CityModel,
         context: &TileWriteContext<'_>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let output_dir = context
-            .output_tiles_dir
-            .join(job.content_tile_coord.to_string());
+        let output_dir = tile_directory_path(context.output_tiles_dir, &job.content_tile_coord);
         let mut options = context.tsv_export_options.clone();
         options.include_metadata = false;
         cityjson_convert::convert_to_tsv(model, output_dir.join("cityobjects.tsv"), &options)?;
@@ -2092,6 +2120,7 @@ impl OutputFormatBackend for GpkgBackend {
 
         Ok(PreparedOutput::Gpkg(Box::new(prepare_tabular_output(
             "GeoPackage",
+            &cli.tiles_dir,
             world,
             quadtree,
         )?)))
@@ -2110,10 +2139,7 @@ impl OutputFormatBackend for GpkgBackend {
         model: &cityjson_lib::CityModel,
         context: &TileWriteContext<'_>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let output_file = context
-            .output_tiles_dir
-            .join(job.content_tile_coord.to_string())
-            .with_extension("gpkg");
+        let output_file = tile_file_path(context.output_tiles_dir, &job.content_tile_coord, "gpkg");
         let mut options = context.gpkg_export_options.clone();
         options.include_metadata = false;
         cityjson_convert::convert_to_gpkg(model, &output_file, &options)?;
@@ -2182,13 +2208,14 @@ fn make_implicit_subtrees(
     tileset: &mut formats::cesium3dtiles::Tileset,
     content_tile_ids: &[TileId],
     subtrees_path: &Path,
+    tiles_dir: &str,
 ) -> Vec<(TileId, Vec<u8>)> {
     let components: Vec<_> = subtrees_path
         .components()
         .map(|comp| comp.as_os_str())
         .collect();
     let subtrees_dir_option = components.last().cloned().unwrap().to_str();
-    tileset.make_implicit_from_content_tile_ids(content_tile_ids, subtrees_dir_option)
+    tileset.make_implicit_from_content_tile_ids(tiles_dir, content_tile_ids, subtrees_dir_option)
 }
 
 fn write_subtrees(
@@ -2426,7 +2453,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let export_jobs = backend.jobs(&prepared_output);
 
     // Export each tile by merging its selected CityJSONFeature stream in memory.
-    let path_output_tiles = cli.output.join("t");
+    let path_output_tiles = cli.output.join(&cli.tiles_dir);
     let path_features_input_dir = debug_data_output_path.join("inputs");
     if output_format != OutputFormatKind::Cesium3dTiles && cli.debug_cesium3dtiles_tileset_only {
         warn!("--debug-3dtiles-tileset-only is ignored for non-3D Tiles output formats");
@@ -2473,7 +2500,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 );
                 return TileExportOutcome::Skipped(job.clone());
             }
-            let file_name = job.content_tile_coord.to_string();
             let model = match build_tile_model_from_feature_ids(
                 &world,
                 &job.feature_ids,
@@ -2508,7 +2534,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
                 if let Err(error) = write_debug_tile_input(
                     &path_features_input_dir,
-                    file_name.as_str(),
+                    &job.content_tile_coord,
                     &cityjsonseq_bytes,
                 ) {
                     warn!(
@@ -2639,6 +2665,7 @@ mod tests {
         formats::cesium3dtiles::Tileset::from_quadtree(
             quadtree,
             world,
+            "t",
             1.0,
             200,
             None,
@@ -3736,21 +3763,16 @@ mod tests {
     fn write_debug_tile_input_writes_cityjsonl() {
         let dataset_dir = unique_test_dir("debug-tile-input");
         let inputs_dir = dataset_dir.join("inputs");
-        let path = write_debug_tile_input(&inputs_dir, "tile", b"{\"type\":\"CityJSONFeature\"}\n")
+        let tile = TileCoord::new(1, 2, 3);
+        let path = write_debug_tile_input(&inputs_dir, &tile, b"{\"type\":\"CityJSONFeature\"}\n")
             .expect("write debug tile input");
 
-        assert_eq!(path, inputs_dir.join("tile.city.jsonl"));
+        assert_eq!(path, inputs_dir.join("1/2/1-2-3.city.jsonl"));
         assert_eq!(
             fs::read(&path).expect("read debug tile input"),
             b"{\"type\":\"CityJSONFeature\"}\n"
         );
-        assert!(!inputs_dir.join("tile.input").exists());
-
-        let nested_path =
-            write_debug_tile_input(&inputs_dir, "1/2/3", b"{\"type\":\"CityJSONFeature\"}\n")
-                .expect("write nested debug tile input");
-        assert_eq!(nested_path, inputs_dir.join("1/2/3.city.jsonl"));
-        assert!(nested_path.exists());
+        assert!(!inputs_dir.join("1/2/1-2-3.input").exists());
     }
 
     #[test]
