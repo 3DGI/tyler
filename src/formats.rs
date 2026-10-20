@@ -26,6 +26,7 @@ pub mod cesium3dtiles {
     use std::io::Write;
     use std::path::Path;
 
+    use crate::output::OutputPaths;
     use bitvec::prelude as bv;
     use log::{debug, error, warn};
     use morton_encoding::morton_encode;
@@ -166,7 +167,7 @@ pub mod cesium3dtiles {
         pub fn from_quadtree(
             quadtree: &QuadTree,
             world: &crate::parser::World,
-            tiles_dir: &str,
+            paths: OutputPaths<'_>,
             geometric_error_factor: f64,
             _arg_cellsize: u32,
             arg_minz: Option<i32>,
@@ -185,7 +186,7 @@ pub mod cesium3dtiles {
             let root = Self::generate_tiles(
                 quadtree,
                 world,
-                tiles_dir,
+                paths,
                 &transformer,
                 geometric_error_factor,
                 arg_minz,
@@ -239,7 +240,7 @@ pub mod cesium3dtiles {
         fn generate_tiles(
             quadtree: &QuadTree,
             world: &crate::parser::World,
-            tiles_dir: &str,
+            paths: OutputPaths<'_>,
             transformer: &Transformer,
             geometric_error_factor: f64,
             arg_minz: Option<i32>,
@@ -279,7 +280,7 @@ pub mod cesium3dtiles {
                     tile_children.push(Self::generate_tiles(
                         child,
                         world,
-                        tiles_dir,
+                        paths,
                         transformer,
                         geometric_error_factor,
                         arg_minz,
@@ -361,7 +362,7 @@ pub mod cesium3dtiles {
                         } else {
                             None
                         },
-                        uri: tile_content_uri(tiles_dir, &tile_id),
+                        uri: tile_content_uri(paths, &tile_id),
                     });
                 }
 
@@ -393,8 +394,8 @@ pub mod cesium3dtiles {
         }
 
         #[allow(dead_code)]
-        pub fn add_content(&mut self, tiles_dir: &str, levels_up: Option<u16>) {
-            self.root.add_content_from_level(tiles_dir, levels_up);
+        pub fn add_content(&mut self, paths: OutputPaths<'_>, levels_up: Option<u16>) {
+            self.root.add_content_from_level(paths, levels_up);
         }
 
         /// The number of levels in the quadtree, which is `max_level + 1`.
@@ -408,7 +409,7 @@ pub mod cesium3dtiles {
         #[allow(dead_code)]
         pub fn make_implicit(
             &mut self,
-            tiles_dir: &str,
+            paths: OutputPaths<'_>,
             grid: &SquareGrid,
             qtree: &QuadTree,
             grid_export: bool,
@@ -421,9 +422,8 @@ pub mod cesium3dtiles {
             let subtree_sections: usize = 1;
             let subtree_levels =
                 (self.available_levels() as f32 / subtree_sections as f32).ceil() as u16;
-            let subtrees = match subtrees_dir {
-                None => Subtrees::default(),
-                Some(dirname) => Subtrees::new(dirname),
+            let subtrees = Subtrees {
+                uri: paths.subtree_uri(subtrees_dir.unwrap_or("subtrees")),
             };
             let implicittiling = ImplicitTiling {
                 subdivision_scheme: SubdivisionScheme::Quadtree,
@@ -756,7 +756,7 @@ pub mod cesium3dtiles {
 
             self.root.content = Some(Content {
                 bounding_volume: None,
-                uri: implicit_tile_content_uri(tiles_dir),
+                uri: implicit_tile_content_uri(paths),
             });
             self.root.refine = Some(Refinement::Add);
             self.root.children = None;
@@ -767,15 +767,14 @@ pub mod cesium3dtiles {
         /// that already follow the implicit subdivision coordinate system.
         pub fn make_implicit_from_content_tile_ids(
             &mut self,
-            tiles_dir: &str,
+            paths: OutputPaths<'_>,
             content_tile_ids: &[TileId],
             subtrees_dir: Option<&str>,
         ) -> Vec<(TileId, Vec<u8>)> {
             let available_levels = self.available_levels();
             let subtree_levels = available_levels;
-            let subtrees = match subtrees_dir {
-                None => Subtrees::default(),
-                Some(dirname) => Subtrees::new(dirname),
+            let subtrees = Subtrees {
+                uri: paths.subtree_uri(subtrees_dir.unwrap_or("subtrees")),
             };
             self.root.implicit_tiling = Some(ImplicitTiling {
                 subdivision_scheme: SubdivisionScheme::Quadtree,
@@ -785,7 +784,7 @@ pub mod cesium3dtiles {
             });
             self.root.content = Some(Content {
                 bounding_volume: None,
-                uri: implicit_tile_content_uri(tiles_dir),
+                uri: implicit_tile_content_uri(paths),
             });
             self.root.refine = Some(Refinement::Add);
             self.root.children = None;
@@ -1085,15 +1084,17 @@ pub mod cesium3dtiles {
         /// returned from this function. The child tileset URIs follow the the pattern of
         /// `tileset-<root tile ID>.json`, for example `tileset-7-0-0.json`.
         /// The child tileset URI is returned with the Tileset, as the first member of the tuple.
-        pub fn split(&mut self, level: u16) -> Vec<(String, Tileset)> {
+        pub fn split(&mut self, level: u16, paths: OutputPaths<'_>) -> Vec<(String, Tileset)> {
             let max_nr_tilesets = 4_usize.pow(level as u32);
             let mut child_tilesets: Vec<(String, Tileset)> = Vec::with_capacity(max_nr_tilesets);
             let mut q = VecDeque::new();
             q.push_back(&mut self.root);
             while let Some(tile) = q.pop_front() {
                 if tile.id.level == level {
-                    let filename =
-                        format!("tileset-{}-{}-{}.json", tile.id.level, tile.id.x, tile.id.y);
+                    let filename = paths.filename(
+                        &format!("tileset-{}-{}-{}", tile.id.level, tile.id.x, tile.id.y),
+                        "json",
+                    );
                     // Create the new tileset
                     let root = tile.clone();
                     let geometric_error =
@@ -1286,7 +1287,7 @@ pub mod cesium3dtiles {
         }
 
         #[allow(dead_code)]
-        fn add_content_from_level(&mut self, tiles_dir: &str, levels_up: Option<u16>) {
+        fn add_content_from_level(&mut self, paths: OutputPaths<'_>, levels_up: Option<u16>) {
             let max_level = self.max_level();
             let mut lower_limit: u16 = 0;
             if let Some(limit) = levels_up {
@@ -1298,7 +1299,7 @@ pub mod cesium3dtiles {
             q.push_back(self);
             while let Some(node) = q.pop_front() {
                 if node.id.level >= lower_limit {
-                    node.add_content(tiles_dir);
+                    node.add_content(paths);
                 }
                 if let Some(ref mut children) = node.children {
                     for child in children.iter_mut() {
@@ -1327,10 +1328,10 @@ pub mod cesium3dtiles {
         // Adds `Content` to the Tile, by generating a content bounding volume from the
         // tile's bounding volume and a filepath from the tile.id.
         #[allow(dead_code)]
-        pub fn add_content(&mut self, tiles_dir: &str) {
+        pub fn add_content(&mut self, paths: OutputPaths<'_>) {
             self.content = Some(Content {
                 bounding_volume: Some(self.bounding_volume),
-                uri: tile_content_uri(tiles_dir, &self.id),
+                uri: tile_content_uri(paths, &self.id),
             })
         }
 
@@ -1377,15 +1378,12 @@ pub mod cesium3dtiles {
         }
     }
 
-    fn tile_content_uri(tiles_dir: &str, tile_id: &TileId) -> String {
-        format!(
-            "{tiles_dir}/{}/{}/{}-{}-{}.glb",
-            tile_id.level, tile_id.x, tile_id.level, tile_id.x, tile_id.y
-        )
+    fn tile_content_uri(paths: OutputPaths<'_>, tile_id: &TileId) -> String {
+        paths.tile_uri(&crate::TileCoord::from(tile_id), "glb")
     }
 
-    fn implicit_tile_content_uri(tiles_dir: &str) -> String {
-        format!("{tiles_dir}/{{level}}/{{x}}/{{level}}-{{x}}-{{y}}.glb")
+    fn implicit_tile_content_uri(paths: OutputPaths<'_>) -> String {
+        paths.implicit_content_uri()
     }
 
     impl From<&QuadTreeNodeId> for TileId {
@@ -1742,15 +1740,11 @@ pub mod cesium3dtiles {
     impl Default for Subtrees {
         fn default() -> Self {
             Self {
-                uri: String::from("subtrees/{level}/{x}/{y}.subtree"),
-            }
-        }
-    }
-
-    impl Subtrees {
-        fn new(subtrees_dir: &str) -> Self {
-            Self {
-                uri: format!("{}/{{level}}/{{x}}/{{y}}.subtree", subtrees_dir),
+                uri: OutputPaths {
+                    tiles_dir: "t",
+                    suffix: None,
+                }
+                .subtree_uri("subtrees"),
             }
         }
     }
@@ -1951,7 +1945,10 @@ pub mod cesium3dtiles {
             let tileset = Tileset::from_quadtree(
                 &quadtree,
                 &world,
-                "t",
+                OutputPaths {
+                    tiles_dir: "t",
+                    suffix: None,
+                },
                 0.024,
                 200,
                 None,
@@ -1977,6 +1974,26 @@ pub mod cesium3dtiles {
                 .expect("root tile should have ENU-to-ECEF transform");
             assert!((root_transform.0[0] - 1.0).abs() > 1.0e-6);
             assert!(root_transform.0[12].abs() > 1.0);
+
+            for suffix in [None, Some("lod2.2"), Some("LoD_3-v1")] {
+                let mut split_tileset = tileset.clone();
+                let paths = OutputPaths {
+                    tiles_dir: "t",
+                    suffix,
+                };
+                let children = split_tileset.split(0, paths);
+                assert_eq!(children.len(), 1);
+                let (filename, child) = &children[0];
+                let label = suffix
+                    .map(|suffix| format!("-{suffix}"))
+                    .unwrap_or_default();
+                assert_eq!(filename, &format!("tileset-0-0-0{label}.json"));
+                assert_eq!(&split_tileset.root.content.as_ref().unwrap().uri, filename);
+                let path = dataset_dir.join(filename);
+                child.to_file(&path).expect("write external tileset");
+                let restored: Tileset = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+                assert_eq!(restored.root.id, child.root.id);
+            }
 
             // tileset.make_implicit(&world.grid, &quadtree, );
 

@@ -38,6 +38,16 @@ use cityjson_lib::CityModel;
 
 pub type JsonExportOptions = cityjson_lib::json::WriteOptions;
 
+/// Builds a filename with an optional label before its complete extension.
+/// `extension` excludes the leading dot, for example `city.json`.
+#[must_use]
+pub fn output_filename(stem: &str, extension: &str, suffix: Option<&str>) -> String {
+    match suffix {
+        Some(suffix) => format!("{stem}-{suffix}.{extension}"),
+        None => format!("{stem}.{extension}"),
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct CityJsonSeqExportOptions {
     pub scale: [f64; 3],

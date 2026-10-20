@@ -26,6 +26,9 @@ pub struct Cli {
     /// Directory for the output.
     #[arg(short, long)]
     pub output: PathBuf,
+    /// Label appended to published filenames. Use ASCII letters, digits, '.', '_', or '-'.
+    #[arg(long, value_parser = output_suffix)]
+    pub output_suffix: Option<String>,
     /// Name of the directory under the output root where tile contents are written.
     /// Use ASCII letters, digits, hyphens, underscores, periods, or tildes.
     #[arg(long, default_value = "t", value_parser = directory_name)]
@@ -425,6 +428,13 @@ const NO_EFFECT_INFO_RULES: &[NoEffectInfoRule] = &[
 ];
 
 impl Cli {
+    pub fn output_paths(&self) -> crate::output::OutputPaths<'_> {
+        crate::output::OutputPaths {
+            tiles_dir: &self.tiles_dir,
+            suffix: self.output_suffix.as_deref(),
+        }
+    }
+
     /// Central gate for rejecting CLI option combinations that are incompatible
     /// with one or more selected output formats.
     ///
@@ -556,6 +566,17 @@ fn existing_canonical_path(s: &str) -> Result<PathBuf, String> {
     } else {
         Err(format!("could not resolve the path {:?}", s))
     }
+}
+
+fn output_suffix(s: &str) -> Result<String, String> {
+    if s.is_empty()
+        || !s
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+    {
+        return Err("output suffix must be nonempty and contain only ASCII letters, digits, '.', '_', or '-'".to_string());
+    }
+    Ok(s.to_string())
 }
 
 fn directory_name(s: &str) -> Result<String, String> {
@@ -740,6 +761,7 @@ mod tests {
         let cli = Cli::try_parse_from(dataset_args()).unwrap();
 
         assert_eq!(cli.tiles_dir, "t");
+        assert!(cli.output_suffix.is_none());
         assert!(cli.validate_parameter_combinations(&[cli.format]).is_ok());
     }
 
@@ -756,6 +778,25 @@ mod tests {
 
         assert_eq!(cli.tiles_dir, "tiles");
         assert!(cli.validate_parameter_combinations(&[cli.format]).is_ok());
+
+        for suffix in ["lod2.2", "LoD_3-v1", ".", "..", "-label"] {
+            let mut args = dataset_args();
+            args.push(format!("--output-suffix={suffix}"));
+            assert_eq!(
+                Cli::try_parse_from(args).unwrap().output_suffix.as_deref(),
+                Some(suffix)
+            );
+        }
+        for suffix in [
+            "", "a/b", "a\\b", "a b", "a~b", "a%b", "a?b", "a#b", "{level}", "lód2",
+        ] {
+            let mut args = dataset_args();
+            args.push(format!("--output-suffix={suffix}"));
+            assert!(
+                Cli::try_parse_from(args).is_err(),
+                "accepted suffix {suffix:?}"
+            );
+        }
 
         for name in ["tiles", "Tiles-1_2.3~"] {
             let mut args = dataset_args();
