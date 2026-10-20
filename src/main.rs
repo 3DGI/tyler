@@ -352,7 +352,7 @@ fn parse_cityjson_rgb(color: &str) -> RGB {
     RGB::new(red, green, blue)
 }
 
-fn build_feature_type_lods(cli: &crate::cli::Cli) -> BTreeMap<String, String> {
+fn build_feature_type_lods(cli: &crate::cli::Cli) -> BTreeMap<String, Vec<String>> {
     let mut feature_type_lods = BTreeMap::new();
 
     for (feature_type, lod) in [
@@ -396,7 +396,7 @@ fn build_feature_type_lods(cli: &crate::cli::Cli) -> BTreeMap<String, String> {
 
 fn build_feature_filter(
     cityobject_types: Option<&Vec<parser::CityObjectType>>,
-    feature_type_lods: &BTreeMap<String, String>,
+    feature_type_lods: &BTreeMap<String, Vec<String>>,
 ) -> cityjson_index::PackageFilter {
     cityjson_index::PackageFilter {
         cityobject_types: cityobject_types.map(|types| {
@@ -1184,7 +1184,7 @@ where
 pub(crate) fn filter_cityjsonfeature_preserving_root_with_policy(
     model: &cityjson_lib::CityModel,
     cityobject_types: Option<&Vec<parser::CityObjectType>>,
-    feature_type_lods: &BTreeMap<String, String>,
+    feature_type_lods: &BTreeMap<String, Vec<String>>,
     default_highest_lod: bool,
 ) -> Result<cityjson_lib::CityModel, Box<dyn std::error::Error>> {
     let filter = cityjson_index::PackageFilter {
@@ -1342,7 +1342,7 @@ fn parse_bool_attribute(value: &str) -> Option<bool> {
 #[cfg(test)]
 fn prune_lod_geometries(
     model: &mut cityjson_lib::CityModel,
-    feature_type_lods: &BTreeMap<String, String>,
+    feature_type_lods: &BTreeMap<String, Vec<String>>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let filtered =
         filter_cityjsonfeature_preserving_root_with_policy(model, None, feature_type_lods, true)?;
@@ -3087,8 +3087,11 @@ mod tests {
             parser::CityObjectType::BuildingPart,
         ];
         let lods = BTreeMap::from([
-            ("Building".to_string(), "2.0".to_string()),
-            ("BuildingPart".to_string(), "1.3".to_string()),
+            ("Building".to_string(), vec!["2.0".to_string()]),
+            (
+                "BuildingPart".to_string(),
+                vec!["1.3".to_string(), "2.2".to_string()],
+            ),
         ]);
 
         let filter = build_feature_filter(Some(&cityobject_types), &lods);
@@ -3103,11 +3106,16 @@ mod tests {
         assert_eq!(filter.default_lod, cityjson_index::LodSelection::Highest);
         assert_eq!(
             filter.lods_by_type.get("Building"),
-            Some(&cityjson_index::LodSelection::Exact("2.0".to_string()))
+            Some(&cityjson_index::LodSelection::Exact(
+                vec!["2.0".to_string()]
+            ))
         );
         assert_eq!(
             filter.lods_by_type.get("BuildingPart"),
-            Some(&cityjson_index::LodSelection::Exact("1.3".to_string()))
+            Some(&cityjson_index::LodSelection::Exact(vec![
+                "1.3".to_string(),
+                "2.2".to_string()
+            ]))
         );
     }
 
@@ -3200,7 +3208,7 @@ mod tests {
         fs::write(&metadata_path, &feature_base_document).expect("write metadata");
 
         let low_types = Some(vec![parser::CityObjectType::BuildingPart]);
-        let low_lods = BTreeMap::from([("BuildingPart".to_string(), "1.0".to_string())]);
+        let low_lods = BTreeMap::from([("BuildingPart".to_string(), vec!["1.0".to_string()])]);
         let low_filter = build_feature_filter(low_types.as_ref(), &low_lods);
         let world_low = parser::World::from_cjindex(
             parser::InputSource::from_cjindex_resolved(&resolved),
@@ -3214,7 +3222,7 @@ mod tests {
         .expect("build low-lod cjindex world");
 
         let high_types = Some(vec![parser::CityObjectType::BuildingPart]);
-        let high_lods = BTreeMap::from([("BuildingPart".to_string(), "2.0".to_string())]);
+        let high_lods = BTreeMap::from([("BuildingPart".to_string(), vec!["2.0".to_string()])]);
         let high_filter = build_feature_filter(high_types.as_ref(), &high_lods);
         let world_high = parser::World::from_cjindex(
             parser::InputSource::from_cjindex_resolved(&resolved),
@@ -3427,18 +3435,23 @@ mod tests {
     /// highest available LoD.
     #[test]
     fn prepare_model_uses_type_specific_lod_selectors() {
-        let mut model = multi_type_lod_fixture();
-        let lods = BTreeMap::from([("Building".to_string(), "1".to_string())]);
+        for requested_lods in [
+            vec!["1".to_string()],
+            vec!["1".to_string(), "2".to_string()],
+        ] {
+            let mut model = multi_type_lod_fixture();
+            let lods = BTreeMap::from([("Building".to_string(), requested_lods.clone())]);
 
-        prune_lod_geometries(&mut model, &lods).expect("LoD pruning should succeed");
-        let retained = retained_lods_by_object_id(&model);
+            prune_lod_geometries(&mut model, &lods).expect("LoD pruning should succeed");
+            let retained = retained_lods_by_object_id(&model);
 
-        assert_eq!(retained.get("building"), Some(&vec!["1".to_string()]));
-        assert_eq!(
-            retained.get("building-part"),
-            Some(&vec!["3".to_string()]),
-            "unconfigured types should still default to their highest LoD"
-        );
+            assert_eq!(retained.get("building"), Some(&requested_lods));
+            assert_eq!(
+                retained.get("building-part"),
+                Some(&vec!["3".to_string()]),
+                "unconfigured types should still default to their highest LoD"
+            );
+        }
     }
 
     /// Supporting regression for the `--include-parent-attributes` refactor:
@@ -3739,7 +3752,10 @@ mod tests {
         let feature_base_document = derive_base_document(&city_index).expect("derive base doc");
         fs::write(&metadata_path, &feature_base_document).expect("write metadata");
 
-        let lods = BTreeMap::from([("BuildingPart".to_string(), "99".to_string())]);
+        let lods = BTreeMap::from([(
+            "BuildingPart".to_string(),
+            vec!["1".to_string(), "99".to_string(), "100".to_string()],
+        )]);
         let feature_filter = build_feature_filter(None, &lods);
         let Err(error) = parser::World::from_cjindex(
             parser::InputSource::from_cjindex_resolved(&resolved),
@@ -3754,8 +3770,8 @@ mod tests {
         };
         let message = error.to_string();
 
-        assert!(message.contains("requested LoD selector matched no geometry"));
-        assert!(message.contains("BuildingPart requested LoD '99'"));
+        assert!(message.contains("requested LoD selection includes unavailable values"));
+        assert!(message.contains("BuildingPart requested unavailable LoDs '99', '100'"));
         assert!(message.contains("available LoDs are: 1"));
     }
 

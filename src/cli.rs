@@ -142,66 +142,66 @@ pub struct Cli {
     /// Include CityObject addresses when the output format is GeoPackage.
     #[arg(long = "gpkg-include-address")]
     pub gpkg_include_address: bool,
-    /// LoD to use in output for Building features
+    /// LoD to use in output for Building features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_building: Option<String>,
-    /// LoD to use in output for building_part features
+    pub lod_building: Option<Vec<String>>,
+    /// LoD to use in output for building_part features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_building_part: Option<String>,
-    /// LoD to use in output for building_installation features
+    pub lod_building_part: Option<Vec<String>>,
+    /// LoD to use in output for building_installation features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_building_installation: Option<String>,
-    /// LoD to use in output for tin_relief features
+    pub lod_building_installation: Option<Vec<String>>,
+    /// LoD to use in output for tin_relief features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_tin_relief: Option<String>,
-    /// LoD to use in output for road features
+    pub lod_tin_relief: Option<Vec<String>>,
+    /// LoD to use in output for road features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_road: Option<String>,
-    /// LoD to use in output for railway features
+    pub lod_road: Option<Vec<String>>,
+    /// LoD to use in output for railway features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_railway: Option<String>,
-    /// LoD to use in output for transport_square features
+    pub lod_railway: Option<Vec<String>>,
+    /// LoD to use in output for transport_square features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_transport_square: Option<String>,
-    /// LoD to use in output for water_body features
+    pub lod_transport_square: Option<Vec<String>>,
+    /// LoD to use in output for water_body features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_water_body: Option<String>,
-    /// LoD to use in output for plant_cover features
+    pub lod_water_body: Option<Vec<String>>,
+    /// LoD to use in output for plant_cover features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_plant_cover: Option<String>,
-    /// LoD to use in output for solitary_vegetation_object features
+    pub lod_plant_cover: Option<Vec<String>>,
+    /// LoD to use in output for solitary_vegetation_object features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_solitary_vegetation_object: Option<String>,
-    /// LoD to use in output for land_use features
+    pub lod_solitary_vegetation_object: Option<Vec<String>>,
+    /// LoD to use in output for land_use features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_land_use: Option<String>,
-    /// LoD to use in output for city_furniture features
+    pub lod_land_use: Option<Vec<String>>,
+    /// LoD to use in output for city_furniture features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_city_furniture: Option<String>,
-    /// LoD to use in output for bridge features
+    pub lod_city_furniture: Option<Vec<String>>,
+    /// LoD to use in output for bridge features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_bridge: Option<String>,
-    /// LoD to use in output for bridge_part features
+    pub lod_bridge: Option<Vec<String>>,
+    /// LoD to use in output for bridge_part features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_bridge_part: Option<String>,
-    /// LoD to use in output for bridge_installation features
+    pub lod_bridge_part: Option<Vec<String>>,
+    /// LoD to use in output for bridge_installation features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_bridge_installation: Option<String>,
-    /// LoD to use in output for bridge_construction_element features
+    pub lod_bridge_installation: Option<Vec<String>>,
+    /// LoD to use in output for bridge_construction_element features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_bridge_construction_element: Option<String>,
-    /// LoD to use in output for tunnel features
+    pub lod_bridge_construction_element: Option<Vec<String>>,
+    /// LoD to use in output for tunnel features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_tunnel: Option<String>,
-    /// LoD to use in output for tunnel_part features
+    pub lod_tunnel: Option<Vec<String>>,
+    /// LoD to use in output for tunnel_part features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_tunnel_part: Option<String>,
-    /// LoD to use in output for tunnel_installation features
+    pub lod_tunnel_part: Option<Vec<String>>,
+    /// LoD to use in output for tunnel_installation features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_tunnel_installation: Option<String>,
-    /// LoD to use in output for lod_generic_city_object features
+    pub lod_tunnel_installation: Option<Vec<String>>,
+    /// LoD to use in output for lod_generic_city_object features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_generic_city_object: Option<String>,
+    pub lod_generic_city_object: Option<Vec<String>>,
     /// Color for Building features specified as a hex rgb-color value, eg. #FF0000 is red.
     #[arg(long, value_parser = hex_color)]
     pub color_building: Option<String>,

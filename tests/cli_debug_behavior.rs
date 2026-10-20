@@ -478,18 +478,31 @@ fn format_cityjson_and_obj_write_full_id_tile_files() {
     );
     assert_success(&output, "CityJSON format run");
 
-    let mut cityjson_tiles = Vec::new();
-    collect_paths_with_suffix(&output_dir.join("tiles"), ".city.json", &mut cityjson_tiles);
-    assert_full_tile_file_names(&output_dir.join("tiles"), &cityjson_tiles);
-    assert!(
-        !cityjson_tiles.is_empty(),
-        "expected CityJSON tiles under {}",
-        output_dir.join("tiles").display()
-    );
-    let root = read_json(&cityjson_tiles[0]);
-    assert_eq!(root["type"], "CityJSON");
-    assert!(!output_dir.join("tileset.json").exists());
-
+        let mut cityjson_tiles = Vec::new();
+        collect_paths_with_suffix(&output_dir.join("tiles"), ".city.json", &mut cityjson_tiles);
+        assert_full_tile_file_names(&output_dir.join("tiles"), &cityjson_tiles);assert!(
+            !cityjson_tiles.is_empty(),
+            "expected CityJSON tiles under {}",
+            output_dir.join("tiles").display()
+        );
+        for tile in cityjson_tiles {
+            let root = read_json(&tile);
+            assert_eq!(root["type"], "CityJSON");
+            let objects = root["CityObjects"].as_object().expect("CityObjects");
+            assert!(!objects.is_empty(), "exported tile should contain geometry");
+            for object in objects.values() {
+                assert_eq!(object["type"], "BuildingPart");
+                let mut lods = object["geometry"]
+                    .as_array()
+                    .expect("geometry")
+                    .iter()
+                    .map(|geometry| geometry["lod"].as_str().expect("LoD"))
+                    .collect::<Vec<_>>();
+                lods.sort_unstable();
+                assert_eq!(lods, expected_lods);
+            }
+        }
+        assert!(!output_dir.join("tileset.json").exists());
     let obj_output_dir = unique_test_dir("format-obj-output");
     let output = run_tyler(
         &dataset,
@@ -501,6 +514,35 @@ fn format_cityjson_and_obj_write_full_id_tile_files() {
     collect_paths_with_suffix(&obj_output_dir.join("tiles"), ".obj", &mut obj_tiles);
     assert!(!obj_tiles.is_empty(), "expected OBJ tiles");
     assert_full_tile_file_names(&obj_output_dir.join("tiles"), &obj_tiles);
+}
+
+    let output_dir = unique_test_dir("format-cityjson-missing-lod");
+    let output = run_tyler(
+        &dataset,
+        &output_dir,
+        &[
+            "--format",
+            "cityjson",
+            "--object-type",
+            "BuildingPart",
+            "--lod-building-part",
+            "1.3",
+            "--lod-building-part",
+            "99",
+            "--lod-building-part",
+            "100",
+        ],
+    );
+    assert!(!output.status.success(), "missing LoDs should fail");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("BuildingPart requested unavailable LoDs '99', '100'"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("available LoDs are: 1.2, 1.3, 2.2"),
+        "{stderr}"
+    );
 }
 
 /// Issue <https://github.com/3DGI/tyler/issues/137>

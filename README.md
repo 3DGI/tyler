@@ -343,15 +343,17 @@ For example:
 #### Level of Detail (LoD)
 
 CityJSON can store city objects with multiple levels of detail.
-For each CityObject type, its LoD can be specified explicitly.
-This is the LoD defined in the input data.
-The LoD value for each CityObject type is set with the `--lod-<cityobject type>` arguments. The `<cityobject type>` is the CityJSON CityObject type, such as BuildingPart or LandUse.
+For each CityObject type, one or more LoDs can be specified explicitly.
+These are the LoDs defined in the input data.
+The LoD values for each CityObject type are set with the repeatable `--lod-<cityobject type>` arguments. The `<cityobject type>` is the CityJSON CityObject type, such as BuildingPart or LandUse.
 The arguments are lower-case, thus “BuildingPart” becomes “building-part” and “LandUse” becomes “land-use”.
-If no `--lod-<cityobject type>` is provided, Tyler selects the highest available LoD for each CityObject.
+Repeat a flag once per requested LoD; comma-separated values are not supported.
+Tyler retains all requested LoDs and fails if any requested value is unavailable for that CityObject type in the dataset, reporting the missing and available values.
+If no `--lod-<cityobject type>` is provided for a type, Tyler selects the highest available LoD for each CityObject of that type.
 
 For example:
 
-`tyler … --lod-land-use 1 --lod-building-part 1.3`
+`tyler … --lod-land-use 1 --lod-building-part 1.3 --lod-building-part 2.2`
 
 #### Attributes
 
