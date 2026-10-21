@@ -78,7 +78,7 @@ fn ensure_requested_lods_available(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut failures = Vec::new();
     for (cityobject_type, selection) in &filter.lods_by_type {
-        let cityjson_index::LodSelection::Exact(requested_lod) = selection else {
+        let cityjson_index::LodSelection::Exact(requested_lods) = selection else {
             continue;
         };
         let available_lods = summary
@@ -86,7 +86,12 @@ fn ensure_requested_lods_available(
             .get(cityobject_type)
             .cloned()
             .unwrap_or_default();
-        if available_lods.contains(requested_lod) {
+        let missing_lods = requested_lods
+            .iter()
+            .filter(|lod| !available_lods.contains(*lod))
+            .map(|lod| format!("'{lod}'"))
+            .collect::<Vec<_>>();
+        if missing_lods.is_empty() {
             continue;
         }
         let available = if available_lods.is_empty() {
@@ -95,14 +100,15 @@ fn ensure_requested_lods_available(
             available_lods.into_iter().collect::<Vec<_>>().join(", ")
         };
         failures.push(format!(
-            "{cityobject_type} requested LoD '{requested_lod}', available LoDs are: {available}"
+            "{cityobject_type} requested unavailable LoDs {}, available LoDs are: {available}",
+            missing_lods.join(", ")
         ));
     }
     if failures.is_empty() {
         Ok(())
     } else {
         Err(format!(
-            "requested LoD selector matched no geometry: {}",
+            "requested LoD selection includes unavailable values: {}",
             failures.join("; ")
         )
         .into())

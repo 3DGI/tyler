@@ -26,6 +26,13 @@ pub struct Cli {
     /// Directory for the output.
     #[arg(short, long)]
     pub output: PathBuf,
+    /// Label appended to published filenames. Use ASCII letters, digits, '.', '_', or '-'.
+    #[arg(long, value_parser = output_suffix)]
+    pub output_suffix: Option<String>,
+    /// Name of the directory under the output root where tile contents are written.
+    /// Use ASCII letters, digits, hyphens, underscores, periods, or tildes.
+    #[arg(long, default_value = "t", value_parser = directory_name)]
+    pub tiles_dir: String,
     /// Output format.
     #[arg(long, value_enum, default_value_t)]
     pub format: crate::OutputFormatKind,
@@ -138,66 +145,66 @@ pub struct Cli {
     /// Include CityObject addresses when the output format is GeoPackage.
     #[arg(long = "gpkg-include-address")]
     pub gpkg_include_address: bool,
-    /// LoD to use in output for Building features
+    /// LoD to use in output for Building features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_building: Option<String>,
-    /// LoD to use in output for building_part features
+    pub lod_building: Option<Vec<String>>,
+    /// LoD to use in output for building_part features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_building_part: Option<String>,
-    /// LoD to use in output for building_installation features
+    pub lod_building_part: Option<Vec<String>>,
+    /// LoD to use in output for building_installation features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_building_installation: Option<String>,
-    /// LoD to use in output for tin_relief features
+    pub lod_building_installation: Option<Vec<String>>,
+    /// LoD to use in output for tin_relief features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_tin_relief: Option<String>,
-    /// LoD to use in output for road features
+    pub lod_tin_relief: Option<Vec<String>>,
+    /// LoD to use in output for road features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_road: Option<String>,
-    /// LoD to use in output for railway features
+    pub lod_road: Option<Vec<String>>,
+    /// LoD to use in output for railway features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_railway: Option<String>,
-    /// LoD to use in output for transport_square features
+    pub lod_railway: Option<Vec<String>>,
+    /// LoD to use in output for transport_square features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_transport_square: Option<String>,
-    /// LoD to use in output for water_body features
+    pub lod_transport_square: Option<Vec<String>>,
+    /// LoD to use in output for water_body features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_water_body: Option<String>,
-    /// LoD to use in output for plant_cover features
+    pub lod_water_body: Option<Vec<String>>,
+    /// LoD to use in output for plant_cover features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_plant_cover: Option<String>,
-    /// LoD to use in output for solitary_vegetation_object features
+    pub lod_plant_cover: Option<Vec<String>>,
+    /// LoD to use in output for solitary_vegetation_object features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_solitary_vegetation_object: Option<String>,
-    /// LoD to use in output for land_use features
+    pub lod_solitary_vegetation_object: Option<Vec<String>>,
+    /// LoD to use in output for land_use features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_land_use: Option<String>,
-    /// LoD to use in output for city_furniture features
+    pub lod_land_use: Option<Vec<String>>,
+    /// LoD to use in output for city_furniture features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_city_furniture: Option<String>,
-    /// LoD to use in output for bridge features
+    pub lod_city_furniture: Option<Vec<String>>,
+    /// LoD to use in output for bridge features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_bridge: Option<String>,
-    /// LoD to use in output for bridge_part features
+    pub lod_bridge: Option<Vec<String>>,
+    /// LoD to use in output for bridge_part features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_bridge_part: Option<String>,
-    /// LoD to use in output for bridge_installation features
+    pub lod_bridge_part: Option<Vec<String>>,
+    /// LoD to use in output for bridge_installation features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_bridge_installation: Option<String>,
-    /// LoD to use in output for bridge_construction_element features
+    pub lod_bridge_installation: Option<Vec<String>>,
+    /// LoD to use in output for bridge_construction_element features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_bridge_construction_element: Option<String>,
-    /// LoD to use in output for tunnel features
+    pub lod_bridge_construction_element: Option<Vec<String>>,
+    /// LoD to use in output for tunnel features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_tunnel: Option<String>,
-    /// LoD to use in output for tunnel_part features
+    pub lod_tunnel: Option<Vec<String>>,
+    /// LoD to use in output for tunnel_part features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_tunnel_part: Option<String>,
-    /// LoD to use in output for tunnel_installation features
+    pub lod_tunnel_part: Option<Vec<String>>,
+    /// LoD to use in output for tunnel_installation features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_tunnel_installation: Option<String>,
-    /// LoD to use in output for lod_generic_city_object features
+    pub lod_tunnel_installation: Option<Vec<String>>,
+    /// LoD to use in output for lod_generic_city_object features. Repeat this flag to select multiple LoDs.
     #[arg(long)]
-    pub lod_generic_city_object: Option<String>,
+    pub lod_generic_city_object: Option<Vec<String>>,
     /// Color for Building features specified as a hex rgb-color value, eg. #FF0000 is red.
     #[arg(long, value_parser = hex_color)]
     pub color_building: Option<String>,
@@ -421,6 +428,13 @@ const NO_EFFECT_INFO_RULES: &[NoEffectInfoRule] = &[
 ];
 
 impl Cli {
+    pub fn output_paths(&self) -> crate::output::OutputPaths<'_> {
+        crate::output::OutputPaths {
+            tiles_dir: &self.tiles_dir,
+            suffix: self.output_suffix.as_deref(),
+        }
+    }
+
     /// Central gate for rejecting CLI option combinations that are incompatible
     /// with one or more selected output formats.
     ///
@@ -551,6 +565,34 @@ fn existing_canonical_path(s: &str) -> Result<PathBuf, String> {
         }
     } else {
         Err(format!("could not resolve the path {:?}", s))
+    }
+}
+
+fn output_suffix(s: &str) -> Result<String, String> {
+    if s.is_empty()
+        || !s
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+    {
+        return Err("output suffix must be nonempty and contain only ASCII letters, digits, '.', '_', or '-'".to_string());
+    }
+    Ok(s.to_string())
+}
+
+fn directory_name(s: &str) -> Result<String, String> {
+    if !s
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~'))
+    {
+        return Err(
+            "must contain only ASCII letters, digits, hyphens, underscores, periods, or tildes"
+                .to_owned(),
+        );
+    }
+    let mut components = Path::new(s).components();
+    match (components.next(), components.next()) {
+        (Some(std::path::Component::Normal(_)), None) => Ok(s.to_owned()),
+        _ => Err("must be a single directory name".to_owned()),
     }
 }
 
@@ -718,16 +760,67 @@ mod tests {
     fn validation_accepts_default_format() {
         let cli = Cli::try_parse_from(dataset_args()).unwrap();
 
+        assert_eq!(cli.tiles_dir, "t");
+        assert!(cli.output_suffix.is_none());
         assert!(cli.validate_parameter_combinations(&[cli.format]).is_ok());
     }
 
     #[test]
     fn validation_accepts_explicit_non_default_format() {
         let mut args = dataset_args();
-        args.extend(["--format".to_string(), "cityjson".to_string()]);
+        args.extend([
+            "--format".to_string(),
+            "cityjson".to_string(),
+            "--tiles-dir".to_string(),
+            "tiles".to_string(),
+        ]);
         let cli = Cli::try_parse_from(args).unwrap();
 
+        assert_eq!(cli.tiles_dir, "tiles");
         assert!(cli.validate_parameter_combinations(&[cli.format]).is_ok());
+
+        for suffix in ["lod2.2", "LoD_3-v1", ".", "..", "-label"] {
+            let mut args = dataset_args();
+            args.push(format!("--output-suffix={suffix}"));
+            assert_eq!(
+                Cli::try_parse_from(args).unwrap().output_suffix.as_deref(),
+                Some(suffix)
+            );
+        }
+        for suffix in [
+            "", "a/b", "a\\b", "a b", "a~b", "a%b", "a?b", "a#b", "{level}", "lód2",
+        ] {
+            let mut args = dataset_args();
+            args.push(format!("--output-suffix={suffix}"));
+            assert!(
+                Cli::try_parse_from(args).is_err(),
+                "accepted suffix {suffix:?}"
+            );
+        }
+
+        for name in ["tiles", "Tiles-1_2.3~"] {
+            let mut args = dataset_args();
+            args.extend(["--tiles-dir".to_string(), name.to_string()]);
+            assert_eq!(Cli::try_parse_from(args).unwrap().tiles_dir, name);
+        }
+        for name in [
+            "",
+            ".",
+            "..",
+            "../tiles",
+            "tiles/",
+            "tiles#1",
+            "tiles?1",
+            "tiles%20",
+            "tiles 1",
+            "tiles\\1",
+            "tiles{level}",
+            "tílés",
+        ] {
+            let mut args = dataset_args();
+            args.extend(["--tiles-dir".to_string(), name.to_string()]);
+            assert!(Cli::try_parse_from(args).is_err(), "accepted {name:?}");
+        }
     }
 
     #[test]

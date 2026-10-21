@@ -9,6 +9,9 @@
 /resources/data/features_3dbag_5909/
 **/todo*
 **/TODO*
+.claude
+.codex
+.vscode
 
 # misc
 /tmp
@@ -26,3 +29,6 @@ local.justfile
 *.bincode
 *.log
 /docs/plans/
+
+# repowise owner-digest key (local)
+.repowise
