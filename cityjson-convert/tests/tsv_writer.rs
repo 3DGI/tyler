@@ -439,32 +439,42 @@ fn converts_model_to_tsv_file_outputs() {
     let dir = temp_output_dir("tsv_convert");
     let output = dir.join("nested").join("model.tsv");
 
-    convert_to_tsv(
-        &model,
-        &output,
-        &TsvExportOptions {
-            include_null_rows: true,
-            include_hierarchy: true,
-            include_cityjson_ordinal: true,
-            include_metadata: true,
-            include_semantics: true,
-            include_address: true,
-        },
-    )
-    .unwrap();
-
-    assert!(output.is_file());
-    assert!(dir.join("nested").join("model_metadata.tsv").is_file());
-    assert!(dir.join("nested").join("model_semantics.tsv").is_file());
-    assert!(dir.join("nested").join("model_addresses.tsv").is_file());
-    assert!(dir
-        .join("nested")
-        .join("model_cityobject_hierarchy.tsv")
-        .is_file());
-    assert!(dir
-        .join("nested")
-        .join("model_semantic_hierarchy.tsv")
-        .is_file());
+    let mut previous = Vec::new();
+    for suffix in [None, Some("lod2.2"), Some("LoD_3-v1")] {
+        convert_to_tsv(
+            &model,
+            &output,
+            &TsvExportOptions {
+                output_suffix: suffix.map(str::to_owned),
+                include_null_rows: true,
+                include_hierarchy: true,
+                include_cityjson_ordinal: true,
+                include_metadata: true,
+                include_semantics: true,
+                include_address: true,
+            },
+        )
+        .unwrap();
+        for (path, bytes) in &previous {
+            assert_eq!(&fs::read(path).unwrap(), bytes);
+        }
+        for table in [
+            "",
+            "_metadata",
+            "_semantics",
+            "_addresses",
+            "_cityobject_hierarchy",
+            "_semantic_hierarchy",
+        ] {
+            let label = suffix
+                .map(|suffix| format!("-{suffix}"))
+                .unwrap_or_default();
+            let path = dir.join("nested").join(format!("model{table}{label}.tsv"));
+            let bytes = fs::read(&path).unwrap();
+            assert!(!bytes.is_empty());
+            previous.push((path, bytes));
+        }
+    }
 
     fs::remove_dir_all(dir).unwrap();
 }

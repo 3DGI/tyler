@@ -193,6 +193,7 @@ fn main() -> anyhow::Result<()> {
         OutputFormat::Tsv => {
             let model = json::from_file(&cli.input)?;
             let options = TsvExportOptions {
+                output_suffix: None,
                 include_null_rows: cli.tsv_rows.tsv_include_null_rows,
                 include_hierarchy: cli.tsv_rows.tsv_include_hierarchy,
                 include_cityjson_ordinal: cli.tsv_rows.tsv_include_cityjson_ordinal,

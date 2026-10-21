@@ -268,7 +268,6 @@ The GeoPackage-specific options split feature layers by LoD or add semantics,
 hierarchy, and address tables. Metadata aggregation is always enabled, so
 Tyler intentionally does not expose `--gpkg-include-metadata`.
 
-
 #### Input data
 
 `tyler` accepts a single `input` dataset directory with regular CityJSON files, CityJSONSeq files, or the legacy `feature-files` layout.
@@ -277,7 +276,7 @@ For example:
 
 `tyler /some/dataset-root --output /some/output`
 
-In case you have the legacy `feature-files` layout and the current CityJSON version (v2.0), you need to rename the CityJSON file(s) that contain the `transform` property to `metadata.json`, so the
+In case you have the legacy `feature-files` layout and the current CityJSON version (v2.0), you need to rename the CityJSON file (s) that contain the `transform` property to `metadata.json`, so the
 `cityjson-index` can discover them.
 For example:
 
@@ -318,6 +317,39 @@ tildes; `.` and `..` are not accepted.
 Tile filenames include the complete `level-x-y` ID while retaining the
 `level/x` directory hierarchy.
 
+Use `--output-suffix lod2.2` to label every published filename. The label must
+be nonempty and contain only ASCII letters, digits, `.`, `_`, and `-`.
+Tyler inserts `-<suffix>` before the complete extension:
+
+| Output             | Example with `--output-suffix lod2.2`           |
+|--------------------|-------------------------------------------------|
+| OBJ                | `t/1/2/1-2-3-lod2.2.obj`                        |
+| CityJSON           | `t/1/2/1-2-3-lod2.2.city.json`                  |
+| CityJSONSeq        | `t/1/2/1-2-3-lod2.2.city.jsonl`                 |
+| GeoPackage         | `t/1/2/1-2-3-lod2.2.gpkg`                       |
+| TSV                | `t/1/2/1-2-3/cityobjects-lod2.2.tsv`            |
+| TSV companion      | `t/1/2/1-2-3/cityobjects_semantics-lod2.2.tsv`  |
+| Aggregate metadata | `metadata-lod2.2.tsv` or `metadata-lod2.2.gpkg` |
+| 3D Tiles manifest  | `tileset-lod2.2.json`                           |
+| GLB content        | `t/1/2/1-2-3-lod2.2.glb`                        |
+| Implicit subtree   | `subtrees/1/2/3-lod2.2.subtree`                 |
+
+For example, export two labelled versions into the same directory:
+
+```shell
+tyler /data/city --output /exports --format cityjson --output-suffix lod2.2
+tyler /data/city --output /exports --format cityjson --output-suffix review
+```
+
+Different suffixes keep published files separate; reusing a suffix retains
+the usual overwrite behavior. Metadata paths, external tileset references,
+implicit URI templates, and unpruned manifests and subtrees use the same label.
+Directories, logical tile and CityObject IDs, database tables, and LoD selection
+stay unchanged. The label is explicit and is not checked against selected LoDs.
+Debug and intermediate files retain their names and may be shared between runs.
+Omitting this option keeps existing filenames. The standalone `cityjson-convert`
+CLI is unchanged.
+
 #### CityObject type
 
 CityJSON data can contain different types of CityObjects, like Building, PlantCover or Road.
@@ -343,15 +375,17 @@ For example:
 #### Level of Detail (LoD)
 
 CityJSON can store city objects with multiple levels of detail.
-For each CityObject type, its LoD can be specified explicitly.
-This is the LoD defined in the input data.
-The LoD value for each CityObject type is set with the `--lod-<cityobject type>` arguments. The `<cityobject type>` is the CityJSON CityObject type, such as BuildingPart or LandUse.
+For each CityObject type, one or more LoDs can be specified explicitly.
+These are the LoDs defined in the input data.
+The LoD values for each CityObject type are set with the repeatable `--lod-<cityobject type>` arguments. The `<cityobject type>` is the CityJSON CityObject type, such as BuildingPart or LandUse.
 The arguments are lower-case, thus “BuildingPart” becomes “building-part” and “LandUse” becomes “land-use”.
-If no `--lod-<cityobject type>` is provided, Tyler selects the highest available LoD for each CityObject.
+Repeat a flag once per requested LoD; comma-separated values are not supported.
+Tyler retains all requested LoDs and fails if any requested value is unavailable for that CityObject type in the dataset, reporting the missing and available values.
+If no `--lod-<cityobject type>` is provided for a type, Tyler selects the highest available LoD for each CityObject of that type.
 
 For example:
 
-`tyler … --lod-land-use 1 --lod-building-part 1.3`
+`tyler … --lod-land-use 1 --lod-building-part 1.3 --lod-building-part 2.2`
 
 #### Attributes
 
@@ -475,7 +509,7 @@ at the case root, for example `bvz-dh-coast-5/profile-tyler.json` for the
 When `--profile` is used, `--input` and `--label` are rejected because the case
 spec already determines both.
 Use `--runner perf`, `--runner massif`, or the default `--runner all` to choose
-which profiler(s) run. This is useful when Massif is too slow for a routine
+which profiler (s) run. This is useful when Massif is too slow for a routine
 iteration.
 
 The profiler then captures the selected `perf stat` and/or Valgrind Massif

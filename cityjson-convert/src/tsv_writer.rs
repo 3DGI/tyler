@@ -19,6 +19,8 @@ use crate::{
 #[derive(Clone, Debug, Default)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct TsvExportOptions {
+    /// Optional label inserted last in every output basename.
+    pub output_suffix: Option<String>,
     pub include_null_rows: bool,
     pub include_hierarchy: bool,
     pub include_cityjson_ordinal: bool,
@@ -38,6 +40,8 @@ pub struct TsvWriteOptions {
 ///
 /// The requested output file receives the `CityObject` table. Optional tables
 /// are written beside it using the output stem, for example `model_metadata.tsv`.
+/// Pass an unsuffixed output path: `output_suffix` is appended last to the
+/// primary and companion basenames, for example `model_metadata-lod2.2.tsv`.
 ///
 /// # Errors
 ///
@@ -60,46 +64,81 @@ pub fn convert_to_tsv<P: AsRef<Path>>(
     };
 
     let cityobjects = tabulate_cityobjects(model)?;
-    let mut file = File::create(output)?;
+    let primary_path = match options.output_suffix.as_deref() {
+        Some(suffix) => output.with_file_name(crate::output_filename(
+            output
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or("cityobjects"),
+            "tsv",
+            Some(suffix),
+        )),
+        None => output.to_path_buf(),
+    };
+    let mut file = File::create(primary_path)?;
     write_cityobjects_tsv(&cityobjects, &write_options, &mut file)?;
 
     if options.include_hierarchy {
         let hierarchy = tabulate_cityobject_hierarchy(model)?;
-        let mut file = File::create(sidecar_path(output, "cityobject_hierarchy"))?;
+        let mut file = File::create(sidecar_path(
+            output,
+            "cityobject_hierarchy",
+            options.output_suffix.as_deref(),
+        ))?;
         write_cityobject_hierarchy_tsv(&hierarchy, &mut file)?;
 
         let hierarchy = tabulate_semantic_hierarchy(model);
-        let mut file = File::create(sidecar_path(output, "semantic_hierarchy"))?;
+        let mut file = File::create(sidecar_path(
+            output,
+            "semantic_hierarchy",
+            options.output_suffix.as_deref(),
+        ))?;
         write_semantic_hierarchy_tsv(&hierarchy, &mut file)?;
     }
 
     if options.include_metadata {
         let metadata = tabulate_model_metadata(model)?;
-        let mut file = File::create(sidecar_path(output, "metadata"))?;
+        let mut file = File::create(sidecar_path(
+            output,
+            "metadata",
+            options.output_suffix.as_deref(),
+        ))?;
         write_metadata_tsv(&metadata, &mut file)?;
     }
 
     if options.include_address {
         let addresses = tabulate_addresses(model)?;
-        let mut file = File::create(sidecar_path(output, "addresses"))?;
+        let mut file = File::create(sidecar_path(
+            output,
+            "addresses",
+            options.output_suffix.as_deref(),
+        ))?;
         write_addresses_tsv(&addresses, &write_options, &mut file)?;
     }
 
     if options.include_semantics {
         let semantics = tabulate_semantic_primitives(model)?;
-        let mut file = File::create(sidecar_path(output, "semantics"))?;
+        let mut file = File::create(sidecar_path(
+            output,
+            "semantics",
+            options.output_suffix.as_deref(),
+        ))?;
         write_semantics_tsv(&semantics, &write_options, &mut file)?;
     }
 
     Ok(())
 }
 
-fn sidecar_path(output: &Path, suffix: &str) -> std::path::PathBuf {
+fn sidecar_path(output: &Path, table: &str, output_suffix: Option<&str>) -> std::path::PathBuf {
     let stem = output
         .file_stem()
         .and_then(|stem| stem.to_str())
         .unwrap_or("cityobjects");
-    output.with_file_name(format!("{stem}_{suffix}.tsv"))
+    output.with_file_name(crate::output_filename(
+        &format!("{stem}_{table}"),
+        "tsv",
+        output_suffix,
+    ))
 }
 
 /// Writes `CityObject` rows as TSV.
